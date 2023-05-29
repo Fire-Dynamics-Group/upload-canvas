@@ -16,7 +16,6 @@ export default function Canvas() {
         const canvas = canvasRef.current
         const context = canvas.getContext('2d')
         context.fillStyle = 'blue'
-        console.log("event: ", event)
         context.fillRect(event.clientX - 50, event.clientY - 50, 100, 100)        
     }
 
