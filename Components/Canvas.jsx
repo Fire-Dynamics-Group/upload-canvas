@@ -45,7 +45,7 @@ function Canvas({tool, dimensions}) {
             console.log("keydown event: ",event, isDrawing, currentPoly)
 
             if (isDrawing && currentPoly.length > 0) { // and tool == polyline
-                setGuideLine({x: event.screenX, y: event.screenY})
+                setGuideLine({x: event.pageX, y: event.pageY})
             } else {
                 setGuideLine(null)
             }
