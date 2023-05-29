@@ -87,7 +87,7 @@ export default function Home() {
       </div>
       <div>
         { selectedFile ? (<>
-          <Canvas/>
+          <Canvas tool={"polyline"} dimensions={canvasDimensions}/>
         </>
         ) : <div> Please upload image </div>}
         <canvas 
