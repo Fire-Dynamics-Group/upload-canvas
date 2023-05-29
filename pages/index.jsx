@@ -1,14 +1,25 @@
 import Canvas from '../Components/Canvas'
 import { useEffect, useRef, useState } from 'react'
 
-  /**  image added to background
-   *   user can add square on click on top of canvas
+  /**Features:
+   * user selects pdf image  
+   * pdf added to background
+   * user can draw polyline
+   * gridlines arbitrary 
    * 
-   * TODO: allow user to upload image
-   * add button -> search files
-   * future either convert pdf to image or allow pdf upload
+   * TODO: 
+   * allow user to configure scale -> distance between two points
+   * gridlines to be calculated from scale
    * 
-   * allow user to draw on image
+   * allow mesh rectangles to be drawn
+   * ctrl for ortho lines
+   * allow naming of elements from list or similar to differentiate
+   * 
+   * FUTURE: 
+   * migrate state to zustand
+   * perhaps allow rotation of pdf?
+   * 
+   * 
    */
 
 
@@ -32,6 +43,21 @@ export default function Home() {
   const [selectedFile, setSelectedFile] = useState()
   const [ canvasDimensions, setCanvasDimensions ] = useState({})
   const pdfCanvasRef = useRef()
+
+  useEffect(() => {
+    console.log("useEffect")
+    const handleCtrlPress = ({key}) => {
+        console.log("keydown event: ",key)
+        if (key == 'Control') {
+          // setIsCtrlPressed(true)
+          console.log("true")
+        }
+    };
+    window.addEventListener("keydown", handleCtrlPress)
+    return () => {
+        window.removeEventListener("keydown", handleCtrlPress)
+    }
+}, [])
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
@@ -72,6 +98,7 @@ export default function Home() {
   };
   return (
     <>
+      {/* TODO: have label disappear when file uploaded */}
       <div>
         <label>
           <input 
