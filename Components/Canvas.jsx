@@ -12,21 +12,28 @@ function Canvas({tool, dimensions}) {
     const canvasWidth = dimensions.width
     const canvasHeight = dimensions.height
 
-    // TODO: event listener for ctrl button
+    // event listener for ctrl button
     // lines to be ortho -> check if closer to x or y ortho
     useEffect(() => {
-        console.log("useEffect")
-        // later have on key up -> remove ortho control
         const handleCtrlPress = ({key}) => {
             console.log("keydown event: ",key)
             if (key == 'Control') {
               setIsCtrlPressed(true)
-              console.log("true")
             }
         };
+        const handleCtrlRelease = ({key}) => {
+            console.log("keydown event: ",key)
+            if (key == 'Control') {
+                setIsCtrlPressed(false)
+            }
+        };
+
         window.addEventListener("keydown", handleCtrlPress)
+        window.addEventListener("keyup", handleCtrlRelease)
+
         return () => {
             window.removeEventListener("keydown", handleCtrlPress)
+            window.removeEventListener("keyup", handleCtrlRelease)
         }
     }, [])
     useEffect(() => {
