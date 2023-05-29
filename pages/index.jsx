@@ -22,7 +22,6 @@ if (isBrowser) {
   pdfjs = require('pdfjs-dist/webpack');
 
   // Set the workerSrc
-  // pdfjs.GlobalWorkerOptions.workerSrc = '//cdnjs.cloudflare.com/ajax/libs/pdf.js/2.0.943/pdf.worker.js';
   pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.js';
 }
 
@@ -89,7 +88,7 @@ export default function Home() {
         { selectedFile ? (<>
           <Canvas tool={"polyline"} dimensions={canvasDimensions}/>
         </>
-        ) : <div> Please upload image </div>}
+        ) : <div> Please upload pdf </div>}
         <canvas 
         ref={pdfCanvasRef}
         className='z-1'
