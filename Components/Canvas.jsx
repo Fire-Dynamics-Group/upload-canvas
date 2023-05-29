@@ -11,6 +11,9 @@ function Canvas({tool, dimensions}) {
     const pixelsPerMesh = 10
     const canvasWidth = dimensions.width
     const canvasHeight = dimensions.height
+    // TODO: if drawing have line between penultimate point and cursor
+    // have state that is true when drawing is true and mouse moving -> store mouse
+    const [guideLine, setGuideLine] = useState(null)
 
     // event listener for ctrl button
     // lines to be ortho -> check if closer to x or y ortho
@@ -36,10 +39,30 @@ function Canvas({tool, dimensions}) {
             window.removeEventListener("keyup", handleCtrlRelease)
         }
     }, [])
+
+    useEffect(() => {
+        const handleMouseMove = (event) => {
+            console.log("keydown event: ",event, isDrawing, currentPoly)
+
+            if (isDrawing && currentPoly.length > 0) { // and tool == polyline
+                setGuideLine({x: event.screenX, y: event.screenY})
+            } else {
+                setGuideLine(null)
+            }
+        };
+
+        window.addEventListener("mousemove", handleMouseMove)
+
+        return () => {
+            window.removeEventListener("mousemove", handleMouseMove)
+        }
+    }, [isDrawing, currentPoly])
+    // drawing loop below
     useEffect(() => {
         // TODO: need to add finished polygon or points to object array
         const canvas = canvasRef.current
         const context = canvas.getContext('2d')
+        
         context.clearRect(0, 0, canvas.width, canvas.height)
 
         // later for each element
@@ -62,7 +85,16 @@ function Canvas({tool, dimensions}) {
             }
 
         }
-    }, [currentPoly])
+        console.log("guidline: ", guideLine)
+        if (guideLine != null) {
+            // line from last polypoint to guideline
+            let prev = currentPoly[currentPoly.length-1]
+            let current = guideLine
+            context.moveTo(prev.x, prev.y)
+            context.lineTo(current.x, current.y)
+            context.stroke()            
+        }
+    }, [currentPoly, guideLine])
 
     function snapVertexOrtho(vertex, prevVertex) {
         // check if diff is greater in x or y between vertices
@@ -119,7 +151,7 @@ function Canvas({tool, dimensions}) {
             // 
         }
     }
-// TODO: move gridline canvas to own component
+// TODO: gridlines only shown after scale
   return (
   <>
     <Gridlines pixelsPerMesh={pixelsPerMesh} dimensions={dimensions}/>
