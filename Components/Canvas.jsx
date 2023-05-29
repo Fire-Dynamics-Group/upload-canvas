@@ -90,11 +90,14 @@ function Canvas({tool, dimensions}) {
             // line from last polypoint to guideline
             let prev = currentPoly[currentPoly.length-1]
             let current = guideLine
+            if (isCtrlPressed){
+                current = snapVertexOrtho(current, prev)
+            }
             context.moveTo(prev.x, prev.y)
             context.lineTo(current.x, current.y)
             context.stroke()            
         }
-    }, [currentPoly, guideLine])
+    }, [currentPoly, guideLine, isCtrlPressed])
 
     function snapVertexOrtho(vertex, prevVertex) {
         // check if diff is greater in x or y between vertices
