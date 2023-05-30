@@ -1,12 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Gridlines from './Gridlines'
 
 // eslint-disable-next-line react/prop-types
 function Canvas({tool, dimensions}) {
     console.log(dimensions)
     const [currentPoly, setCurrentPoly] = useState([])
+    const [elements, setElements] = useState([])
     const [isDrawing, setIsDrawing] = useState(false)
+    
+    // TODO: have a keyPressed useState -> with which key
     const [isCtrlPressed, setIsCtrlPressed] = useState(false)
+    // on enter -> isDrawing = false
+    // add polyline to state
+    // add type of line -> include in useLayoutEffect canvas rendering
+    const [isEnterPressed, setIsEnterPressed] = useState(false)
     const canvasRef = useRef(null)
     const pixelsPerMesh = 10
     const canvasWidth = dimensions.width
@@ -18,31 +25,61 @@ function Canvas({tool, dimensions}) {
     // event listener for ctrl button
     // lines to be ortho -> check if closer to x or y ortho
     useEffect(() => {
-        const handleCtrlPress = ({key}) => {
-            console.log("keydown event: ",key)
+        const handleKeyPress = ({key}) => {
             if (key == 'Control') {
-              setIsCtrlPressed(true)
+                setIsCtrlPressed(true)
             }
+            // "Enter"
+            if (key == 'Enter') {
+                console.log("keydown event: ",key, elements)
+                // why is this only being hit sometimes??
+                function addElementToState() {
+                    let type = "polyline"
+                    let comments = "Common Corridor Obstructions"
+                    if (currentPoly.length > 0 ) {
+                        let current_el = {
+                            "type": type,
+                            "points": currentPoly,
+                            "comments": comments
+                        }
+                        console.log("current_el: ", current_el
+                        )
+                        setElements(prev => [...prev, current_el])
+                        setIsDrawing(false)
+                        setCurrentPoly([])
+                    }
+                }
+
+                // action adding polyline to state if applicable
+                // clear current poly
+                addElementToState()
+                setIsEnterPressed(true)
+                
+              }
         };
         const handleCtrlRelease = ({key}) => {
-            console.log("keydown event: ",key)
+            console.log("keyup event: ",key)
             if (key == 'Control') {
                 setIsCtrlPressed(false)
             }
+            // "Enter"
+            if (key == 'Enter') {
+                setIsEnterPressed(false)
+                }
         };
 
-        window.addEventListener("keydown", handleCtrlPress)
+        window.addEventListener("keydown", handleKeyPress)
         window.addEventListener("keyup", handleCtrlRelease)
 
         return () => {
-            window.removeEventListener("keydown", handleCtrlPress)
+            window.removeEventListener("keydown", handleKeyPress)
             window.removeEventListener("keyup", handleCtrlRelease)
         }
-    }, [])
+    }, [elements, currentPoly])
 
     useEffect(() => {
         const handleMouseMove = (event) => {
-            console.log("keydown event: ",event, isDrawing, currentPoly)
+            // console.log("mouse event: ",event, isDrawing, currentPoly)
 
             if (isDrawing && currentPoly.length > 0) { // and tool == polyline
                 setGuideLine({x: event.pageX, y: event.pageY})
@@ -58,46 +95,59 @@ function Canvas({tool, dimensions}) {
         }
     }, [isDrawing, currentPoly])
     // drawing loop below
-    useEffect(() => {
+    useLayoutEffect(() => {
         // TODO: need to add finished polygon or points to object array
         const canvas = canvasRef.current
         const context = canvas.getContext('2d')
         
         context.clearRect(0, 0, canvas.width, canvas.height)
 
-        // later for each element
+        function drawPolyline(points, context) {
+            for (let i=0; i<points.length; i++) {
+                // draw vertex
+                let dimension = 10
+                context.fillStyle = 'green'
+                context.fillRect(points[i].x - dimension/2, points[i].y - dimension/2, dimension, dimension)  
+    
+                // if i> 0 draw lines between points
+                if (i == 0){
+                context.beginPath()}
+                if (i > 0) {
+                    let prev = points[i-1]
+                    let current = points[i]
+                    context.moveTo(prev.x, prev.y)
+                    context.lineTo(current.x, current.y)
+                    context.stroke()
+                }
+    
+            }            
+        }
+        // later for each element in state
         // loop through polypoints
-        for (let i=0; i<currentPoly.length; i++) {
-            // draw vertex
-            let dimension = 10
-            context.fillStyle = 'green'
-            context.fillRect(currentPoly[i].x - dimension/2, currentPoly[i].y - dimension/2, dimension, dimension)  
-
-            // if i> 0 draw lines between points
-            if (i == 0){
-            context.beginPath()}
-            if (i > 0) {
-                let prev = currentPoly[i-1]
-                let current = currentPoly[i]
+        if (isDrawing) {
+            drawPolyline(currentPoly, context)
+            console.log("guidline: ", guideLine)
+            if (guideLine != null) {
+                // line from last polypoint to guideline
+                let prev = currentPoly[currentPoly.length-1]
+                let current = guideLine
+                if (isCtrlPressed){
+                    current = snapVertexOrtho(current, prev)
+                }
                 context.moveTo(prev.x, prev.y)
                 context.lineTo(current.x, current.y)
-                context.stroke()
+                context.stroke()            
             }
 
         }
-        console.log("guidline: ", guideLine)
-        if (guideLine != null) {
-            // line from last polypoint to guideline
-            let prev = currentPoly[currentPoly.length-1]
-            let current = guideLine
-            if (isCtrlPressed){
-                current = snapVertexOrtho(current, prev)
-            }
-            context.moveTo(prev.x, prev.y)
-            context.lineTo(current.x, current.y)
-            context.stroke()            
-        }
-    }, [currentPoly, guideLine, isCtrlPressed])
+
+        // all historical elements
+        elements.forEach(element => {
+            console.log("element: ", element)
+            drawPolyline(element.points, context)
+        })
+
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements])
 
     function snapVertexOrtho(vertex, prevVertex) {
         // check if diff is greater in x or y between vertices

@@ -44,20 +44,6 @@ export default function Home() {
   const [ canvasDimensions, setCanvasDimensions ] = useState({})
   const pdfCanvasRef = useRef()
 
-  useEffect(() => {
-    console.log("useEffect")
-    const handleCtrlPress = ({key}) => {
-        console.log("keydown event: ",key)
-        if (key == 'Control') {
-          // setIsCtrlPressed(true)
-          console.log("true")
-        }
-    };
-    window.addEventListener("keydown", handleCtrlPress)
-    return () => {
-        window.removeEventListener("keydown", handleCtrlPress)
-    }
-}, [])
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
