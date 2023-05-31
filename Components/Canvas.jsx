@@ -3,7 +3,7 @@ import Gridlines from './Gridlines'
 import ScalePopup from './ScalePopup'
 
 // eslint-disable-next-line react/prop-types
-function Canvas({tool, dimensions}) {
+function Canvas({tool, setTool, dimensions}) {
     console.log(tool)
     const [currentPoly, setCurrentPoly] = useState([])
     const [elements, setElements] = useState([])
@@ -121,6 +121,8 @@ function Canvas({tool, dimensions}) {
         setPixelsPerMesh(temp)
         setHasScale(true)
         setShowPopup(false)
+        // change from scale mode to drawing mode
+        setTool("polyline")
     }
     // useEffect(() => {
     //     // calc distance of scale line drawn

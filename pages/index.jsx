@@ -22,7 +22,6 @@ import { useEffect, useRef, useState } from 'react'
    * 
    */
 
-
 // Check if we're in the browser environment
 const isBrowser = typeof window !== "undefined";
 
@@ -44,6 +43,7 @@ export default function Home() {
   const [ canvasDimensions, setCanvasDimensions ] = useState({})
   const pdfCanvasRef = useRef()
 
+  const [tool, setTool] = useState("scale")
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
@@ -102,7 +102,7 @@ export default function Home() {
       </div>
       <div>
         { selectedFile ? (<>
-          <Canvas tool={"scale"} dimensions={canvasDimensions}/>
+          <Canvas tool={tool} setTool={setTool} dimensions={canvasDimensions}/>
         </>
         ) : <div> Please upload pdf </div>}
         <canvas 
