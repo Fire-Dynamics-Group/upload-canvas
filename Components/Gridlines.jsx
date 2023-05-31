@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 
 // TODO: send in 
 // eslint-disable-next-line react/prop-types
-function Gridlines({pixelsPerMesh, dimensions}) {
+function Gridlines({pixelsPerMesh, dimensions, hasScale}) {
     console.log(dimensions, "grid")
     const canvasRef = useRef(null)
     const canvasWidth = dimensions.width
@@ -17,28 +17,30 @@ function Gridlines({pixelsPerMesh, dimensions}) {
         // FUTURE: recalc gridlines depending on viewport
         // allow zoom and pan of pdf floor plan
         // all gridlines
+        if (hasScale) {
 
-        let rows = Math.floor(canvas.height / pixelsPerMesh)
-
-        context.lineWidth = 0.2
-        for (let i=0; i<rows; i++) {
-            // later make 1 long svg -> may have issue removing particular points
-            let path_text = 'M 0,' + `${(i+1)*pixelsPerMesh}` + ' h ' + canvas.width + ' '
-            let path = new Path2D(path_text);
-            context.stroke(path);
-
+            let rows = Math.floor(canvas.height / pixelsPerMesh)
+    
+            context.lineWidth = 0.2
+            for (let i=0; i<rows; i++) {
+                // later make 1 long svg -> may have issue removing particular points
+                let path_text = 'M 0,' + `${(i+1)*pixelsPerMesh}` + ' h ' + canvas.width + ' '
+                let path = new Path2D(path_text);
+                context.stroke(path);
+    
+            }
+            let cols = Math.floor(canvas.width / pixelsPerMesh)
+    
+            context.lineWidth = 0.2
+            for (let i=0; i<cols; i++) {
+                // later make 1 long svg -> may have issue removing particular points
+                let path_text = `M ${(i+1)*pixelsPerMesh}, 0, v ${canvas.width}`
+                let path = new Path2D(path_text);
+                context.stroke(path);
+    
+            }
         }
-        let cols = Math.floor(canvas.width / pixelsPerMesh)
-
-        context.lineWidth = 0.2
-        for (let i=0; i<cols; i++) {
-            // later make 1 long svg -> may have issue removing particular points
-            let path_text = `M ${(i+1)*10}, 0, v ${canvas.width}`
-            let path = new Path2D(path_text);
-            context.stroke(path);
-
-        }
-    }, [])
+    }, [pixelsPerMesh, hasScale])
 
 // should be width and height of image
   return (

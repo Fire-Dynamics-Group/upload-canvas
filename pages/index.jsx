@@ -82,6 +82,8 @@ export default function Home() {
       loadPdf();
     }
   };
+
+
   return (
     <>
       {/* TODO: have label disappear when file uploaded */}
@@ -96,10 +98,11 @@ export default function Home() {
           />
         </label>
 
+
       </div>
       <div>
         { selectedFile ? (<>
-          <Canvas tool={"polyline"} dimensions={canvasDimensions}/>
+          <Canvas tool={"scale"} dimensions={canvasDimensions}/>
         </>
         ) : <div> Please upload pdf </div>}
         <canvas 

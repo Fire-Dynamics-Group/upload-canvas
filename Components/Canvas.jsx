@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Gridlines from './Gridlines'
+import ScalePopup from './ScalePopup'
 
 // eslint-disable-next-line react/prop-types
 function Canvas({tool, dimensions}) {
-    console.log(dimensions)
+    console.log(tool)
     const [currentPoly, setCurrentPoly] = useState([])
     const [elements, setElements] = useState([])
     const [isDrawing, setIsDrawing] = useState(false)
@@ -15,15 +16,25 @@ function Canvas({tool, dimensions}) {
     // add type of line -> include in useLayoutEffect canvas rendering
     const [isEnterPressed, setIsEnterPressed] = useState(false)
     const canvasRef = useRef(null)
-    const pixelsPerMesh = 10
+    // const pixelsPerMesh = 10 // calc from scale
+    const [pixelsPerMesh, setPixelsPerMesh] = useState(1)
+    const [hasScale, setHasScale] = useState(false)
+    const [scalePoints, setScalePoints] = useState([])
     const canvasWidth = dimensions.width
     const canvasHeight = dimensions.height
     // TODO: if drawing have line between penultimate point and cursor
     // have state that is true when drawing is true and mouse moving -> store mouse
     const [guideLine, setGuideLine] = useState(null)
 
+    // below logic for popup
+    const [showPopup, setShowPopup] = useState(false)
+    const [scaleDistance, setScaleDistance] = useState(null)
+
+    console.log("scaleDistance: ", scaleDistance)      
+
     // event listener for ctrl button
     // lines to be ortho -> check if closer to x or y ortho
+    // LATER: move keypress to own component -> send back keys pressed or keyup
     useEffect(() => {
         const handleKeyPress = ({key}) => {
             if (key == 'Control') {
@@ -77,11 +88,12 @@ function Canvas({tool, dimensions}) {
         }
     }, [elements, currentPoly])
 
+    // LATER: move to own component -> sends back null or position object
     useEffect(() => {
-        const handleMouseMove = (event) => {
-            // console.log("mouse event: ",event, isDrawing, currentPoly)
 
-            if (isDrawing && currentPoly.length > 0) { // and tool == polyline
+        const handleMouseMove = (event) => {
+            // currentElement should have type and can include scale
+            if (isDrawing && currentPoly.length > 0 || tool === 'scale' && scalePoints.length == 1) { // and tool == polyline
                 setGuideLine({x: event.pageX, y: event.pageY})
             } else {
                 setGuideLine(null)
@@ -93,7 +105,27 @@ function Canvas({tool, dimensions}) {
         return () => {
             window.removeEventListener("mousemove", handleMouseMove)
         }
-    }, [isDrawing, currentPoly])
+    }, [isDrawing, currentPoly, scalePoints.length, tool])
+
+    function distance(p1, p2) {
+        let a = p1.x - p2.x
+        let b = p1.y - p2.y
+        return Math.sqrt( a*a + b*b );
+    }
+    function handleScaleInput(inputDistance) {
+        let scaleDistance = inputDistance
+        let desiredScale = 0.1 //m - later be changeable
+        let pixels = distance(scalePoints[0], scalePoints[1])
+        let temp = pixels / (scaleDistance / desiredScale)
+        // delta gridlines
+        setPixelsPerMesh(temp)
+        setHasScale(true)
+        setShowPopup(false)
+    }
+    // useEffect(() => {
+    //     // calc distance of scale line drawn
+
+    // }, [scaleDistance, scalePoints])
     // drawing loop below
     useLayoutEffect(() => {
         // TODO: need to add finished polygon or points to object array
@@ -122,32 +154,41 @@ function Canvas({tool, dimensions}) {
     
             }            
         }
-        // later for each element in state
-        // loop through polypoints
+        // loop through current polypoints
         if (isDrawing) {
-            drawPolyline(currentPoly, context)
-            console.log("guidline: ", guideLine)
-            if (guideLine != null) {
-                // line from last polypoint to guideline
-                let prev = currentPoly[currentPoly.length-1]
-                let current = guideLine
-                if (isCtrlPressed){
-                    current = snapVertexOrtho(current, prev)
+                // should be current element with type and points object
+                function drawPolyAndGuide(poly) {
+
+                    drawPolyline(poly, context)
+                    console.log("guidline: ", guideLine)
+                    if (guideLine != null) {
+                        // line from last polypoint to guideline
+                        let prev = poly[poly.length-1]
+                        let current = guideLine
+                        if (isCtrlPressed){
+                            current = snapVertexOrtho(current, prev)
+                        }
+                        context.moveTo(prev.x, prev.y)
+                        context.lineTo(current.x, current.y)
+                        context.stroke()            
+                    }
                 }
-                context.moveTo(prev.x, prev.y)
-                context.lineTo(current.x, current.y)
-                context.stroke()            
-            }
+                if (tool === 'polyline') {
+                    drawPolyAndGuide(currentPoly)
+                } else if (tool === 'scale') {
+                    drawPolyAndGuide(scalePoints)
+                }
 
         }
 
         // all historical elements
+        // later have different logic for different line types
         elements.forEach(element => {
             console.log("element: ", element)
             drawPolyline(element.points, context)
         })
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool])
 
     function snapVertexOrtho(vertex, prevVertex) {
         // check if diff is greater in x or y between vertices
@@ -165,7 +206,7 @@ function Canvas({tool, dimensions}) {
 
     }
     function snapVertexToGrid(vertex) {
-        // snap to grid using pixels per mesh
+        // snap to grid using pixels per mesh -> use 1
         vertex.x = (Math.round(vertex.x / pixelsPerMesh)) * pixelsPerMesh
         vertex.y = (Math.round(vertex.y / pixelsPerMesh)) * pixelsPerMesh
 
@@ -203,11 +244,46 @@ function Canvas({tool, dimensions}) {
             setCurrentPoly((prev) => [...prev, newP])
             // 
         }
+        else if (tool === 'scale') {
+            if (scalePoints.length < 2) {
+                // if (scalePoints.length == 1) {
+                    
+                // }
+                let prevIndex = scalePoints.length
+                setIsDrawing(true) // drawing set to false on press of enter or return to origin
+    
+                // if not first vertex -> draw line from last index to vertex (on mousemove)
+                // only allow two dots and then enter length
+                // draw vertex
+                let dimension = 10
+                context.fillStyle = 'red'
+                let newP = {x: event.pageX, y: event.pageY}
+                // if ctrl pressed -> next point ortho
+                if (isCtrlPressed && currentPoly.length > 0) { // and not first point
+                    newP = snapVertexOrtho(newP, currentPoly[currentPoly.length-1])
+                }
+                newP = snapVertexToGrid(newP)
+                context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)  
+                // add point to currentPoly
+                setScalePoints((prev) => [...prev, newP]) 
+                console.log("prevIndex: ", prevIndex)
+                // hopefully second point has registered
+                if (prevIndex == 1) {
+                    // action pop up
+                    setShowPopup(true)
+                }
+
+            }
+            // else allow to restart scale process
+        }
     }
 // TODO: gridlines only shown after scale
   return (
   <>
-    <Gridlines pixelsPerMesh={pixelsPerMesh} dimensions={dimensions}/>
+    {showPopup && (
+        <ScalePopup setScale={handleScaleInput} />
+      )}   
+    <Gridlines pixelsPerMesh={pixelsPerMesh} dimensions={dimensions} hasScale={hasScale}/>
       <canvas 
       ref={canvasRef}
       width={canvasWidth} // pass in width and height as props
