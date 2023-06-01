@@ -71,9 +71,7 @@ function Canvas({tool, setTool, dimensions, isDevMode}) {
                             setElements(prev => [...prev, current_el])
                             setIsDrawing(false)
                             setCurrentPoly([])
-                            if (isDevMode) {
-                                setTool("rect")
-                            }
+
                         }
                     }
                 }
@@ -122,7 +120,7 @@ function Canvas({tool, setTool, dimensions, isDevMode}) {
         return () => {
             window.removeEventListener("mousemove", handleMouseMove)
         }
-    }, [isDrawing, currentPoly, scalePoints.length, tool])
+    }, [isDrawing, currentPoly, scalePoints.length, tool, currentRect])
 
     function distance(p1, p2) {
         let a = p1.x - p2.x
@@ -373,6 +371,33 @@ function Canvas({tool, setTool, dimensions, isDevMode}) {
             // else allow to restart scale process
         }
     }
+    const topButtons = (          
+        <>
+              <input
+                type="radio"
+                id="selection"
+                checked={tool === "selection"}
+                onChange={() => setTool("selection")}
+              />
+              <label htmlFor="selection">Selection</label>
+              <input type="radio" id="line" checked={tool === "polyline"} onChange={() => setTool("polyline")} />
+              <label htmlFor="line">Line</label>
+              <input
+                type="radio"
+                id="rectangle"
+                checked={tool === "rect"}
+                onChange={() => setTool("rect")}
+              />
+              <label htmlFor="rectangle">Rectangle</label>
+              <input
+                type="radio"
+                id="pencil"
+                checked={tool === "point"}
+                onChange={() => setTool("point")}
+              />
+              <label htmlFor="pencil">Pencil</label>
+        </>
+        )
     // if (isDevMode) {
     //     let pxPerMesh = 10
     //     let tool = 'polyline'
@@ -385,7 +410,12 @@ function Canvas({tool, setTool, dimensions, isDevMode}) {
       )}   
     <Gridlines pixelsPerMesh={pixelsPerMesh} dimensions={dimensions} hasScale={hasScale}/>
     {/* fdrobot should be on top of everything else */}
-    {tool == 'scale' ? <FDRobot hintText={'Set scale: Draw two points where the distance between is known. Hold ctrl to activate ortho mode.'}/> : null}
+    {/* {menuOverlay} */}
+    {tool == 'scale' ? <FDRobot hintText={'Set scale: Draw two points where the distance between is known. Hold ctrl to activate ortho mode.'}/> : <>
+    {topButtons}
+    </>
+    }
+    
       <canvas 
       ref={canvasRef}
       width={canvasWidth} // pass in width and height as props
