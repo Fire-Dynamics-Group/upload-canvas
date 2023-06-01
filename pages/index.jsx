@@ -38,6 +38,8 @@ if (isBrowser) {
 }
 
 export default function Home({dirs}) {
+  // console.log("process.env.DEV_MODE: ", process.env.DEV_MODE)
+  let dev_mode = true
   // states for uploading file
   const [uploading, setUploading] = useState(false)
   const [selectedImage, setSelectedImage] = useState("")
@@ -104,7 +106,7 @@ export default function Home({dirs}) {
       </div>
       <div>
         { selectedFile ? (<>
-          <Canvas tool={tool} setTool={setTool} dimensions={canvasDimensions}/>
+          <Canvas tool={tool} setTool={setTool} dimensions={canvasDimensions} isDevMode={dev_mode} />
         </>
         ) : 
           

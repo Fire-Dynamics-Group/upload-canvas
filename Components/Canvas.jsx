@@ -4,9 +4,12 @@ import ScalePopup from './ScalePopup'
 import FDRobot from './FDRobot'
 
 // eslint-disable-next-line react/prop-types
-function Canvas({tool, setTool, dimensions}) {
+function Canvas({tool, setTool, dimensions, isDevMode}) {
     console.log(tool)
+    // TODO: have currentElement array with {} including type etc like elements
     const [currentPoly, setCurrentPoly] = useState([])
+    const [currentRect, setCurrentRect] = useState([])
+
     const [elements, setElements] = useState([])
     const [isDrawing, setIsDrawing] = useState(false)
     
@@ -33,6 +36,13 @@ function Canvas({tool, setTool, dimensions}) {
 
     console.log("scaleDistance: ", scaleDistance)      
 
+    function returnElementObject(type, pointsArray, comments) {
+        return {
+            "type": type,
+            "points": pointsArray,
+            "comments": comments
+        }        
+    }
     // event listener for ctrl button
     // lines to be ortho -> check if closer to x or y ortho
     // LATER: move keypress to own component -> send back keys pressed or keyup
@@ -48,17 +58,23 @@ function Canvas({tool, setTool, dimensions}) {
                 function addElementToState() {
                     let type = "polyline"
                     let comments = "Common Corridor Obstructions"
-                    if (currentPoly.length > 0 ) {
-                        let current_el = {
-                            "type": type,
-                            "points": currentPoly,
-                            "comments": comments
+                    if (tool == 'polyline') {
+                        if (currentPoly.length > 0 ) {
+                            let current_el = {
+                                "type": type,
+                                "points": currentPoly,
+                                "comments": comments
+                            }
+                            console.log("current_el: ", current_el
+                            )
+
+                            setElements(prev => [...prev, current_el])
+                            setIsDrawing(false)
+                            setCurrentPoly([])
+                            if (isDevMode) {
+                                setTool("rect")
+                            }
                         }
-                        console.log("current_el: ", current_el
-                        )
-                        setElements(prev => [...prev, current_el])
-                        setIsDrawing(false)
-                        setCurrentPoly([])
                     }
                 }
 
@@ -87,14 +103,14 @@ function Canvas({tool, setTool, dimensions}) {
             window.removeEventListener("keydown", handleKeyPress)
             window.removeEventListener("keyup", handleCtrlRelease)
         }
-    }, [elements, currentPoly])
+    }, [elements, currentPoly, tool, setTool, isDevMode])
 
     // LATER: move to own component -> sends back null or position object
     useEffect(() => {
-
+        // TODO: guide rect for meshes
         const handleMouseMove = (event) => {
             // currentElement should have type and can include scale
-            if (isDrawing && currentPoly.length > 0 || tool === 'scale' && scalePoints.length == 1) { // and tool == polyline
+            if (isDrawing && currentPoly.length > 0 || tool === 'scale' && scalePoints.length == 1 || tool === 'rect' && currentRect.length == 1) { // and tool == polyline
                 setGuideLine({x: event.pageX, y: event.pageY})
             } else {
                 setGuideLine(null)
@@ -113,17 +129,21 @@ function Canvas({tool, setTool, dimensions}) {
         let b = p1.y - p2.y
         return Math.sqrt( a*a + b*b );
     }
+
+    function deltaGridlines(pxPerMesh, tool) { // actioned if debug mode and after scale set normally
+        setPixelsPerMesh(pxPerMesh)
+        setHasScale(true)
+        setShowPopup(false)
+        // change from scale mode to drawing mode
+        setTool(tool)
+    }
+
     function handleScaleInput(inputDistance) {
         let scaleDistance = inputDistance
         let desiredScale = 0.1 //m - later be changeable
         let pixels = distance(scalePoints[0], scalePoints[1])
         let temp = pixels / (scaleDistance / desiredScale)
-        // delta gridlines
-        setPixelsPerMesh(temp)
-        setHasScale(true)
-        setShowPopup(false)
-        // change from scale mode to drawing mode
-        setTool("polyline")
+        deltaGridlines(temp, 'polyline')
     }
     // useEffect(() => {
     //     // calc distance of scale line drawn
@@ -136,6 +156,30 @@ function Canvas({tool, setTool, dimensions}) {
         const context = canvas.getContext('2d')
         
         context.clearRect(0, 0, canvas.width, canvas.height)
+
+        function drawRect(points, context) {
+            // same for guide 
+            // LATER: just without green point at second point
+            // corners below line so line is visible
+            // for (let i=0; i<points.length; i++) {
+            //     // draw vertex
+            //     let dimension = 10
+            //     context.fillStyle = 'green'
+            //     context.fillRect(points[i].x - dimension/2, points[i].y - dimension/2, dimension, dimension)
+            // }
+            // always 2 points
+            // draw rect
+                // ctx.strokeRect(50, 50, 200, 100); // x, y, width, height
+            console.log("points: ", points)
+            let p1 = points[0]
+            let p2 = points[1]
+            let deltaX = p2.x - p1.x
+            let deltaY = p2.y - p1.y
+            context.strokeStyle = 'blue'
+            // context.lineWidth = 2;
+            context.strokeRect(p1.x, p1.y, deltaX, deltaY)
+
+        }
 
         function drawPolyline(points, context) {
             for (let i=0; i<points.length; i++) {
@@ -150,6 +194,7 @@ function Canvas({tool, setTool, dimensions}) {
                 if (i > 0) {
                     let prev = points[i-1]
                     let current = points[i]
+                    context.strokeStyle = 'black'
                     context.moveTo(prev.x, prev.y)
                     context.lineTo(current.x, current.y)
                     context.stroke()
@@ -176,10 +221,22 @@ function Canvas({tool, setTool, dimensions}) {
                         context.stroke()            
                     }
                 }
+                console.log("hits here")
                 if (tool === 'polyline') {
                     drawPolyAndGuide(currentPoly)
                 } else if (tool === 'scale') {
                     drawPolyAndGuide(scalePoints)
+                } else if (tool == 'rect') {
+                    console.log("rect drawing: ", currentRect)
+                    if (currentRect.length == 1) {
+                        // use guide for mousePosition
+                        if (guideLine != null) {
+
+                            // have guide point for rect -> send to draw rect
+                            let rectPoints = [currentRect[0], guideLine]
+                            drawRect(rectPoints, context)
+                        }
+                    }
                 }
 
         }
@@ -188,10 +245,15 @@ function Canvas({tool, setTool, dimensions}) {
         // later have different logic for different line types
         elements.forEach(element => {
             console.log("element: ", element)
-            drawPolyline(element.points, context)
+            if (element.type == 'polyline' || element.type == 'scale') {
+
+                drawPolyline(element.points, context)
+            } else if (element.type == 'rect') {
+                drawRect(element.points, context)
+            }
         })
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect])
 
     function snapVertexOrtho(vertex, prevVertex) {
         // check if diff is greater in x or y between vertices
@@ -246,6 +308,37 @@ function Canvas({tool, setTool, dimensions}) {
             // add point to currentPoly
             setCurrentPoly((prev) => [...prev, newP])
             // 
+        } else if(tool === 'rect') {
+            setIsDrawing(true)
+            context.fillStyle = 'blue'
+
+            let dimension = 5
+
+            let newP = {x: event.pageX, y: event.pageY}
+            if (currentRect.length == 0) {
+                newP = snapVertexToGrid(newP)
+
+                // on first point
+                    // add first point to state
+                    // guidelines of rect
+                setCurrentRect([newP])
+            } else if (currentRect.length > 0){
+                console.log("currentRect: ", currentRect)
+            // on second point
+            // newP = snapVertexOrtho(newP, currentRect[0])
+                // snap to grid
+                newP = snapVertexToGrid(newP)
+                let pointsArray = [currentRect[0], newP]
+                let comments = "mesh"
+                // add to elements state
+                let currentEl = returnElementObject(tool, pointsArray, comments)
+                setElements(prev => [...prev, currentEl])
+                // set current rect to []
+                setCurrentRect([])
+                setIsDrawing(false)
+            }
+
+            context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)        
         }
         else if (tool === 'scale') {
             if (scalePoints.length < 2) {
@@ -280,7 +373,11 @@ function Canvas({tool, setTool, dimensions}) {
             // else allow to restart scale process
         }
     }
-// TODO: gridlines only shown after scale
+    // if (isDevMode) {
+    //     let pxPerMesh = 10
+    //     let tool = 'polyline'
+    //     deltaGridlines(pxPerMesh, tool)
+    // }
   return (
   <>
     {showPopup && (
