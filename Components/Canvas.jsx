@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Gridlines from './Gridlines'
 import ScalePopup from './ScalePopup'
+import FDRobot from './FDRobot'
 
 // eslint-disable-next-line react/prop-types
 function Canvas({tool, setTool, dimensions}) {
@@ -283,9 +284,11 @@ function Canvas({tool, setTool, dimensions}) {
   return (
   <>
     {showPopup && (
-        <ScalePopup setScale={handleScaleInput} />
+        <ScalePopup handleScaleInput={handleScaleInput} />
       )}   
     <Gridlines pixelsPerMesh={pixelsPerMesh} dimensions={dimensions} hasScale={hasScale}/>
+    {/* fdrobot should be on top of everything else */}
+    {tool == 'scale' ? <FDRobot hintText={'Set scale: Draw two points where the distance between is known. Hold ctrl to activate ortho mode.'}/> : null}
       <canvas 
       ref={canvasRef}
       width={canvasWidth} // pass in width and height as props

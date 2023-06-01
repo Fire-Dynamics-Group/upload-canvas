@@ -1,11 +1,11 @@
 import { useRef } from "react";
 
-const ScalePopup = ({setScale}) => {
+const ScalePopup = ({handleScaleInput}) => {
     const scaleInput = useRef()
     function handleScale() {
-        console.log("scaleInput", scaleInput.current.value)
-        // setScale(scaleInput.text)
-        setScale(scaleInput.current.value)
+        console.log("scaleInput", scaleInput.current.value, handleScaleInput)
+        // handleScaleInput(scaleInput.text)
+        handleScaleInput(scaleInput.current.value)
 
     }
     return (

@@ -1,5 +1,7 @@
+import Image from 'next/image';
 import Canvas from '../Components/Canvas'
 import { useEffect, useRef, useState } from 'react'
+import FDRobot from '../Components/FDRobot'
 
   /**Features:
    * user selects pdf image  
@@ -35,7 +37,7 @@ if (isBrowser) {
   pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.js';
 }
 
-export default function Home() {
+export default function Home({dirs}) {
   // states for uploading file
   const [uploading, setUploading] = useState(false)
   const [selectedImage, setSelectedImage] = useState("")
@@ -104,7 +106,11 @@ export default function Home() {
         { selectedFile ? (<>
           <Canvas tool={tool} setTool={setTool} dimensions={canvasDimensions}/>
         </>
-        ) : <div> Please upload pdf </div>}
+        ) : 
+          
+              <FDRobot hintText={'Please upload PDF'} />
+              
+              }
         <canvas 
         ref={pdfCanvasRef}
         className='z-1'
@@ -123,3 +129,4 @@ export default function Home() {
 //   } catch (error) {
 //     return { props };
 //   }
+// }
