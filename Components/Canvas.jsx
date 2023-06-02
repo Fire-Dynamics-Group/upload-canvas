@@ -371,33 +371,7 @@ function Canvas({tool, setTool, dimensions, isDevMode}) {
             // else allow to restart scale process
         }
     }
-    const topButtons = (          
-        <>
-              <input
-                type="radio"
-                id="selection"
-                checked={tool === "selection"}
-                onChange={() => setTool("selection")}
-              />
-              <label htmlFor="selection">Selection</label>
-              <input type="radio" id="line" checked={tool === "polyline"} onChange={() => setTool("polyline")} />
-              <label htmlFor="line">Line</label>
-              <input
-                type="radio"
-                id="rectangle"
-                checked={tool === "rect"}
-                onChange={() => setTool("rect")}
-              />
-              <label htmlFor="rectangle">Rectangle</label>
-              <input
-                type="radio"
-                id="pencil"
-                checked={tool === "point"}
-                onChange={() => setTool("point")}
-              />
-              <label htmlFor="pencil">Pencil</label>
-        </>
-        )
+
     // if (isDevMode) {
     //     let pxPerMesh = 10
     //     let tool = 'polyline'
@@ -412,7 +386,6 @@ function Canvas({tool, setTool, dimensions, isDevMode}) {
     {/* fdrobot should be on top of everything else */}
     {/* {menuOverlay} */}
     {tool == 'scale' ? <FDRobot hintText={'Set scale: Draw two points where the distance between is known. Hold ctrl to activate ortho mode.'}/> : <>
-    {topButtons}
     </>
     }
     

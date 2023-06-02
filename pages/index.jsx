@@ -8,13 +8,13 @@ import FDRobot from '../Components/FDRobot'
    * pdf added to background
    * user can draw polyline
    * gridlines arbitrary 
-   * 
-   * TODO: 
    * allow user to configure scale -> distance between two points
    * gridlines to be calculated from scale
-   * 
    * allow mesh rectangles to be drawn
    * ctrl for ortho lines
+   * points can be drawn
+   * 
+   * TODO: 
    * allow naming of elements from list or similar to differentiate
    * 
    * FUTURE: 
@@ -86,13 +86,46 @@ export default function Home({dirs}) {
       loadPdf();
     }
   };
+
   const handleButtonClick = (e) => {
     e.stopPropagation();
   };
+
+  const topButtons = (          
+    <>
+    {/* <div className='absolute z-10 z-30'> */}
+  
+          {/* <input
+            type="radio"
+            id="selection"
+            checked={tool === "selection"}
+            onChange={() => setTool("selection")}
+          /> */}
+          {/* <label htmlFor="selection">Selection</label> */}
+          <input type="radio" id="line" checked={tool === "polyline"} onChange={() => setTool("polyline")} />
+          <label htmlFor="line">Polyline</label>
+          <input
+            type="radio"
+            id="rectangle"
+            checked={tool === "rect"}
+            onChange={() => setTool("rect")}
+          />
+          <label htmlFor="rectangle">Rectangle</label>
+          <input
+            type="radio"
+            id="pencil"
+            checked={tool === "point"}
+            onChange={() => setTool("point")}
+          />
+          <label htmlFor="pencil">Point</label>
+    {/* </div> */}
+    </>
+    )
+
   const menuOverlay = (<>
-<div className="fixed bottom-0 left-0 right-0 bg-gray-800 text-white" onClick={handleButtonClick} >
+<div className="fixed bottom-0 left-0 right-0 bg-gray-800 text-white z-30 h-5vh" onClick={handleButtonClick}>
   <svg
-    className="w-full h-12"
+    className="w-full h-1"
     xmlns="http://www.w3.org/2000/svg"
     viewBox="0 0 1440 320"
     style={{ zIndex: -1 }}
@@ -106,10 +139,8 @@ export default function Home({dirs}) {
       className="fill-current bg-gray-800"
     />
   </svg>
-  <div className="flex justify-center py-4 relative z-30" style={{ zIndex: 100 }} >
-    <button className="px-4 py-2 bg-gray-900 text-white rounded-lg">Button 1</button>
-    <button className="px-4 py-2 ml-4 bg-gray-900 text-white rounded-lg">Button 2</button>
-    <button className="px-4 py-2 ml-4 bg-gray-900 text-white rounded-lg">Button 3</button>
+  <div className="flex justify-center py-4 relative absolute z-30" style={{ zIndex: 100 }} >
+    {topButtons}
   </div>
 </div>
 
@@ -120,6 +151,18 @@ export default function Home({dirs}) {
   return (
     <>
       {/* TODO: have label disappear when file uploaded */}
+      {tool != "scale" ? (<>
+      {menuOverlay} 
+      </>
+      )
+      
+      : null}
+      <div>
+        { selectedFile ? (<>
+          <Canvas tool={tool} setTool={setTool} dimensions={canvasDimensions} isDevMode={dev_mode} />
+        </>
+        ) : 
+            <>
       <div>
         <label>
           <input 
@@ -133,12 +176,6 @@ export default function Home({dirs}) {
 
 
       </div>
-      <div>
-        { selectedFile ? (<>
-          <Canvas tool={tool} setTool={setTool} dimensions={canvasDimensions} isDevMode={dev_mode} />
-        </>
-        ) : 
-            <>
               <FDRobot hintText={'Please upload PDF'} />
             </>
               
