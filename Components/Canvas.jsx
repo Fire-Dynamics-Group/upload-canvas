@@ -372,23 +372,8 @@ function Canvas({tool, setTool, dimensions, isDevMode}) {
         }
     }
 
-    // if (isDevMode) {
-    //     let pxPerMesh = 10
-    //     let tool = 'polyline'
-    //     deltaGridlines(pxPerMesh, tool)
-    // }
   return (
-  <>
-    {showPopup && (
-        <ScalePopup handleScaleInput={handleScaleInput} />
-      )}   
-    <Gridlines pixelsPerMesh={pixelsPerMesh} dimensions={dimensions} hasScale={hasScale}/>
-    {/* fdrobot should be on top of everything else */}
-    {/* {menuOverlay} */}
-    {tool == 'scale' ? <FDRobot hintText={'Set scale: Draw two points where the distance between is known. Hold ctrl to activate ortho mode.'}/> : <>
-    </>
-    }
-    
+  <>   
       <canvas 
       ref={canvasRef}
       width={canvasWidth} // pass in width and height as props

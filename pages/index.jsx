@@ -37,7 +37,7 @@ if (isBrowser) {
   pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.js';
 }
 
-export default function Home({dirs}) {
+export default function Home() {
   // console.log("process.env.DEV_MODE: ", process.env.DEV_MODE)
   let dev_mode = true
   // states for uploading file
@@ -47,7 +47,7 @@ export default function Home({dirs}) {
   const [ canvasDimensions, setCanvasDimensions ] = useState({})
   const pdfCanvasRef = useRef()
 
-  const [tool, setTool] = useState("scale")
+  const [tool, setTool] = useState("point")
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
@@ -93,7 +93,6 @@ export default function Home({dirs}) {
 
   const topButtons = (          
     <>
-    {/* <div className='absolute z-10 z-30'> */}
   
           {/* <input
             type="radio"
@@ -118,7 +117,6 @@ export default function Home({dirs}) {
             onChange={() => setTool("point")}
           />
           <label htmlFor="pencil">Point</label>
-    {/* </div> */}
     </>
     )
 
@@ -150,15 +148,9 @@ export default function Home({dirs}) {
 
   return (
     <>
-      {/* TODO: have label disappear when file uploaded */}
-      {tool != "scale" ? (<>
-      {menuOverlay} 
-      </>
-      )
-      
-      : null}
       <div>
         { selectedFile ? (<>
+          {menuOverlay} 
           <Canvas tool={tool} setTool={setTool} dimensions={canvasDimensions} isDevMode={dev_mode} />
         </>
         ) : 
@@ -189,13 +181,3 @@ export default function Home({dirs}) {
 )
 }
 
-// export const getServerSideProps= async () => {
-//   const props = { dirs: [] };
-//   try {
-//     const dirs = await fs.readdir(path.join(process.cwd(), "/public/images"));
-//     props.dirs = dirs;
-//     return { props };
-//   } catch (error) {
-//     return { props };
-//   }
-// }
