@@ -11,7 +11,21 @@ import FDRobot from './FDRobot'
  * if point & stair-> point for stair climb
  * if point & not stair -> fire (can be centre of box), inlet (can be polyline with two points)  
  * doors to be lines
+ * 
+ * colour config
+ * stair: blue
+ * other: green
+ * doors: red
 */
+const elementConfig = {
+    "obstruction": "green",
+    "mesh": "green",
+    "stairObstruction": "blue",
+    "stairMesh": "blue",
+    "door": "red",
+    "fire": "orange",
+    "scale": "green"
+}
 
 // eslint-disable-next-line react/prop-types
 function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
@@ -146,6 +160,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
         setShowPopup(false)
         // change from scale mode to drawing mode
         setTool(tool)
+        setComment("obstruction")
     }
 
     function handleScaleInput(inputDistance) {
@@ -160,6 +175,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
 
     // }, [scaleDistance, scalePoints])
     // drawing loop below
+    // TODO: have colours dependent on comments
     useLayoutEffect(() => {
         // TODO: need to add finished polygon or points to object array
         const canvas = canvasRef.current
@@ -167,7 +183,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
         
         context.clearRect(0, 0, canvas.width, canvas.height)
 
-        function drawRect(points, context) {
+        function drawRect(points, context, comments) {
             // same for guide 
             // LATER: just without green point at second point
             // corners below line so line is visible
@@ -185,17 +201,18 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             let p2 = points[1]
             let deltaX = p2.x - p1.x
             let deltaY = p2.y - p1.y
-            context.strokeStyle = 'blue'
-            // context.lineWidth = 2;
+            context.strokeStyle = elementConfig[comments] // 'blue'
+            context.lineWidth = 1.5;
             context.strokeRect(p1.x, p1.y, deltaX, deltaY)
+            context.lineWidth = 1;
 
         }
 
-        function drawPolyline(points, context) {
+        function drawPolyline(points, context, comments) {
             for (let i=0; i<points.length; i++) {
                 // draw vertex
                 let dimension = 10
-                context.fillStyle = 'green' // have config depending on comment
+                context.fillStyle = elementConfig[comments] // have config depending on comment
                 context.fillRect(points[i].x - dimension/2, points[i].y - dimension/2, dimension, dimension)  
     
                 // if i> 0 draw lines between points
@@ -217,7 +234,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                 // should be current element with type and points object
                 function drawPolyAndGuide(poly) {
 
-                    drawPolyline(poly, context)
+                    drawPolyline(poly, context, comment)
                     console.log("guidline: ", guideLine)
                     if (guideLine != null) {
                         // line from last polypoint to guideline
@@ -233,11 +250,11 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                 }
                 console.log("hits here")
                 if (tool === 'polyline') {
-                    drawPolyAndGuide(currentPoly)
+                    drawPolyAndGuide(currentPoly, comment)
                 } else if (tool === 'scale') {
-                    drawPolyAndGuide(scalePoints)
+                    drawPolyAndGuide(scalePoints, tool)
                 } else if (tool === 'point'){
-                    drawPolyline(currentPoint) // should just add to state
+                    drawPolyline(currentPoint, comment) // should just add to state
                 } else if (tool == 'rect') {
                     console.log("rect drawing: ", currentRect)
                     if (currentRect.length == 1) {
@@ -246,7 +263,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
 
                             // have guide point for rect -> send to draw rect
                             let rectPoints = [currentRect[0], guideLine]
-                            drawRect(rectPoints, context)
+                            drawRect(rectPoints, context, comment)
                         }
                     }
                 }
@@ -260,15 +277,15 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             console.log("element: ", element)
             if (element.type == 'polyline' || element.type == 'scale') {
 
-                drawPolyline(element.points, context)
+                drawPolyline(element.points, context, element.comments)
             } else if (element.type == 'rect') {
-                drawRect(element.points, context)
+                drawRect(element.points, context, element.comments)
             } else if (element.type == 'point') {
-                drawPolyline(element.points, context)
+                drawPolyline(element.points, context, element.comments)
             }
         })
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment])
 
     function snapVertexOrtho(vertex, prevVertex) {
         // check if diff is greater in x or y between vertices
