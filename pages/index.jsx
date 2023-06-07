@@ -45,6 +45,7 @@ export default function Home({dirs}) {
   const [selectedImage, setSelectedImage] = useState("")
   const [selectedFile, setSelectedFile] = useState()
   const [ canvasDimensions, setCanvasDimensions ] = useState({})
+  const [comment, setComment] = useState("")
   const pdfCanvasRef = useRef()
 
   const [tool, setTool] = useState("scale")
@@ -93,6 +94,13 @@ export default function Home({dirs}) {
 
   const topButtons = (          
     <>
+    {/* 
+     * obstruction, mesh, 
+      * if stair -> landing, half landing, 
+      * if point & stair-> point for stair climb
+      * if point & not stair -> fire (can be centre of box), inlet (can be polyline with two points)  
+      * doors to be lines
+    */}
     {/* <div className='absolute z-10 z-30'> */}
   
           {/* <input
@@ -102,22 +110,54 @@ export default function Home({dirs}) {
             onChange={() => setTool("selection")}
           /> */}
           {/* <label htmlFor="selection">Selection</label> */}
-          <input type="radio" id="line" checked={tool === "polyline"} onChange={() => setTool("polyline")} />
-          <label htmlFor="line">Polyline</label>
+          {/* non stair obstructions */}
+          <input type="radio" id="line" checked={tool === "polyline" && comment == 'obstruction'} onChange={() => {
+            setTool("polyline")
+            setComment("obstruction")
+            }} />
+          <label htmlFor="line">Obstruction</label>
+          {/* non stair mesh */}
           <input
             type="radio"
-            id="rectangle"
-            checked={tool === "rect"}
-            onChange={() => setTool("rect")}
+            id="mesh"
+            checked={tool === "rect" && comment=== "mesh"}
+            onChange={() => {
+              setTool("rect") 
+              setComment("mesh")
+            }}
           />
-          <label htmlFor="rectangle">Rectangle</label>
+          <label htmlFor="rectangle">Mesh</label>
+          {/* stair obstructions */}
+          <input type="radio" id="line" checked={tool === "polyline" && comment == 'stairObstruction'} onChange={() => {
+            setTool("polyline")
+            setComment("stairObstruction")
+            }} />
+          <label htmlFor="line">Stair Obstruction</label>
+          {/* stair mesh */}
+          <input
+            type="radio"
+            id="mesh"
+            checked={tool === "rect" && comment=== "stairMesh"}
+            onChange={() => {
+              setTool("rect") 
+              setComment("stairMesh")
+            }}
+          />
+          <label htmlFor="rectangle">Stair Mesh</label>
+          {/* Point  
+                * if point & stair-> point for stair climb
+                * if point & not stair -> fire (can be centre of box), inlet (can be polyline with two points)
+          */}
           <input
             type="radio"
             id="pencil"
             checked={tool === "point"}
-            onChange={() => setTool("point")}
+            onChange={() => {
+              setTool("point")
+              setComment("fire")
+            }}
           />
-          <label htmlFor="pencil">Point</label>
+          <label htmlFor="pencil">Fire</label>
     {/* </div> */}
     </>
     )
@@ -159,7 +199,7 @@ export default function Home({dirs}) {
       : null}
       <div>
         { selectedFile ? (<>
-          <Canvas tool={tool} setTool={setTool} dimensions={canvasDimensions} isDevMode={dev_mode} />
+          <Canvas tool={tool} setTool={setTool} dimensions={canvasDimensions} isDevMode={dev_mode} comment={comment} setComment={setComment}/>
         </>
         ) : 
             <>

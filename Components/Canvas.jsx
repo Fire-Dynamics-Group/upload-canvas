@@ -3,12 +3,23 @@ import Gridlines from './Gridlines'
 import ScalePopup from './ScalePopup'
 import FDRobot from './FDRobot'
 
+/**
+ * TODO: trial having popup after drawing item
+ * dropdown menu -> stair or other
+ * obstruction, mesh, 
+ * if stair -> landing, half landing, 
+ * if point & stair-> point for stair climb
+ * if point & not stair -> fire (can be centre of box), inlet (can be polyline with two points)  
+ * doors to be lines
+*/
+
 // eslint-disable-next-line react/prop-types
-function Canvas({tool, setTool, dimensions, isDevMode}) {
+function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
     console.log(tool)
     // TODO: have currentElement array with {} including type etc like elements
     const [currentPoly, setCurrentPoly] = useState([])
     const [currentRect, setCurrentRect] = useState([])
+    const [currentPoint, setCurrentPoint] = useState([])
 
     const [elements, setElements] = useState([])
     const [isDrawing, setIsDrawing] = useState(false)
@@ -56,35 +67,36 @@ function Canvas({tool, setTool, dimensions, isDevMode}) {
                 console.log("keydown event: ",key, elements)
                 // why is this only being hit sometimes??
                 function addElementToState() {
-                    let type = "polyline"
-                    let comments = "Common Corridor Obstructions"
+                    // only needed for polyline?
                     if (tool == 'polyline') {
                         if (currentPoly.length > 0 ) {
                             let current_el = {
-                                "type": type,
+                                "type": tool,
                                 "points": currentPoly,
-                                "comments": comments
+                                "comments": comment
                             }
                             console.log("current_el: ", current_el
                             )
 
                             setElements(prev => [...prev, current_el])
-                            setIsDrawing(false)
-                            setCurrentPoly([])
-
+                            
                         }
-                    }
+                        // actions when first one drawn -> will guide be removed?
+                        setIsDrawing(false)
+                        setCurrentPoly([])
+                    } 
                 }
 
                 // action adding polyline to state if applicable
                 // clear current poly
+                // comments to be added from user selection of drop down
                 addElementToState()
                 setIsEnterPressed(true)
                 
               }
         };
         const handleCtrlRelease = ({key}) => {
-            console.log("keyup event: ",key)
+            // console.log("keyup event: ",key)
             if (key == 'Control') {
                 setIsCtrlPressed(false)
             }
@@ -101,7 +113,7 @@ function Canvas({tool, setTool, dimensions, isDevMode}) {
             window.removeEventListener("keydown", handleKeyPress)
             window.removeEventListener("keyup", handleCtrlRelease)
         }
-    }, [elements, currentPoly, tool, setTool, isDevMode])
+    }, [elements, currentPoly, tool, setTool, comment])
 
     // LATER: move to own component -> sends back null or position object
     useEffect(() => {
@@ -183,7 +195,7 @@ function Canvas({tool, setTool, dimensions, isDevMode}) {
             for (let i=0; i<points.length; i++) {
                 // draw vertex
                 let dimension = 10
-                context.fillStyle = 'green'
+                context.fillStyle = 'green' // have config depending on comment
                 context.fillRect(points[i].x - dimension/2, points[i].y - dimension/2, dimension, dimension)  
     
                 // if i> 0 draw lines between points
@@ -224,6 +236,8 @@ function Canvas({tool, setTool, dimensions, isDevMode}) {
                     drawPolyAndGuide(currentPoly)
                 } else if (tool === 'scale') {
                     drawPolyAndGuide(scalePoints)
+                } else if (tool === 'point'){
+                    drawPolyline(currentPoint) // should just add to state
                 } else if (tool == 'rect') {
                     console.log("rect drawing: ", currentRect)
                     if (currentRect.length == 1) {
@@ -242,16 +256,19 @@ function Canvas({tool, setTool, dimensions, isDevMode}) {
         // all historical elements
         // later have different logic for different line types
         elements.forEach(element => {
+            // later access comment -> different line colour etc
             console.log("element: ", element)
             if (element.type == 'polyline' || element.type == 'scale') {
 
                 drawPolyline(element.points, context)
             } else if (element.type == 'rect') {
                 drawRect(element.points, context)
+            } else if (element.type == 'point') {
+                drawPolyline(element.points, context)
             }
         })
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint])
 
     function snapVertexOrtho(vertex, prevVertex) {
         // check if diff is greater in x or y between vertices
@@ -287,6 +304,8 @@ function Canvas({tool, setTool, dimensions, isDevMode}) {
 
             let newP = {x: event.pageX, y: event.pageY}
             newP = snapVertexToGrid(newP)
+            let currentEl = returnElementObject(tool, [newP], comment) // comment from props
+            setElements(prev => [...prev, currentEl])
             context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)        
         }
         else if (tool === 'polyline') {
@@ -327,9 +346,8 @@ function Canvas({tool, setTool, dimensions, isDevMode}) {
                 // snap to grid
                 newP = snapVertexToGrid(newP)
                 let pointsArray = [currentRect[0], newP]
-                let comments = "mesh"
                 // add to elements state
-                let currentEl = returnElementObject(tool, pointsArray, comments)
+                let currentEl = returnElementObject(tool, pointsArray, comment) // comment from props
                 setElements(prev => [...prev, currentEl])
                 // set current rect to []
                 setCurrentRect([])
