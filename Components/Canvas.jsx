@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Gridlines from './Gridlines'
 import ScalePopup from './ScalePopup'
 import FDRobot from './FDRobot'
+import { CSVLink } from 'react-csv'
+import useStore from '../store/useStore'
 
 /**
  * TODO: trial having popup after drawing item
@@ -35,7 +37,9 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
     const [currentRect, setCurrentRect] = useState([])
     const [currentPoint, setCurrentPoint] = useState([])
 
-    const [elements, setElements] = useState([])
+    const elements = useStore((state) => state.elements)
+    const setElements = useStore((state) => state.setElements)
+
     const [isDrawing, setIsDrawing] = useState(false)
     
     // TODO: have a keyPressed useState -> with which key
@@ -92,7 +96,8 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                             console.log("current_el: ", current_el
                             )
 
-                            setElements(prev => [...prev, current_el])
+                            // setElements(prev => [...prev, current_el])
+                            setElements(current_el)
                             
                         }
                         // actions when first one drawn -> will guide be removed?
@@ -322,7 +327,8 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             let newP = {x: event.pageX, y: event.pageY}
             newP = snapVertexToGrid(newP)
             let currentEl = returnElementObject(tool, [newP], comment) // comment from props
-            setElements(prev => [...prev, currentEl])
+            // setElements(prev => [...prev, currentEl])
+            setElements(currentEl)
             context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)        
         }
         else if (tool === 'polyline') {
@@ -365,7 +371,8 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                 let pointsArray = [currentRect[0], newP]
                 // add to elements state
                 let currentEl = returnElementObject(tool, pointsArray, comment) // comment from props
-                setElements(prev => [...prev, currentEl])
+                // setElements(prev => [...prev, currentEl])
+                setElements(currentEl)
                 // set current rect to []
                 setCurrentRect([])
                 setIsDrawing(false)
@@ -406,6 +413,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             // else allow to restart scale process
         }
     }
+
 
     // if (isDevMode) {
     //     let pxPerMesh = 10

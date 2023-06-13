@@ -2,6 +2,9 @@ import Image from 'next/image';
 import Canvas from '../Components/Canvas'
 import { useEffect, useRef, useState } from 'react'
 import FDRobot from '../Components/FDRobot'
+import {CSVLink} from 'react-csv';
+import useStore from '../store/useStore'
+
 
   /**Features:
    * user selects pdf image  
@@ -49,6 +52,9 @@ export default function Home({dirs}) {
   const pdfCanvasRef = useRef()
 
   const [tool, setTool] = useState("scale")
+  const elements = useStore((state) => state.elements)
+  console.log("elements log: ", elements)
+  // const setElements = useStore((state) => state.setElements)
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
@@ -161,6 +167,11 @@ export default function Home({dirs}) {
     {/* </div> */}
     </>
     )
+const downloadCSVButton = (
+  <>
+    <CSVLink data={elements ? elements: null} onClick={() => console.log("elements: ", elements)}>Download CSV</CSVLink>
+  </>
+)
 
   const menuOverlay = (<>
 <div className="fixed bottom-0 left-0 right-0 bg-gray-800 text-white z-30 h-5vh" onClick={handleButtonClick}>
@@ -181,11 +192,13 @@ export default function Home({dirs}) {
   </svg>
   <div className="flex justify-center py-4 relative absolute z-30" style={{ zIndex: 100 }} >
     {topButtons}
+    {downloadCSVButton}
   </div>
 </div>
 
     </>
 )
+
 
 
   return (
@@ -195,8 +208,9 @@ export default function Home({dirs}) {
       {menuOverlay} 
       </>
       )
+      :null}
       
-      : null}
+
       <div>
         { selectedFile ? (<>
           <Canvas tool={tool} setTool={setTool} dimensions={canvasDimensions} isDevMode={dev_mode} comment={comment} setComment={setComment}/>
