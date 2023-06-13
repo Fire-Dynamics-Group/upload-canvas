@@ -132,7 +132,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             window.removeEventListener("keydown", handleKeyPress)
             window.removeEventListener("keyup", handleCtrlRelease)
         }
-    }, [elements, currentPoly, tool, setTool, comment])
+    }, [elements, currentPoly, tool, setTool, comment, setElements])
 
     // LATER: move to own component -> sends back null or position object
     useEffect(() => {

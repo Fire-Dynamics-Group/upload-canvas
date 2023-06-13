@@ -2,7 +2,6 @@ import Image from 'next/image';
 import Canvas from '../Components/Canvas'
 import { useEffect, useRef, useState } from 'react'
 import FDRobot from '../Components/FDRobot'
-import {CSVLink} from 'react-csv';
 import useStore from '../store/useStore'
 
 
@@ -167,11 +166,6 @@ export default function Home({dirs}) {
     {/* </div> */}
     </>
     )
-const downloadCSVButton = (
-  <>
-    <CSVLink data={elements ? elements: null} onClick={() => console.log("elements: ", elements)}>Download CSV</CSVLink>
-  </>
-)
 
   const menuOverlay = (<>
 <div className="fixed bottom-0 left-0 right-0 bg-gray-800 text-white z-30 h-5vh" onClick={handleButtonClick}>
@@ -192,7 +186,6 @@ const downloadCSVButton = (
   </svg>
   <div className="flex justify-center py-4 relative absolute z-30" style={{ zIndex: 100 }} >
     {topButtons}
-    {downloadCSVButton}
   </div>
 </div>
 
