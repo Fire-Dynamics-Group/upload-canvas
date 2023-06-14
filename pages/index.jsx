@@ -17,6 +17,7 @@ import useStore from '../store/useStore'
    * points can be drawn
    * 
    * TODO: 
+   * send elements as param to fastapi
    * allow naming of elements from list or similar to differentiate
    * 
    * FUTURE: 
@@ -25,6 +26,75 @@ import useStore from '../store/useStore'
    * 
    * 
    */
+// need scale also
+const testElements = [
+  {
+    "type": "polyline",
+    "points": [
+        {
+            "x": 234.58699702156903,
+            "y": 1418.6927915113936
+        },
+        {
+            "x": 497.1010174980868,
+            "y": 1418.6927915113936
+        },
+        {
+            "x": 497.1010174980868,
+            "y": 1329.3263164555578
+        },
+        {
+            "x": 234.58699702156903,
+            "y": 1329.3263164555578
+        },
+        {
+            "x": 234.58699702156903,
+            "y": 1418.6927915113936
+        }
+    ],
+    "comments": "obstruction"
+},
+{
+  "type": "rect",
+  "points": [
+      {
+          "x": 184.3183548026614,
+          "y": 1156.178771034876
+      },
+      {
+          "x": 441.24697058818936,
+          "y": 1301.399293000609
+      }
+  ],
+  "comments": "mesh"
+},
+{
+  "type": "polyline",
+  "points": [
+      {
+          "x": 201.0745688756306,
+          "y": 932.7625833952864
+      },
+      {
+          "x": 385.392923678292,
+          "y": 932.7625833952864
+      },
+      {
+          "x": 385.392923678292,
+          "y": 1061.2268912880504
+      },
+      {
+          "x": 201.0745688756306,
+          "y": 1061.2268912880504
+      },
+      {
+          "x": 201.0745688756306,
+          "y": 932.7625833952864
+      }
+  ],
+  "comments": "stairObstruction"
+}
+]
 
 // Check if we're in the browser environment
 const isBrowser = typeof window !== "undefined";
@@ -39,7 +109,7 @@ if (isBrowser) {
   pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.js';
 }
 
-export default function Home({dirs}) {
+export default function Home() {
   // console.log("process.env.DEV_MODE: ", process.env.DEV_MODE)
   let dev_mode = true
   // states for uploading file
@@ -52,9 +122,29 @@ export default function Home({dirs}) {
 
   const [tool, setTool] = useState("scale")
   const elements = useStore((state) => state.elements)
+
   console.log("elements log: ", elements)
   // const setElements = useStore((state) => state.setElements)
 
+  // useEffect(() => {
+  //   const sendElementData = async () => {
+  //     // console.log("body: ", JSON.stringify({ elements }))
+  //     const response = await fetch('http://127.0.0.1:8000/test', {
+  //       method: 'POST',
+  //       headers: {
+  //         'Content-Type': 'application/json'
+  //       },
+  //       body: JSON.stringify({ testElements }),
+  //     });
+    
+  //     const data = await response.json();
+  //     console.log("data received: ", data)
+    
+  //     return data;
+    
+  //   }
+  //   sendElementData()
+  // }, [])
   const handleFileChange = (event) => {
     const file = event.target.files[0];
 
@@ -96,6 +186,45 @@ export default function Home({dirs}) {
   const handleButtonClick = (e) => {
     e.stopPropagation();
   };
+ 
+
+
+  const sendElementData = async () => {
+    let elements = testElements
+    let bodyContent = JSON.stringify( elements )
+    console.log("body: ", bodyContent)
+    const response = await fetch('http://127.0.0.1:8000/test', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: bodyContent,
+    });
+  
+    const data = await response.json();
+    console.log("data received: ", data)
+  
+    return data;
+  
+  }
+  // const sendElementData = () => {
+  //   const options = {
+  //     method: 'POST',
+  //     url: 'http://127.0.0.1:8000/test',
+  //     headers: {
+  //       'Content-Type': 'application/json',
+  //     },
+  //     body: JSON.stringify({ elements }),
+  //   };
+  
+  //   return fetch(options).then((response) => {
+  //     if (response.status === 200) {
+  //       return response.json();
+  //     } else {
+  //       throw new Error(`API returned an error with status code ${response.status}`);
+  //     }
+  //   });
+  // };
 
   const topButtons = (          
     <>
@@ -146,6 +275,7 @@ export default function Home({dirs}) {
             onChange={() => {
               setTool("rect") 
               setComment("stairMesh")
+              sendElementData()
             }}
           />
           <label htmlFor="rectangle">Stair Mesh</label>
@@ -155,14 +285,15 @@ export default function Home({dirs}) {
           */}
           <input
             type="radio"
-            id="pencil"
+            id="fire"
             checked={tool === "point"}
             onChange={() => {
               setTool("point")
               setComment("fire")
             }}
           />
-          <label htmlFor="pencil">Fire</label>
+          <label htmlFor="fire">Fire</label>
+
     {/* </div> */}
     </>
     )
@@ -206,7 +337,14 @@ export default function Home({dirs}) {
 
       <div>
         { selectedFile ? (<>
-          <Canvas tool={tool} setTool={setTool} dimensions={canvasDimensions} isDevMode={dev_mode} comment={comment} setComment={setComment}/>
+          <Canvas 
+            tool={tool} 
+            setTool={setTool} 
+            dimensions={canvasDimensions} 
+            isDevMode={dev_mode} 
+            comment={comment} 
+            setComment={setComment}
+            />
         </>
         ) : 
             <>
@@ -220,6 +358,10 @@ export default function Home({dirs}) {
             onChange={handleFileChange}
           />
         </label>
+        <button 
+
+        onClick={sendElementData}
+        >Test</button>
 
 
       </div>
@@ -230,19 +372,11 @@ export default function Home({dirs}) {
         <canvas 
         ref={pdfCanvasRef}
         className='z-1'
+        // onClick={sendElementData()}
         />
       </div>
     </>
 )
 }
 
-// export const getServerSideProps= async () => {
-//   const props = { dirs: [] };
-//   try {
-//     const dirs = await fs.readdir(path.join(process.cwd(), "/public/images"));
-//     props.dirs = dirs;
-//     return { props };
-//   } catch (error) {
-//     return { props };
-//   }
-// }
+

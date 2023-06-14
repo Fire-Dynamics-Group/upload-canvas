@@ -1,0 +1,11 @@
+{
+    "middleware": [
+      {
+        "module": "next/middleware/cors",
+        "options": {
+          "origin": "*"
+        }
+      }
+    ]
+  }
+  

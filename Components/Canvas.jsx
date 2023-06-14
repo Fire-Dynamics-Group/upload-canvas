@@ -173,6 +173,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
         let desiredScale = 0.1 //m - later be changeable
         let pixels = distance(scalePoints[0], scalePoints[1])
         let temp = pixels / (scaleDistance / desiredScale)
+        console.log("pxPerMesh: ", pixels/scaleDistance)
         deltaGridlines(temp, 'polyline')
     }
     // useEffect(() => {
