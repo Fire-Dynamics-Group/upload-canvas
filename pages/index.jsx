@@ -3,6 +3,7 @@ import Canvas from '../Components/Canvas'
 import { useEffect, useRef, useState } from 'react'
 import FDRobot from '../Components/FDRobot'
 import useStore from '../store/useStore'
+import { saveAs } from 'file-saver';
 
 
   /**Features:
@@ -17,6 +18,7 @@ import useStore from '../store/useStore'
    * points can be drawn
    * 
    * TODO: 
+   * test download of data as .fds file from frontend
    * send elements as param to fastapi
    * allow naming of elements from list or similar to differentiate
    * 
@@ -26,6 +28,52 @@ import useStore from '../store/useStore'
    * 
    * 
    */
+const dummy_fds = `&OBST ID='STEP1', XB = 12.0, 13.4, 1.6, 2.16,40.0, 40.25, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 1.86, 2.42,40.25, 40.5, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 2.12, 2.68,40.5, 40.75, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 2.38, 2.94,40.75, 41.0, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 2.64, 3.2,41.0, 41.25, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 2.9, 3.46,41.25, 41.5, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 3.16, 3.72,41.5, 41.75, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 3.42, 3.98,41.75, 42.0, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 3.68, 4.24,42.0, 42.25, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 3.94, 4.5,42.25, 42.5, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 1.6, 2.16,45.0, 45.25, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 1.86, 2.42,45.25, 45.5, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 2.12, 2.68,45.5, 45.75, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 2.38, 2.94,45.75, 46.0, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 2.64, 3.2,46.0, 46.25, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 2.9, 3.46,46.25, 46.5, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 3.16, 3.72,46.5, 46.75, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 3.42, 3.98,46.75, 47.0, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 3.68, 4.24,47.0, 47.25, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 12.0, 13.4, 3.94, 4.5,47.25, 47.5, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 3.94, 4.5,42.5, 42.75, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 3.68, 4.24,42.75, 43.0, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 3.42, 3.98,43.0, 43.25, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 3.16, 3.72,43.25, 43.5, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 2.9, 3.46,43.5, 43.75, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 2.64, 3.2,43.75, 44.0, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 2.38, 2.94,44.0, 44.25, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 2.12, 2.68,44.25, 44.5, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 1.86, 2.42,44.5, 44.75, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 1.6, 2.16,44.75, 45.0, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 3.94, 4.5,47.5, 47.75, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 3.68, 4.24,47.75, 48.0, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 3.42, 3.98,48.0, 48.25, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 3.16, 3.72,48.25, 48.5, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 2.9, 3.46,48.5, 48.75, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 2.64, 3.2,48.75, 49.0, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 2.38, 2.94,49.0, 49.25, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 2.12, 2.68,49.25, 49.5, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 1.86, 2.42,49.5, 49.75, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 10.6, 12.0, 1.6, 2.16,49.75, 50.0, SURF_ID = 'Plasterboard'/
+&OBST ID='LANDING', XB = 10.6, 13.4, 0.0, 1.6,45.0, 45.2, SURF_ID = 'Plasterboard'/
+&OBST ID='ADDITIONAL LANDING', XB = 13.4, 16.2, 0.0, 1.6,45.0, 45.2, SURF_ID = 'Plasterboard'/
+&OBST ID='LANDING', XB = 10.6, 13.4, 0.0, 1.6,50.0, 50.2, SURF_ID = 'Plasterboard'/
+&OBST ID='ADDITIONAL LANDING', XB = 13.4, 16.2, 0.0, 1.6,50.0, 50.2, SURF_ID = 'Plasterboard'/
+&OBST ID='HALF LANDING', XB = 10.6, 13.4, 4.2, 5.6000000000000005,42.5, 42.7, SURF_ID = 'Plasterboard'/
+&OBST ID='HALF LANDING', XB = 10.6, 13.4, 4.2, 5.6000000000000005,47.5, 47.7, SURF_ID = 'Plasterboard'/`
 // need scale also
 const testElements = [
   {
@@ -186,6 +234,13 @@ export default function Home() {
   const handleButtonClick = (e) => {
     e.stopPropagation();
   };
+
+  const handleDownload = () => {
+    // need data as state
+    const fdsData = dummy_fds
+    const blob = new Blob([fdsData], { type: "text/plain;charset=utf-8" });
+    saveAs(blob, "test.fds");
+  }
  
 
 
@@ -361,7 +416,12 @@ export default function Home() {
         <button 
 
         onClick={sendElementData}
-        >Test</button>
+        >Test API</button>
+        <button
+          onClick={handleDownload}
+        >
+          Test download fds file
+        </button>
 
 
       </div>
