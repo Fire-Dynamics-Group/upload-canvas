@@ -58,18 +58,25 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
     // TODO: if drawing have line between penultimate point and cursor
     // have state that is true when drawing is true and mouse moving -> store mouse
     const [guideLine, setGuideLine] = useState(null)
+    const [currentId, setCurrentId] = useState(0)
 
     // below logic for popup
     const [showPopup, setShowPopup] = useState(false)
     const [scaleDistance, setScaleDistance] = useState(null)
+    const [selectedElement, setSelectedElement] = useState(null)
 
     console.log("scaleDistance: ", scaleDistance)      
 
+
+    // TODO: id should come from a state list, to allow for deletions etc
     function returnElementObject(type, pointsArray, comments) {
+        id = currentId
+        setCurrentId(prev => prev + 1)
         return {
             "type": type,
             "points": pointsArray,
-            "comments": comments
+            "comments": comments,
+            "id": id
         }        
     }
     // event listener for ctrl button
@@ -153,7 +160,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
         }
     }, [isDrawing, currentPoly, scalePoints.length, tool, currentRect])
 
-    function distance(p1, p2) {
+    function calcDistance(p1, p2) {
         let a = p1.x - p2.x
         let b = p1.y - p2.y
         return Math.sqrt( a*a + b*b );
@@ -171,7 +178,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
     function handleScaleInput(inputDistance) {
         let scaleDistance = inputDistance
         let desiredScale = 0.1 //m - later be changeable
-        let pixels = distance(scalePoints[0], scalePoints[1])
+        let pixels = calcDistance(scalePoints[0], scalePoints[1])
         let temp = pixels / (scaleDistance / desiredScale)
         console.log("pxPerMesh: ", pixels/scaleDistance)
         deltaGridlines(temp, 'polyline')
@@ -202,7 +209,6 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             // always 2 points
             // draw rect
                 // ctx.strokeRect(50, 50, 200, 100); // x, y, width, height
-            console.log("points: ", points)
             let p1 = points[0]
             let p2 = points[1]
             let deltaX = p2.x - p1.x
@@ -241,7 +247,6 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                 function drawPolyAndGuide(poly) {
 
                     drawPolyline(poly, context, comment)
-                    console.log("guidline: ", guideLine)
                     if (guideLine != null) {
                         // line from last polypoint to guideline
                         let prev = poly[poly.length-1]
@@ -280,7 +285,6 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
         // later have different logic for different line types
         elements.forEach(element => {
             // later access comment -> different line colour etc
-            console.log("element: ", element)
             if (element.type == 'polyline' || element.type == 'scale') {
 
                 drawPolyline(element.points, context, element.comments)
@@ -295,7 +299,6 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
 
     function snapVertexOrtho(vertex, prevVertex) {
         // check if diff is greater in x or y between vertices
-        console.log("vertices: ", vertex, prevVertex)
         const deltaX = Math.abs(prevVertex.x - vertex.x)
         const deltaY = Math.abs(prevVertex.y - vertex.y)
 
@@ -316,7 +319,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
         return vertex
     }
     //   TODO: polyline and mark point tools
-    function handleClick(event) {
+    function handlePointerDown(event) { // should this be handle mouse down?
         console.log(currentPoly)
         const canvas = canvasRef.current
         const context = canvas.getContext('2d')
@@ -364,7 +367,6 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                     // guidelines of rect
                 setCurrentRect([newP])
             } else if (currentRect.length > 0){
-                console.log("currentRect: ", currentRect)
             // on second point
             // newP = snapVertexOrtho(newP, currentRect[0])
                 // snap to grid
@@ -380,8 +382,61 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             }
 
             context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)        
-        }
-        else if (tool === 'scale') {
+        } else if (tool === 'selection') {
+            // need mouse location
+            let pointer = {x: event.pageX, y: event.pageY}
+            // const element = getElementAtPosition(clientX, clientY, elements);
+            // find closest point of all elements
+            let closestPoint = null
+            let closestDistance = null
+            let closestElement = null
+            // console.log("elements.length: ", elements.length)
+            for (let i = 0; i < elements.length; i++) {
+                let currentEl = elements[i]
+                // console.log("currentEl: ", currentEl, i)
+
+                // loop through elements
+                // initially allow movement of entire shape only
+                let currentPoints = currentEl.points
+                
+                // requires to loop through all points in element 
+                if (currentPoints) {
+
+                    for (let j = 0; j < currentPoints.length; j++) {
+                        let currentP = currentPoints[j]
+                        let currentDistance = calcDistance(pointer, currentP)
+                        // console.log("currentP: ", currentP, j, currentDistance)
+                        // console.log("currentPoints.length: ", currentPoints.length)
+                        //-> check what is closest shape and 
+                        // find distance
+                        // TODO: add threshold of certain pixels
+                        // check within certain threshold close enough
+                        if (currentDistance < 40 && closestDistance === null || currentDistance < closestDistance) {
+                            closestDistance = currentDistance
+                            closestPoint = currentP
+                            closestElement = currentEl
+                            // console.log("closest", currentEl)
+    
+                        }
+    
+                        // LATER: allow manipulation of corners for mesh and individual points for polyline
+                        // returns closest element to mouse pointer
+                        
+                    }
+                }
+            if (closestDistance) {
+                console.log("closest", closestDistance)
+                // set to state
+                // let offsetX = pointer.x - closestPoint.x
+                // let offsetY = pointer.y - closestPoint.y
+                setSelectedElement({"element": closestElement, "pointerDown": pointer}) 
+
+            }
+            }
+
+
+
+        } else if (tool === 'scale') {
             if (scalePoints.length < 2) {
                 // if (scalePoints.length == 1) {
                     
@@ -403,7 +458,6 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                 context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)  
                 // add point to currentPoly
                 setScalePoints((prev) => [...prev, newP]) 
-                console.log("prevIndex: ", prevIndex)
                 // hopefully second point has registered
                 if (prevIndex == 1) {
                     // action pop up
@@ -415,12 +469,47 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
         }
     }
 
+    function handlePointerUp(event){
+        console.log("pointerUP")
+        let pointer = {x: event.pageX, y: event.pageY}
+        // setSelectedElement({"element": closestElement, "pointerDown": pointer})
+        if (selectedElement) {
+            let el = selectedElement["element"] // needs id added to state
+            let elementId = el["id"]
+            let prevPointer = selectedElement["pointerDown"]
+            let offsetX = pointer.x - prevPointer.x
+            let offsetY = pointer.y - prevPointer.y
 
-    // if (isDevMode) {
-    //     let pxPerMesh = 10
-    //     let tool = 'polyline'
-    //     deltaGridlines(pxPerMesh, tool)
-    // }
+            // apply offset to all points
+            // later this should only be actioned when moving
+            // if moving one point of polyline or corner of rect; different logic
+            el.points.forEach(point => {
+                point.x =  point.x + offsetX
+                point.y = point.y + offsetY
+            })
+            console.log("el offset", offsetX, offsetY)
+            // // replace in elements
+            setElements(prev =>{
+
+
+                prev.map(element => {
+                    if (element.id === elementId) {
+                        return el
+                    } else {
+                        return element
+                    }
+                })
+            } )
+        } 
+        // if element selected -> move from previous to new position
+        // need previous pointer down point
+        // apply offset to all points
+        // later apply only to target point
+        console.log("selectedEl: ",selectedElement)
+        setSelectedElement(null)
+    }
+
+
   return (
   <>
     {showPopup && (
@@ -438,7 +527,9 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
       width={canvasWidth} // pass in width and height as props
       height={canvasHeight}
       className='border border-black rounded-md bg-transparent inset-0 absolute z-10'
-      onClick={handleClick}
+      onPointerDown={handlePointerDown}
+    //   onPointerMove={handlePointerMove} // later move shapes here
+      onPointerUp={handlePointerUp}
       />
   </>
   )
