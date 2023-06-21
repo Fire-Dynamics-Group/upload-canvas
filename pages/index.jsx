@@ -16,11 +16,14 @@ import { saveAs } from 'file-saver';
    * allow mesh rectangles to be drawn
    * ctrl for ortho lines
    * points can be drawn
-   * 
-   * TODO: 
    * test download of data as .fds file from frontend
    * send elements as param to fastapi
    * allow naming of elements from list or similar to differentiate
+   * 
+   * TODO: 
+   * allow edit/undo of polylines and edit size of rects etc
+   * generate stairs from mock data
+   * componentise areas of app for fds generation -> allow points to be located on x and y using scale for other use cases
    * 
    * FUTURE: 
    * migrate state to zustand
@@ -252,7 +255,6 @@ export default function Home() {
       * if point & not stair -> fire (can be centre of box), inlet (can be polyline with two points)  
       * doors to be lines
     */}
-    {/* <div className='absolute z-10 z-30'> */}
   
           {/* <input
             type="radio"
@@ -311,7 +313,6 @@ export default function Home() {
           />
           <label htmlFor="fire">Fire</label>
 
-    {/* </div> */}
     </>
     )
 
