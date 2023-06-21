@@ -78,28 +78,81 @@ const testElements = [
   "type": "polyline",
   "points": [
       {
-          "x": 201.0745688756306,
-          "y": 932.7625833952864
+          "x": 2287.6247440522234,
+          "y": 1238.4133952763916
       },
       {
-          "x": 385.392923678292,
-          "y": 932.7625833952864
+          "x": 2483.7068649709854,
+          "y": 1238.4133952763916
       },
       {
-          "x": 385.392923678292,
-          "y": 1061.2268912880504
+          "x": 2483.7068649709854,
+          "y": 1324.4143255039187
       },
       {
-          "x": 201.0745688756306,
-          "y": 1061.2268912880504
+          "x": 2287.6247440522234,
+          "y": 1324.4143255039187
       },
       {
-          "x": 201.0745688756306,
-          "y": 932.7625833952864
+          "x": 2287.6247440522234,
+          "y": 1238.4133952763916
       }
   ],
   "comments": "stairObstruction"
-}
+},
+{
+  "type": "rect",
+  "points": [
+      {
+          "x": 2287.6247440522234,
+          "y": 1238.4133952763916
+      },
+      {
+          "x": 2483.7068649709854,
+          "y": 1324.4143255039187
+      }
+  ],
+  "comments": "stairMesh"
+},
+{
+  "type": "rect",
+  "points": [
+      {
+          "x": 2291.0647812613242,
+          "y": 1238.4133952763916
+      },
+      {
+          "x": 2352.985451025144,
+          "y": 1324.4143255039187
+      }
+  ],
+  "comments": "stairLanding"
+},
+{
+  "type": "rect",
+  "points": [
+      {
+          "x": 2435.54634404357,
+          "y": 1241.8534324854927
+      },
+      {
+          "x": 2480.266827761884,
+          "y": 1320.9742882948176
+      }
+  ],
+  "comments": "stairHalfLanding"
+},
+{
+  "type": "point",
+  "points": [
+      {
+          "x": 2356.425488234245,
+          "y": 1303.7741022493124
+      }
+  ],
+  "comments": "stairClimb"
+},
+
 ]
 
 // Check if we're in the browser environment
@@ -116,7 +169,6 @@ if (isBrowser) {
 }
 
 export default function Home() {
-  // console.log("process.env.DEV_MODE: ", process.env.DEV_MODE)
   let dev_mode = true
   // states for uploading file
   const [uploading, setUploading] = useState(false)
@@ -210,7 +262,7 @@ export default function Home() {
     let elements = testElements
     let bodyContent = JSON.stringify( elements )
     console.log("body: ", bodyContent)
-    const response = await fetch(`${server_urls.server}/test`, {
+    const response = await fetch(`${server_urls.localhost}/test`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -296,10 +348,47 @@ export default function Home() {
             }}
           />
           <label htmlFor="rectangle">Stair Mesh</label>
+          {/* stair landing */}
+          <input
+            type="radio"
+            id="mesh"
+            checked={tool === "rect" && comment=== "stairLanding"}
+            onChange={() => {
+              setTool("rect") 
+              setComment("stairLanding")
+              sendElementData()
+            }}
+          />
+          <label htmlFor="rectangle">Stair Landing</label>
+          {/* stair half landing */}
+          <input
+            type="radio"
+            id="mesh"
+            checked={tool === "rect" && comment=== "stairHalfLanding"}
+            onChange={() => {
+              setTool("rect") 
+              setComment("stairHalfLanding")
+              sendElementData()
+            }}
+          />
+          <label htmlFor="rectangle">Stair Half-landing</label>
           {/* Point  
                 * if point & stair-> point for stair climb
                 * if point & not stair -> fire (can be centre of box), inlet (can be polyline with two points)
+                * stairClimb
           */}
+          {/* optional stair climb */}
+          <input
+            type="radio"
+            id="fire"
+            checked={tool === "point"}
+            onChange={() => {
+              setTool("point")
+              setComment("stairClimb")
+            }}
+          />
+          <label htmlFor="fire">Stair Climb</label>
+          {/* fire */}
           <input
             type="radio"
             id="fire"

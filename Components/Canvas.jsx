@@ -24,6 +24,9 @@ const elementConfig = {
     "mesh": "green",
     "stairObstruction": "blue",
     "stairMesh": "blue",
+    "stairLanding": "green",
+    "stairHalfLanding": "yellow",
+    "stairClimb": "blue",
     "door": "red",
     "fire": "orange",
     "scale": "green"
