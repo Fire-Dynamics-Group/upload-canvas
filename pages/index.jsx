@@ -254,15 +254,17 @@ export default function Home() {
       * if point & stair-> point for stair climb
       * if point & not stair -> fire (can be centre of box), inlet (can be polyline with two points)  
       * doors to be lines
-    */}
-  
-          {/* <input
+    */}  
+          <input
             type="radio"
             id="selection"
             checked={tool === "selection"}
-            onChange={() => setTool("selection")}
-          /> */}
-          {/* <label htmlFor="selection">Selection</label> */}
+            onChange={() => {
+              setTool("selection")
+              setComment("")
+            }}
+          />
+          <label htmlFor="selection">Selection</label>
           {/* non stair obstructions */}
           <input type="radio" id="line" checked={tool === "polyline" && comment == 'obstruction'} onChange={() => {
             setTool("polyline")

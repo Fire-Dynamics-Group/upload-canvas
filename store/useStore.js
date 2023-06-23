@@ -4,9 +4,12 @@ const useStore = create((set) => {
     return {
 
         elements: [],
-        setElements: (newEl) => set((state) => ({
+        addElement: (newEl) => set((state) => ({
             elements: [...state.elements, newEl]
-        })),    
+        })),
+        removeElement: (selectedID) => set((state) => ({
+            elements: state.elements.filter(element => element.id !== selectedID)
+        }))
     }
 })
 

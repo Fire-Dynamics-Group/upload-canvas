@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Gridlines from './Gridlines'
 import ScalePopup from './ScalePopup'
 import FDRobot from './FDRobot'
@@ -26,7 +26,8 @@ const elementConfig = {
     "stairMesh": "blue",
     "door": "red",
     "fire": "orange",
-    "scale": "green"
+    "scale": "green",
+    "selection": "orange"
 }
 
 // eslint-disable-next-line react/prop-types
@@ -38,12 +39,14 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
     const [currentPoint, setCurrentPoint] = useState([])
 
     const elements = useStore((state) => state.elements)
-    const setElements = useStore((state) => state.setElements)
+    const addElement = useStore((state) => state.addElement)
+    const removeElement = useStore((state) => state.removeElement)
 
     const [isDrawing, setIsDrawing] = useState(false)
     
     // TODO: have a keyPressed useState -> with which key
     const [isCtrlPressed, setIsCtrlPressed] = useState(false)
+    const [isEscapePressed, setIsEscapePressed] = useState(false)
     // on enter -> isDrawing = false
     // add polyline to state
     // add type of line -> include in useLayoutEffect canvas rendering
@@ -58,46 +61,57 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
     // TODO: if drawing have line between penultimate point and cursor
     // have state that is true when drawing is true and mouse moving -> store mouse
     const [guideLine, setGuideLine] = useState(null)
+    const [currentId, setCurrentId] = useState(0)
 
     // below logic for popup
     const [showPopup, setShowPopup] = useState(false)
     const [scaleDistance, setScaleDistance] = useState(null)
+    const [selectedElement, setSelectedElement] = useState(null)
 
     console.log("scaleDistance: ", scaleDistance)      
 
-    function returnElementObject(type, pointsArray, comments) {
+    // useCallback return memoized version of function -> only changes if dep val changes
+    // therefore, not re-ran each re-render of useEffect
+    const returnElementObject = useCallback((type, pointsArray, comments) => {
+        let id = currentId 
+        setCurrentId(prev => prev + 1)
         return {
             "type": type,
             "points": pointsArray,
-            "comments": comments
-        }        
-    }
+            "comments": comments,
+            "id": id
+        }          
+    }, [currentId])
     // event listener for ctrl button
     // lines to be ortho -> check if closer to x or y ortho
     // LATER: move keypress to own component -> send back keys pressed or keyup
     useEffect(() => {
+
+
         const handleKeyPress = ({key}) => {
             if (key == 'Control') {
                 setIsCtrlPressed(true)
             }
+            if (key == 'Escape') {
+                setIsEscapePressed(true)
+                
+                if (selectedElement && selectedElement["element"]) {
+                    console.log("key: ", key, selectedElement["element"])
+                    // remove selected element from elements
+                    let selectedId = selectedElement["element"]["id"]
+                    // console.log("filtered element: ", elements.filter(element => element.id !== selectedId))
+                    removeElement(selectedId); // filter returns array of all items meeting condition
+                    setSelectedElement(null)
+                }
+            }
             // "Enter"
             if (key == 'Enter') {
-                console.log("keydown event: ",key, elements)
-                // why is this only being hit sometimes??
                 function addElementToState() {
                     // only needed for polyline?
                     if (tool == 'polyline') {
                         if (currentPoly.length > 0 ) {
-                            let current_el = {
-                                "type": tool,
-                                "points": currentPoly,
-                                "comments": comment
-                            }
-                            console.log("current_el: ", current_el
-                            )
-
-                            // setElements(prev => [...prev, current_el])
-                            setElements(current_el)
+                            let current_el = returnElementObject(tool, currentPoly, comment)
+                            addElement(current_el)
                             
                         }
                         // actions when first one drawn -> will guide be removed?
@@ -119,6 +133,9 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             if (key == 'Control') {
                 setIsCtrlPressed(false)
             }
+            if (key == 'Escape') {
+                setIsEscapePressed(false)
+            }
             // "Enter"
             if (key == 'Enter') {
                 setIsEnterPressed(false)
@@ -132,7 +149,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             window.removeEventListener("keydown", handleKeyPress)
             window.removeEventListener("keyup", handleCtrlRelease)
         }
-    }, [elements, currentPoly, tool, setTool, comment, setElements])
+    }, [elements, currentPoly, tool, setTool, comment, addElement, selectedElement, currentId, removeElement, returnElementObject])
 
     // LATER: move to own component -> sends back null or position object
     useEffect(() => {
@@ -153,7 +170,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
         }
     }, [isDrawing, currentPoly, scalePoints.length, tool, currentRect])
 
-    function distance(p1, p2) {
+    function calcDistance(p1, p2) {
         let a = p1.x - p2.x
         let b = p1.y - p2.y
         return Math.sqrt( a*a + b*b );
@@ -171,7 +188,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
     function handleScaleInput(inputDistance) {
         let scaleDistance = inputDistance
         let desiredScale = 0.1 //m - later be changeable
-        let pixels = distance(scalePoints[0], scalePoints[1])
+        let pixels = calcDistance(scalePoints[0], scalePoints[1])
         let temp = pixels / (scaleDistance / desiredScale)
         console.log("pxPerMesh: ", pixels/scaleDistance)
         deltaGridlines(temp, 'polyline')
@@ -189,7 +206,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
         
         context.clearRect(0, 0, canvas.width, canvas.height)
 
-        function drawRect(points, context, comments) {
+        function drawRect(points, context, comments, dotted=false) {
             // same for guide 
             // LATER: just without green point at second point
             // corners below line so line is visible
@@ -202,15 +219,19 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             // always 2 points
             // draw rect
                 // ctx.strokeRect(50, 50, 200, 100); // x, y, width, height
-            console.log("points: ", points)
             let p1 = points[0]
             let p2 = points[1]
             let deltaX = p2.x - p1.x
             let deltaY = p2.y - p1.y
             context.strokeStyle = elementConfig[comments] // 'blue'
+            if (dotted) {
+                context.setLineDash([5, 15])
+            }
             context.lineWidth = 1.5;
             context.strokeRect(p1.x, p1.y, deltaX, deltaY)
+
             context.lineWidth = 1;
+            context.setLineDash([])
 
         }
 
@@ -235,13 +256,52 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
     
             }            
         }
+        if (selectedElement) {
+            // draw dashed box around element
+            let selectedPoints = selectedElement["element"]["points"]
+            console.log("selPoints useLayout: ", selectedPoints)
+            // find points
+            let maxX = null
+            let minX = null
+            let maxY = null
+            let minY = null
+            // find bottom left, right, top left and right
+            for (let i = 0; i < selectedPoints.length; i++) {
+                let currentX = selectedPoints[i].x
+                let currentY = selectedPoints[i].y
+                if (maxX == null || maxX < currentX) {
+                    maxX = currentX
+                }
+                if (maxY == null || maxY < currentY) {
+                    maxY = currentY
+                }
+                if (minX == null || minX > currentX) {
+                    minX = currentX
+                }
+                if (minY == null || minY > currentY) {
+                    minY = currentY
+                }                
+            }
+
+            console.log("mins: ",maxX, maxY, minX, minY)
+            let buffer = 10
+            maxX += buffer
+            maxY += buffer
+            minX -= buffer
+            minY -= buffer
+            // add buffer
+            // draw dotted line rect
+            let points = [{"x": maxX, "y": maxY}, {"x": minX, "y": minY}]
+            let comments = "selection"
+            drawRect(points, context, comments, true)
+            // later have contrasting colour
+        }
         // loop through current polypoints
         if (isDrawing) {
                 // should be current element with type and points object
                 function drawPolyAndGuide(poly) {
 
                     drawPolyline(poly, context, comment)
-                    console.log("guidline: ", guideLine)
                     if (guideLine != null) {
                         // line from last polypoint to guideline
                         let prev = poly[poly.length-1]
@@ -280,22 +340,21 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
         // later have different logic for different line types
         elements.forEach(element => {
             // later access comment -> different line colour etc
-            console.log("element: ", element)
             if (element.type == 'polyline' || element.type == 'scale') {
 
                 drawPolyline(element.points, context, element.comments)
             } else if (element.type == 'rect') {
                 drawRect(element.points, context, element.comments)
+                console.log("useLayoutRect: ", element.points)
             } else if (element.type == 'point') {
                 drawPolyline(element.points, context, element.comments)
             }
         })
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement])
 
     function snapVertexOrtho(vertex, prevVertex) {
         // check if diff is greater in x or y between vertices
-        console.log("vertices: ", vertex, prevVertex)
         const deltaX = Math.abs(prevVertex.x - vertex.x)
         const deltaY = Math.abs(prevVertex.y - vertex.y)
 
@@ -316,7 +375,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
         return vertex
     }
     //   TODO: polyline and mark point tools
-    function handleClick(event) {
+    function handlePointerDown(event) { // should this be handle mouse down?
         console.log(currentPoly)
         const canvas = canvasRef.current
         const context = canvas.getContext('2d')
@@ -329,7 +388,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             newP = snapVertexToGrid(newP)
             let currentEl = returnElementObject(tool, [newP], comment) // comment from props
             // setElements(prev => [...prev, currentEl])
-            setElements(currentEl)
+            addElement(currentEl)
             context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)        
         }
         else if (tool === 'polyline') {
@@ -364,7 +423,6 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                     // guidelines of rect
                 setCurrentRect([newP])
             } else if (currentRect.length > 0){
-                console.log("currentRect: ", currentRect)
             // on second point
             // newP = snapVertexOrtho(newP, currentRect[0])
                 // snap to grid
@@ -373,15 +431,70 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                 // add to elements state
                 let currentEl = returnElementObject(tool, pointsArray, comment) // comment from props
                 // setElements(prev => [...prev, currentEl])
-                setElements(currentEl)
+                addElement(currentEl)
                 // set current rect to []
                 setCurrentRect([])
                 setIsDrawing(false)
             }
 
             context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)        
-        }
-        else if (tool === 'scale') {
+        } else if (tool === 'selection') {
+            // need mouse location
+            let pointer = {x: event.pageX, y: event.pageY}
+            // const element = getElementAtPosition(clientX, clientY, elements);
+            // find closest point of all elements
+            let closestPoint = null
+            let closestDistance = null
+            let closestElement = null
+            // console.log("elements.length: ", elements.length)
+            for (let i = 0; i < elements.length; i++) {
+                let currentEl = elements[i]
+                // console.log("currentEl: ", currentEl, i)
+
+                // loop through elements
+                // initially allow movement of entire shape only
+                let currentPoints = currentEl.points
+                
+                // requires to loop through all points in element 
+                if (currentPoints) {
+
+                    for (let j = 0; j < currentPoints.length; j++) {
+                        let currentP = currentPoints[j]
+                        let currentDistance = calcDistance(pointer, currentP)
+                        // console.log("currentP: ", currentP, j, currentDistance)
+                        // console.log("currentPoints.length: ", currentPoints.length)
+                        //-> check what is closest shape and 
+                        // find distance
+                        // TODO: add threshold of certain pixels
+                        // check within certain threshold close enough
+                        if (currentDistance < 40 && closestDistance === null || currentDistance < closestDistance) {
+                            closestDistance = currentDistance
+                            closestPoint = currentP
+                            closestElement = currentEl
+                            // console.log("closest", currentEl)
+    
+                        }
+    
+                        // LATER: allow manipulation of corners for mesh and individual points for polyline
+                        // returns closest element to mouse pointer
+                        
+                    }
+                }
+            if (closestDistance) {
+                console.log("closest", closestDistance)
+                // set to state
+                // let offsetX = pointer.x - closestPoint.x
+                // let offsetY = pointer.y - closestPoint.y
+                setSelectedElement({"element": closestElement, "pointerDown": pointer}) 
+
+            } else {
+                setSelectedElement(null)
+            }
+            }
+
+
+
+        } else if (tool === 'scale') {
             if (scalePoints.length < 2) {
                 // if (scalePoints.length == 1) {
                     
@@ -403,7 +516,6 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                 context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)  
                 // add point to currentPoly
                 setScalePoints((prev) => [...prev, newP]) 
-                console.log("prevIndex: ", prevIndex)
                 // hopefully second point has registered
                 if (prevIndex == 1) {
                     // action pop up
@@ -415,12 +527,48 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
         }
     }
 
+    function handlePointerUp(event){
+        console.log("pointerUP")
+        let pointer = {x: event.pageX, y: event.pageY}
+        // setSelectedElement({"element": closestElement, "pointerDown": pointer})
+        if (selectedElement) {
+            let el = selectedElement["element"] // needs id added to state
+            let elementId = el["id"]
+            let prevPointer = selectedElement["pointerDown"]
+            let offsetX = pointer.x - prevPointer.x
+            let offsetY = pointer.y - prevPointer.y
 
-    // if (isDevMode) {
-    //     let pxPerMesh = 10
-    //     let tool = 'polyline'
-    //     deltaGridlines(pxPerMesh, tool)
-    // }
+            // apply offset to all points
+            // later this should only be actioned when moving
+            // if moving one point of polyline or corner of rect; different logic
+            el.points.forEach(point => {
+                point.x =  point.x + offsetX
+                point.y = point.y + offsetY
+            })
+            console.log("el offset", offsetX, offsetY)
+            // // replace in elements
+            addElement(prev =>{
+
+
+                prev.map(element => {
+                    if (element.id === elementId) {
+                        return el
+                    } else {
+                        return element
+                    }
+                })
+            } )
+        } 
+        // if element selected -> move from previous to new position
+        // need previous pointer down point
+        // apply offset to all points
+        // later apply only to target point
+        console.log("selectedEl: ",selectedElement)
+        // should be action not moving!
+        // setSelectedElement(null)
+    }
+
+
   return (
   <>
     {showPopup && (
@@ -438,7 +586,9 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
       width={canvasWidth} // pass in width and height as props
       height={canvasHeight}
       className='border border-black rounded-md bg-transparent inset-0 absolute z-10'
-      onClick={handleClick}
+      onPointerDown={handlePointerDown}
+    //   onPointerMove={handlePointerMove} // later move shapes here
+      onPointerUp={handlePointerUp}
       />
   </>
   )
