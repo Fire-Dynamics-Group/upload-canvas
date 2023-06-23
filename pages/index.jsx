@@ -130,7 +130,10 @@ export default function Home() {
   const [ fdsData, setFdsData] = useState("")
   const pdfCanvasRef = useRef()
 
-  const [tool, setTool] = useState("scale")
+  // const [tool, setTool] = useState("scale")
+  const tool = useStore((state) => state.tool)
+  const setTool = useStore((state) => state.setTool)
+
   const elements = useStore((state) => state.elements)
 
   console.log("elements log: ", elements)
@@ -358,8 +361,8 @@ export default function Home() {
       <div>
         { selectedFile ? (<>
           <Canvas 
-            tool={tool} 
-            setTool={setTool} 
+            // tool={tool} 
+            // setTool={setTool} 
             dimensions={canvasDimensions} 
             isDevMode={dev_mode} 
             comment={comment} 

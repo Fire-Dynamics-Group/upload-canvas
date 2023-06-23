@@ -33,8 +33,7 @@ const elementConfig = {
 }
 
 // eslint-disable-next-line react/prop-types
-function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
-    console.log(tool)
+function Canvas({dimensions, isDevMode, comment, setComment}) {
     // TODO: have currentElement array with {} including type etc like elements
     const [currentPoly, setCurrentPoly] = useState([])
     const [currentRect, setCurrentRect] = useState([])
@@ -68,7 +67,12 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
     // below logic for popup
     const [showPopup, setShowPopup] = useState(false)
     const [scaleDistance, setScaleDistance] = useState(null)
-    const [selectedElement, setSelectedElement] = useState(null)
+    // const [selectedElement, setSelectedElement] = useState(null)
+    const selectedElement = useStore((state) => state.selectedElement)
+    const setSelectedElement = useStore((state) => state.setSelectedElement)
+    const tool = useStore((state) => state.tool)
+    const setTool = useStore((state) => state.setTool)
+
 
     console.log("scaleDistance: ", scaleDistance)      
 
@@ -151,7 +155,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             window.removeEventListener("keydown", handleKeyPress)
             window.removeEventListener("keyup", handleCtrlRelease)
         }
-    }, [elements, currentPoly, tool, setTool, comment, addElement, selectedElement, currentId, removeElement, returnElementObject])
+    }, [elements, currentPoly, tool, setTool, comment, addElement, selectedElement, currentId, removeElement, returnElementObject, setSelectedElement])
 
     // LATER: move to own component -> sends back null or position object
     useEffect(() => {
@@ -443,7 +447,6 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                 let pointsArray = [currentRect[0], newP]
                 // add to elements state
                 let currentEl = returnElementObject(tool, pointsArray, comment) // comment from props
-                // setElements(prev => [...prev, currentEl])
                 addElement(currentEl)
                 // set current rect to []
                 setCurrentRect([])
@@ -454,16 +457,12 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
         } else if (tool === 'selection') {
             // need mouse location
             let pointer = {x: event.pageX, y: event.pageY}
-            // const element = getElementAtPosition(clientX, clientY, elements);
             // find closest point of all elements
             let closestPoint = null
             let closestDistance = null
             let closestElement = null
-            // console.log("elements.length: ", elements.length)
             for (let i = 0; i < elements.length; i++) {
                 let currentEl = elements[i]
-                // console.log("currentEl: ", currentEl, i)
-
                 // loop through elements
                 // initially allow movement of entire shape only
                 let currentPoints = currentEl.points
@@ -492,9 +491,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                         if (currentDistance < 40 && closestDistance === null || currentDistance < closestDistance) {
                             closestDistance = currentDistance
                             closestPoint = currentP
-                            closestElement = currentEl
-                            // console.log("closest", currentEl)
-    
+                            closestElement = currentEl    
                         }
     
                         // LATER: allow manipulation of corners for mesh and individual points for polyline
@@ -503,11 +500,8 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                     }
                 }
             if (closestDistance) {
-                console.log("closest", closestDistance)
-                // set to state
-                // let offsetX = pointer.x - closestPoint.x
-                // let offsetY = pointer.y - closestPoint.y
-                setSelectedElement({"element": closestElement, "pointerDown": pointer}) 
+                // TO be user tested if pointerDown location or location of closestPoint more useful
+                setSelectedElement({"element": closestElement, "pointerDown": closestPoint}) 
 
             } else {
                 setSelectedElement(null)
@@ -556,22 +550,29 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
         if (selectedElement) {
             let el = selectedElement["element"] // needs id added to state
             let elementId = el["id"]
-            let prevPointer = selectedElement["pointerDown"]
-            let offsetX = pointer.x - prevPointer.x
-            let offsetY = pointer.y - prevPointer.y
+            let startingPointPosition = selectedElement["pointerDown"]
+            let offsetX = pointer.x - startingPointPosition.x
+            let offsetY = pointer.y - startingPointPosition.y
 
             // apply offset to all points
             // later this should only be actioned when moving
             // if moving one point of polyline or corner of rect; different logic
-            el.points.forEach(point => {
-                point.x =  point.x + offsetX
-                point.y = point.y + offsetY
-            })
+            // el.points.forEach(point => {
+            //     point.x =  point.x + offsetX
+            //     point.y = point.y + offsetY
+            // })
+            // // if polyline
+
+            for (let i = 0; i < el.points.length; i++) {
+                let point = el.points[i]
+                if (point == startingPointPosition || selectedElement["element"]["type"] != "polyline") {
+                    el.points[i].x = point.x + offsetX
+                    el.points[i].y = point.y + offsetY 
+                }
+            }
             console.log("el offset", offsetX, offsetY)
             // // replace in elements
             addElement(prev =>{
-
-
                 prev.map(element => {
                     if (element.id === elementId) {
                         return el
