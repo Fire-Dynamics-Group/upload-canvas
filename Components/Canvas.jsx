@@ -18,6 +18,8 @@ import useStore from '../store/useStore'
  * stair: blue
  * other: green
  * doors: red
+ * 
+ * bug: moving not working for top right corner of a mesh rect
 */
 const elementConfig = {
     "obstruction": "green",
@@ -260,11 +262,22 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             // draw dashed box around element
             let selectedPoints = selectedElement["element"]["points"]
             console.log("selPoints useLayout: ", selectedPoints)
+            // if mesh/rect then needs to use delta for max and min y
             // find points
             let maxX = null
             let minX = null
             let maxY = null
             let minY = null
+
+            if (selectedElement["element"]["comments"].toLowerCase().includes("mesh")) {
+                let p1 = selectedPoints[0]
+                let p3 = selectedPoints[1]
+                let p2 = {"x":p1.x, "y": p3.y}
+                let p4 = {"x":p3.x, "y": p1.y}
+                
+                selectedPoints = [p1, p2, p3, p4]
+                console.log("p's:", selectedPoints)
+            }
             // find bottom left, right, top left and right
             for (let i = 0; i < selectedPoints.length; i++) {
                 let currentX = selectedPoints[i].x
@@ -457,12 +470,21 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                 
                 // requires to loop through all points in element 
                 if (currentPoints) {
-
+                    // needs further points for rect
+                    if (currentEl["comments"].toLowerCase().includes("mesh")) {
+                        let p1 = currentPoints[0]
+                        let p3 = currentPoints[1]
+                        let p2 = {"x":p1.x, "y": p3.y}
+                        let p4 = {"x":p3.x, "y": p1.y}
+                        
+                        currentPoints = [p1, p2, p3, p4]
+                        console.log("p's:", currentPoints)
+                    }
                     for (let j = 0; j < currentPoints.length; j++) {
                         let currentP = currentPoints[j]
                         let currentDistance = calcDistance(pointer, currentP)
-                        // console.log("currentP: ", currentP, j, currentDistance)
-                        // console.log("currentPoints.length: ", currentPoints.length)
+                        console.log("currentP: ", currentP, j, currentDistance)
+                        console.log("currentPoints.length: ", currentPoints.length)
                         //-> check what is closest shape and 
                         // find distance
                         // TODO: add threshold of certain pixels
