@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Gridlines from './Gridlines'
 import ScalePopup from './ScalePopup'
 import FDRobot from './FDRobot'
@@ -26,7 +26,8 @@ const elementConfig = {
     "stairMesh": "blue",
     "door": "red",
     "fire": "orange",
-    "scale": "green"
+    "scale": "green",
+    "selection": "orange"
 }
 
 // eslint-disable-next-line react/prop-types
@@ -38,12 +39,14 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
     const [currentPoint, setCurrentPoint] = useState([])
 
     const elements = useStore((state) => state.elements)
-    const setElements = useStore((state) => state.setElements)
+    const addElement = useStore((state) => state.addElement)
+    const removeElement = useStore((state) => state.removeElement)
 
     const [isDrawing, setIsDrawing] = useState(false)
     
     // TODO: have a keyPressed useState -> with which key
     const [isCtrlPressed, setIsCtrlPressed] = useState(false)
+    const [isEscapePressed, setIsEscapePressed] = useState(false)
     // on enter -> isDrawing = false
     // add polyline to state
     // add type of line -> include in useLayoutEffect canvas rendering
@@ -67,44 +70,48 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
 
     console.log("scaleDistance: ", scaleDistance)      
 
-
-    // TODO: id should come from a state list, to allow for deletions etc
-    function returnElementObject(type, pointsArray, comments) {
-        id = currentId
+    // useCallback return memoized version of function -> only changes if dep val changes
+    // therefore, not re-ran each re-render of useEffect
+    const returnElementObject = useCallback((type, pointsArray, comments) => {
+        let id = currentId 
         setCurrentId(prev => prev + 1)
         return {
             "type": type,
             "points": pointsArray,
             "comments": comments,
             "id": id
-        }        
-    }
+        }          
+    }, [currentId])
     // event listener for ctrl button
     // lines to be ortho -> check if closer to x or y ortho
     // LATER: move keypress to own component -> send back keys pressed or keyup
     useEffect(() => {
+
+
         const handleKeyPress = ({key}) => {
             if (key == 'Control') {
                 setIsCtrlPressed(true)
             }
+            if (key == 'Escape') {
+                setIsEscapePressed(true)
+                
+                if (selectedElement && selectedElement["element"]) {
+                    console.log("key: ", key, selectedElement["element"])
+                    // remove selected element from elements
+                    let selectedId = selectedElement["element"]["id"]
+                    // console.log("filtered element: ", elements.filter(element => element.id !== selectedId))
+                    removeElement(selectedId); // filter returns array of all items meeting condition
+                    setSelectedElement(null)
+                }
+            }
             // "Enter"
             if (key == 'Enter') {
-                console.log("keydown event: ",key, elements)
-                // why is this only being hit sometimes??
                 function addElementToState() {
                     // only needed for polyline?
                     if (tool == 'polyline') {
                         if (currentPoly.length > 0 ) {
-                            let current_el = {
-                                "type": tool,
-                                "points": currentPoly,
-                                "comments": comment
-                            }
-                            console.log("current_el: ", current_el
-                            )
-
-                            // setElements(prev => [...prev, current_el])
-                            setElements(current_el)
+                            let current_el = returnElementObject(tool, currentPoly, comment)
+                            addElement(current_el)
                             
                         }
                         // actions when first one drawn -> will guide be removed?
@@ -126,6 +133,9 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             if (key == 'Control') {
                 setIsCtrlPressed(false)
             }
+            if (key == 'Escape') {
+                setIsEscapePressed(false)
+            }
             // "Enter"
             if (key == 'Enter') {
                 setIsEnterPressed(false)
@@ -139,7 +149,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             window.removeEventListener("keydown", handleKeyPress)
             window.removeEventListener("keyup", handleCtrlRelease)
         }
-    }, [elements, currentPoly, tool, setTool, comment, setElements])
+    }, [elements, currentPoly, tool, setTool, comment, addElement, selectedElement, currentId, removeElement, returnElementObject])
 
     // LATER: move to own component -> sends back null or position object
     useEffect(() => {
@@ -196,7 +206,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
         
         context.clearRect(0, 0, canvas.width, canvas.height)
 
-        function drawRect(points, context, comments) {
+        function drawRect(points, context, comments, dotted=false) {
             // same for guide 
             // LATER: just without green point at second point
             // corners below line so line is visible
@@ -214,9 +224,14 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             let deltaX = p2.x - p1.x
             let deltaY = p2.y - p1.y
             context.strokeStyle = elementConfig[comments] // 'blue'
+            if (dotted) {
+                context.setLineDash([5, 15])
+            }
             context.lineWidth = 1.5;
             context.strokeRect(p1.x, p1.y, deltaX, deltaY)
+
             context.lineWidth = 1;
+            context.setLineDash([])
 
         }
 
@@ -240,6 +255,46 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                 }
     
             }            
+        }
+        if (selectedElement) {
+            // draw dashed box around element
+            let selectedPoints = selectedElement["element"]["points"]
+            console.log("selPoints useLayout: ", selectedPoints)
+            // find points
+            let maxX = null
+            let minX = null
+            let maxY = null
+            let minY = null
+            // find bottom left, right, top left and right
+            for (let i = 0; i < selectedPoints.length; i++) {
+                let currentX = selectedPoints[i].x
+                let currentY = selectedPoints[i].y
+                if (maxX == null || maxX < currentX) {
+                    maxX = currentX
+                }
+                if (maxY == null || maxY < currentY) {
+                    maxY = currentY
+                }
+                if (minX == null || minX > currentX) {
+                    minX = currentX
+                }
+                if (minY == null || minY > currentY) {
+                    minY = currentY
+                }                
+            }
+
+            console.log("mins: ",maxX, maxY, minX, minY)
+            let buffer = 10
+            maxX += buffer
+            maxY += buffer
+            minX -= buffer
+            minY -= buffer
+            // add buffer
+            // draw dotted line rect
+            let points = [{"x": maxX, "y": maxY}, {"x": minX, "y": minY}]
+            let comments = "selection"
+            drawRect(points, context, comments, true)
+            // later have contrasting colour
         }
         // loop through current polypoints
         if (isDrawing) {
@@ -290,12 +345,13 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                 drawPolyline(element.points, context, element.comments)
             } else if (element.type == 'rect') {
                 drawRect(element.points, context, element.comments)
+                console.log("useLayoutRect: ", element.points)
             } else if (element.type == 'point') {
                 drawPolyline(element.points, context, element.comments)
             }
         })
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement])
 
     function snapVertexOrtho(vertex, prevVertex) {
         // check if diff is greater in x or y between vertices
@@ -332,7 +388,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             newP = snapVertexToGrid(newP)
             let currentEl = returnElementObject(tool, [newP], comment) // comment from props
             // setElements(prev => [...prev, currentEl])
-            setElements(currentEl)
+            addElement(currentEl)
             context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)        
         }
         else if (tool === 'polyline') {
@@ -375,7 +431,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                 // add to elements state
                 let currentEl = returnElementObject(tool, pointsArray, comment) // comment from props
                 // setElements(prev => [...prev, currentEl])
-                setElements(currentEl)
+                addElement(currentEl)
                 // set current rect to []
                 setCurrentRect([])
                 setIsDrawing(false)
@@ -431,6 +487,8 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
                 // let offsetY = pointer.y - closestPoint.y
                 setSelectedElement({"element": closestElement, "pointerDown": pointer}) 
 
+            } else {
+                setSelectedElement(null)
             }
             }
 
@@ -489,7 +547,7 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
             })
             console.log("el offset", offsetX, offsetY)
             // // replace in elements
-            setElements(prev =>{
+            addElement(prev =>{
 
 
                 prev.map(element => {
@@ -506,7 +564,8 @@ function Canvas({tool, setTool, dimensions, isDevMode, comment, setComment}) {
         // apply offset to all points
         // later apply only to target point
         console.log("selectedEl: ",selectedElement)
-        setSelectedElement(null)
+        // should be action not moving!
+        // setSelectedElement(null)
     }
 
 
