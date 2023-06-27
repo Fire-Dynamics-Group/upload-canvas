@@ -10,6 +10,16 @@ const useStore = create((set) => {
         addElement: (newEl) => set((state) => ({
             elements: [...state.elements, newEl]
         })),
+        changeElement: (changedEl) =>  set((state) => ({
+            elements: 
+                state.elements.map(element => {
+                    if (element.id === changedEl.id) {
+                        return changedEl
+                    } else {
+                        return element
+                    }
+                })         
+        })),
         removeElement: (selectedID) => set((state) => ({
             elements: state.elements.filter(element => element.id !== selectedID)
         })),
@@ -20,7 +30,7 @@ const useStore = create((set) => {
                 if (newTool != 'selection') 
                 return {
                     tool: newTool,
-                    selectedElement: null
+                    selectedElement: null,
                 }
                 return {
                     tool: newTool
@@ -29,9 +39,9 @@ const useStore = create((set) => {
             )
         },
 
-        setSelectedElement: (newEl) => set((state) => ({
+        setSelectedElement: (newEl) => set(() => ({
             selectedElement: newEl
-        }))
+        })),
 }
 })
 

@@ -42,6 +42,7 @@ function Canvas({dimensions, isDevMode, comment, setComment}) {
     const elements = useStore((state) => state.elements)
     const addElement = useStore((state) => state.addElement)
     const removeElement = useStore((state) => state.removeElement)
+    const changeElement = useStore((state) => state.changeElement)
 
     const [isDrawing, setIsDrawing] = useState(false)
     
@@ -67,9 +68,14 @@ function Canvas({dimensions, isDevMode, comment, setComment}) {
     // below logic for popup
     const [showPopup, setShowPopup] = useState(false)
     const [scaleDistance, setScaleDistance] = useState(null)
-    // const [selectedElement, setSelectedElement] = useState(null)
     const selectedElement = useStore((state) => state.selectedElement)
     const setSelectedElement = useStore((state) => state.setSelectedElement)
+
+    const beingEditedElement = useStore((state) => state.beingEditedElement)
+    const nullSelectedAndEditedElements = useStore((state) => state.nullSelectedAndEditedElements)
+
+
+
     const tool = useStore((state) => state.tool)
     const setTool = useStore((state) => state.setTool)
 
@@ -85,7 +91,8 @@ function Canvas({dimensions, isDevMode, comment, setComment}) {
             "type": type,
             "points": pointsArray,
             "comments": comments,
-            "id": id
+            "id": id,
+            // "beingEdited": false // not rendered from elements if true -> editedElement in current logic e.g. currentPoly etc
         }          
     }, [currentId])
     // event listener for ctrl button
@@ -162,7 +169,7 @@ function Canvas({dimensions, isDevMode, comment, setComment}) {
         // TODO: guide rect for meshes
         const handleMouseMove = (event) => {
             // currentElement should have type and can include scale
-            if (isDrawing && currentPoly.length > 0 || tool === 'scale' && scalePoints.length == 1 || tool === 'rect' && currentRect.length == 1) { // and tool == polyline
+            if (selectedElement || isDrawing && currentPoly.length > 0 || tool === 'scale' && scalePoints.length == 1 || tool === 'rect' && currentRect.length == 1) { // and tool == polyline
                 setGuideLine({x: event.pageX, y: event.pageY})
             } else {
                 setGuideLine(null)
@@ -174,7 +181,7 @@ function Canvas({dimensions, isDevMode, comment, setComment}) {
         return () => {
             window.removeEventListener("mousemove", handleMouseMove)
         }
-    }, [isDrawing, currentPoly, scalePoints.length, tool, currentRect])
+    }, [isDrawing, currentPoly, scalePoints.length, tool, currentRect, selectedElement])
 
     function calcDistance(p1, p2) {
         let a = p1.x - p2.x
@@ -199,13 +206,10 @@ function Canvas({dimensions, isDevMode, comment, setComment}) {
         console.log("pxPerMesh: ", pixels/scaleDistance)
         deltaGridlines(temp, 'polyline')
     }
-    // useEffect(() => {
-    //     // calc distance of scale line drawn
-
-    // }, [scaleDistance, scalePoints])
-    // drawing loop below
-    // TODO: have colours dependent on comments
+ 
     useLayoutEffect(() => {
+        // TODO: render selectedElement
+        console.log("elements: ", elements)
         // TODO: need to add finished polygon or points to object array
         const canvas = canvasRef.current
         const context = canvas.getContext('2d')
@@ -213,23 +217,11 @@ function Canvas({dimensions, isDevMode, comment, setComment}) {
         context.clearRect(0, 0, canvas.width, canvas.height)
 
         function drawRect(points, context, comments, dotted=false) {
-            // same for guide 
-            // LATER: just without green point at second point
-            // corners below line so line is visible
-            // for (let i=0; i<points.length; i++) {
-            //     // draw vertex
-            //     let dimension = 10
-            //     context.fillStyle = 'green'
-            //     context.fillRect(points[i].x - dimension/2, points[i].y - dimension/2, dimension, dimension)
-            // }
-            // always 2 points
-            // draw rect
-                // ctx.strokeRect(50, 50, 200, 100); // x, y, width, height
             let p1 = points[0]
             let p2 = points[1]
             let deltaX = p2.x - p1.x
             let deltaY = p2.y - p1.y
-            context.strokeStyle = elementConfig[comments] // 'blue'
+            context.strokeStyle = elementConfig[comments] 
             if (dotted) {
                 context.setLineDash([5, 15])
             }
@@ -262,6 +254,45 @@ function Canvas({dimensions, isDevMode, comment, setComment}) {
     
             }            
         }
+        function drawPolyAndGuide(poly, comment) {
+                    
+            // need if beingEdited
+            console.log("selectedElement and guideLine: ",selectedElement, guideLine)
+            if (selectedElement) {
+                // change polypoints before drawing
+                // if beingEdited
+                // use guideLine for selectedPoint
+                // 
+                let startingPointPosition = selectedElement["pointerDown"]
+                if (guideLine != null) {
+                    let current = guideLine
+                    for (let i = 0; i < poly.length; i++) {
+                        let point = poly[i]
+                        if (point == startingPointPosition) {
+                            poly[i].x = current.x
+                            poly[i].y = current.y 
+                        }
+                    }
+                }
+                drawPolyline(poly, context, comment)
+
+            } else {
+                drawPolyline(poly, context, comment)
+
+                if (guideLine != null) {
+                    // line from last polypoint to guideline
+                    let prev = poly[poly.length-1]
+                    let current = guideLine
+                    if (isCtrlPressed){
+                        current = snapVertexOrtho(current, prev)
+                    }
+                    context.moveTo(prev.x, prev.y)
+                    context.lineTo(current.x, current.y)
+                    context.stroke()            
+                }
+
+            }
+        }
         if (selectedElement) {
             // draw dashed box around element
             let selectedPoints = selectedElement["element"]["points"]
@@ -273,14 +304,13 @@ function Canvas({dimensions, isDevMode, comment, setComment}) {
             let maxY = null
             let minY = null
 
-            if (selectedElement["element"]["comments"].toLowerCase().includes("mesh")) {
+            if (selectedElement["element"]["type"] == 'rect') {
                 let p1 = selectedPoints[0]
                 let p3 = selectedPoints[1]
                 let p2 = {"x":p1.x, "y": p3.y}
                 let p4 = {"x":p3.x, "y": p1.y}
                 
                 selectedPoints = [p1, p2, p3, p4]
-                console.log("p's:", selectedPoints)
             }
             // find bottom left, right, top left and right
             for (let i = 0; i < selectedPoints.length; i++) {
@@ -308,33 +338,50 @@ function Canvas({dimensions, isDevMode, comment, setComment}) {
             minY -= buffer
             // add buffer
             // draw dotted line rect
-            let points = [{"x": maxX, "y": maxY}, {"x": minX, "y": minY}]
+            let selectedRectPoints = [{"x": maxX, "y": maxY}, {"x": minX, "y": minY}]
             let comments = "selection"
-            drawRect(points, context, comments, true)
-            // later have contrasting colour
-        }
-        // loop through current polypoints
-        if (isDrawing) {
-                // should be current element with type and points object
-                function drawPolyAndGuide(poly) {
+            drawRect(selectedRectPoints, context, comments, true)
 
-                    drawPolyline(poly, context, comment)
+            // draw intermediate for selected shape
+            let selectedType = selectedElement["element"]["type"]
+
+            if (selectedType === 'polyline') {
+                drawPolyAndGuide(selectedPoints, comment)
+            } else if (selectedType === 'point'){
+                drawPolyline(selectedPoints, comment) // should just add to state
+            } else if (selectedType == 'rect') {
+                // console.log("rect drawing: ", currentRect)
+                if (selectedPoints.length == 1) { // will be two -> unless second shaved
+                    // use guide for mousePosition
                     if (guideLine != null) {
-                        // line from last polypoint to guideline
-                        let prev = poly[poly.length-1]
-                        let current = guideLine
-                        if (isCtrlPressed){
-                            current = snapVertexOrtho(current, prev)
-                        }
-                        context.moveTo(prev.x, prev.y)
-                        context.lineTo(current.x, current.y)
-                        context.stroke()            
+
+                        // have guide point for rect -> send to draw rect
+                        // not use closest point
+                        // use offset only?
+                        // // apply offset
+                        // let rectPoints = [selectedPoints[0], guideLine]
+                        // drawRect(rectPoints, context, comment)
                     }
                 }
+        //     if (selectedElement["element"]["type"] === 'polyline') {
+        //         drawPolyAndGuide(currentPoly, comment)
+        //     // later have contrasting colour
+        }
+    }
+
+        // loop through current polypoints
+        if (isDrawing) {
+
+                // should be current element with type and points object
+                // logic should allow guide to not be final point
+
                 console.log("hits here")
+                
                 if (tool === 'polyline') {
                     drawPolyAndGuide(currentPoly, comment)
-                } else if (tool === 'scale') {
+                // } else if (selectedElement) {
+                //     drawPolyAndGuide(selectedElement["element"]["points"], tool)
+                }else if (tool === 'scale') {
                     drawPolyAndGuide(scalePoints, tool)
                 } else if (tool === 'point'){
                     drawPolyline(currentPoint, comment) // should just add to state
@@ -356,15 +403,17 @@ function Canvas({dimensions, isDevMode, comment, setComment}) {
         // all historical elements
         // later have different logic for different line types
         elements.forEach(element => {
-            // later access comment -> different line colour etc
-            if (element.type == 'polyline' || element.type == 'scale') {
+            if (!selectedElement ||selectedElement && element.id != selectedElement.id) { // if element is selected -> include in current poly etc
 
-                drawPolyline(element.points, context, element.comments)
-            } else if (element.type == 'rect') {
-                drawRect(element.points, context, element.comments)
-                console.log("useLayoutRect: ", element.points)
-            } else if (element.type == 'point') {
-                drawPolyline(element.points, context, element.comments)
+                // later access comment -> different line colour etc
+                if (element.type == 'polyline' || element.type == 'scale') {   
+                    drawPolyline(element.points, context, element.comments)
+                } else if (element.type == 'rect') {
+                    drawRect(element.points, context, element.comments)
+                    console.log("useLayoutRect: ", element.points)
+                } else if (element.type == 'point') {
+                    drawPolyline(element.points, context, element.comments)
+                }
             }
         })
 
@@ -393,7 +442,6 @@ function Canvas({dimensions, isDevMode, comment, setComment}) {
     }
     //   TODO: polyline and mark point tools
     function handlePointerDown(event) { // should this be handle mouse down?
-        console.log(currentPoly)
         const canvas = canvasRef.current
         const context = canvas.getContext('2d')
         if (tool === 'point') {
@@ -409,9 +457,7 @@ function Canvas({dimensions, isDevMode, comment, setComment}) {
             context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)        
         }
         else if (tool === 'polyline') {
-            setIsDrawing(true) // drawing set to false on press of enter or return to origin
-
-            // if not first vertex -> draw line from last index to vertex (on mousemove)
+            setIsDrawing(true) 
             // draw vertex
             let dimension = 10
             context.fillStyle = 'green'
@@ -502,6 +548,9 @@ function Canvas({dimensions, isDevMode, comment, setComment}) {
             if (closestDistance) {
                 // TO be user tested if pointerDown location or location of closestPoint more useful
                 setSelectedElement({"element": closestElement, "pointerDown": closestPoint}) 
+                // add to current - directly render from useLayout effect
+                // let elType = closestElement["type"]
+
 
             } else {
                 setSelectedElement(null)
@@ -572,15 +621,16 @@ function Canvas({dimensions, isDevMode, comment, setComment}) {
             }
             console.log("el offset", offsetX, offsetY)
             // // replace in elements
-            addElement(prev =>{
-                prev.map(element => {
-                    if (element.id === elementId) {
-                        return el
-                    } else {
-                        return element
-                    }
-                })
-            } )
+            changeElement(el)
+            // addElement(prev =>{
+            //     prev.map(element => {
+            //         if (element.id === elementId) {
+            //             return el
+            //         } else {
+            //             return element
+            //         }
+            //     })
+            // } )
         } 
         // if element selected -> move from previous to new position
         // need previous pointer down point
