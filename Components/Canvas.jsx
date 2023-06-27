@@ -227,10 +227,11 @@ function Canvas({dimensions, isDevMode}) {
             let deltaX = p2.x - p1.x
             let deltaY = p2.y - p1.y
             context.strokeStyle = elementConfig[comments] 
+            context.lineWidth = 1.5;
             if (dotted) {
                 context.setLineDash([5, 15])
+                context.lineWidth = 2;
             }
-            context.lineWidth = 1.5;
             context.strokeRect(p1.x, p1.y, deltaX, deltaY)
 
             context.lineWidth = 1;
@@ -255,7 +256,7 @@ function Canvas({dimensions, isDevMode}) {
                     let prev = points[i-1]
                     let current = points[i]
                     context.strokeStyle = (currentMode === 'fdsGen') ? 'black' : elementConfig[comments] // depending on mode if radiation use comment for optionsObject
-                    context.lineWidth = 4; // depending on mode if radiation use 2 else 1
+                    context.lineWidth = (currentMode === 'fdsGen') ? 1 : 4; // depending on mode if radiation use 2 else 1
                     context.moveTo(prev.x, prev.y)
                     context.lineTo(current.x, current.y)
                     context.stroke()
@@ -305,7 +306,9 @@ function Canvas({dimensions, isDevMode}) {
         if (selectedElement) {
             // draw dashed box around element
             let selectedPoints = selectedElement["element"]["points"]
-            console.log("selPoints useLayout: ", selectedPoints)
+            let selectedType = selectedElement["element"]["type"]
+            let rectOutlinePoints = (selectedType === 'rect') ? selectedPoints : [selectedElement["pointerDown"]]
+            console.log("selPoints useLayout: ", selectedElement["pointerDown"])
             // if mesh/rect then needs to use delta for max and min y
             // find points
             let maxX = null
@@ -313,18 +316,18 @@ function Canvas({dimensions, isDevMode}) {
             let maxY = null
             let minY = null
 
-            if (selectedElement["element"]["type"] == 'rect') {
-                let p1 = selectedPoints[0]
-                let p3 = selectedPoints[1]
+            if (selectedType === 'rect') {
+                let p1 = rectOutlinePoints[0]
+                let p3 = rectOutlinePoints[1]
                 let p2 = {"x":p1.x, "y": p3.y}
                 let p4 = {"x":p3.x, "y": p1.y}
                 
-                selectedPoints = [p1, p2, p3, p4]
+                rectOutlinePoints = [p1, p2, p3, p4]
             }
             // find bottom left, right, top left and right
-            for (let i = 0; i < selectedPoints.length; i++) {
-                let currentX = selectedPoints[i].x
-                let currentY = selectedPoints[i].y
+            for (let i = 0; i < rectOutlinePoints.length; i++) {
+                let currentX = rectOutlinePoints[i].x
+                let currentY = rectOutlinePoints[i].y
                 if (maxX == null || maxX < currentX) {
                     maxX = currentX
                 }
@@ -352,7 +355,7 @@ function Canvas({dimensions, isDevMode}) {
             drawRect(selectedRectPoints, context, comments, true)
 
             // draw intermediate for selected shape
-            let selectedType = selectedElement["element"]["type"]
+            // let selectedType = selectedElement["element"]["type"]
 
             if (selectedType === 'polyline') {
                 drawPolyAndGuide(selectedPoints, comment)
