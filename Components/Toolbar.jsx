@@ -15,6 +15,57 @@ const Toolbar = ({setShowModePopup}) => {
         // allow user to change to radiation
         setShowModePopup(true)
       }
+
+    const fdsGenTools = (
+        <>
+                {/* non stair mesh */}
+                <input
+                    type="radio"
+                    id="mesh"
+                    checked={tool === "rect" && comment=== "mesh"}
+                    onChange={() => {
+                    setTool("rect") 
+                    setComment("mesh")
+                    }}
+                />
+               <label htmlFor="rectangle">Mesh</label>
+                {/*  stair obstructions */}
+                <input type="radio" 
+                id="line" 
+                checked={tool === "polyline" && comment == 'stairObstruction'} 
+                onChange={() => {
+                setTool("polyline")
+                setComment("stairObstruction")
+                }} />
+                <label htmlFor="line">Stair Obstruction</label>
+                {/* stair mesh */}
+                <input
+                type="radio"
+                id="mesh"
+                checked={tool === "rect" && comment=== "stairMesh"}
+                onChange={() => {
+                    setTool("rect") 
+                    setComment("stairMesh")
+                }}
+                />
+                <label htmlFor="rectangle">Stair Mesh</label> 
+
+        </>
+    )
+
+    const radiationTools = (
+        <>
+                {/*  escape path */}
+                <input type="radio" 
+                id="line" 
+                checked={tool === "polyline" && comment == 'escapeRoute'} 
+                onChange={() => {
+                setTool("polyline")
+                setComment("escapeRoute")
+                }} />
+                <label htmlFor="line">Escape Route</label>
+        </>
+    )
     return (
     <>
         <div className="text-center">
@@ -48,39 +99,23 @@ const Toolbar = ({setShowModePopup}) => {
           />
           <label htmlFor="selection">Selection</label>
           {/* non stair obstructions */}
-          <input type="radio" id="line" checked={tool === "polyline" && comment == 'obstruction'} onChange={() => {
+          <input type="radio" id="line" 
+          checked={tool === "polyline" && comment == 'obstruction'} 
+          onChange={() => {
             setTool("polyline")
             setComment("obstruction")
             }} />
           <label htmlFor="line">Obstruction</label>
-          {/* non stair mesh */}
-          <input
-            type="radio"
-            id="mesh"
-            checked={tool === "rect" && comment=== "mesh"}
-            onChange={() => {
-              setTool("rect") 
-              setComment("mesh")
-            }}
-          />
-          <label htmlFor="rectangle">Mesh</label>
-          {/* stair obstructions */}
-          <input type="radio" id="line" checked={tool === "polyline" && comment == 'stairObstruction'} onChange={() => {
-            setTool("polyline")
-            setComment("stairObstruction")
-            }} />
-          <label htmlFor="line">Stair Obstruction</label>
-          {/* stair mesh */}
-          <input
-            type="radio"
-            id="mesh"
-            checked={tool === "rect" && comment=== "stairMesh"}
-            onChange={() => {
-              setTool("rect") 
-              setComment("stairMesh")
-            }}
-          />
-          <label htmlFor="rectangle">Stair Mesh</label>
+
+          { currentMode === 'fdsGen' ?
+            <> 
+            {fdsGenTools}
+            </>
+
+            : <>
+                {radiationTools}
+            </>
+          }
           {/* Point  
                 * if point & stair-> point for stair climb
                 * if point & not stair -> fire (can be centre of box), inlet (can be polyline with two points)

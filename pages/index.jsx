@@ -282,68 +282,6 @@ export default function Home() {
   //     * doors to be lines
   //   */}  
    
-  //         <input
-  //           type="radio"
-  //           id="selection"
-  //           checked={tool === "selection"}
-  //           onChange={() => {
-  //             setTool("selection")
-  //             setComment("")
-  //           }}
-  //         />
-  //         <label htmlFor="selection">Selection</label>
-  //         {/* non stair obstructions */}
-  //         <input type="radio" id="line" checked={tool === "polyline" && comment == 'obstruction'} onChange={() => {
-  //           setTool("polyline")
-  //           setComment("obstruction")
-  //           }} />
-  //         <label htmlFor="line">Obstruction</label>
-  //         {/* non stair mesh */}
-  //         <input
-  //           type="radio"
-  //           id="mesh"
-  //           checked={tool === "rect" && comment=== "mesh"}
-  //           onChange={() => {
-  //             setTool("rect") 
-  //             setComment("mesh")
-  //           }}
-  //         />
-  //         <label htmlFor="rectangle">Mesh</label>
-  //         {/* stair obstructions */}
-  //         <input type="radio" id="line" checked={tool === "polyline" && comment == 'stairObstruction'} onChange={() => {
-  //           setTool("polyline")
-  //           setComment("stairObstruction")
-  //           }} />
-  //         <label htmlFor="line">Stair Obstruction</label>
-  //         {/* stair mesh */}
-  //         <input
-  //           type="radio"
-  //           id="mesh"
-  //           checked={tool === "rect" && comment=== "stairMesh"}
-  //           onChange={() => {
-  //             setTool("rect") 
-  //             setComment("stairMesh")
-  //             sendElementData()
-  //           }}
-  //         />
-  //         <label htmlFor="rectangle">Stair Mesh</label>
-  //         {/* Point  
-  //               * if point & stair-> point for stair climb
-  //               * if point & not stair -> fire (can be centre of box), inlet (can be polyline with two points)
-  //         */}
-  //         <input
-  //           type="radio"
-  //           id="fire"
-  //           checked={tool === "point"}
-  //           onChange={() => {
-  //             setTool("point")
-  //             setComment("fire")
-  //           }}
-  //         />
-  //         <label htmlFor="fire">Fire</label>
-
-  //   </>
-  //   )
 
 
   const menuOverlay = (<>
@@ -384,7 +322,7 @@ export default function Home() {
       </>
       )
       :null}
-      
+      {/* TODO: move bottom menu and mode popup to toolbar */}
       {showModePopup && <ModePopup setToggleShowPopup={setShowModePopup}/>}
       <div>
         { selectedFile ? (<>

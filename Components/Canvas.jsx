@@ -29,7 +29,8 @@ const elementConfig = {
     "door": "red",
     "fire": "orange",
     "scale": "green",
-    "selection": "orange"
+    "selection": "orange",
+    "escapeRoute": "blue"
 }
 
 // eslint-disable-next-line react/prop-types
@@ -45,6 +46,7 @@ function Canvas({dimensions, isDevMode}) {
     const changeElement = useStore((state) => state.changeElement)
     const comment = useStore((state) => state.comment)
     const setComment = useStore((state) => state.setComment)
+    const currentMode = useStore((state) => state.currentMode)
 
 
     const [isDrawing, setIsDrawing] = useState(false)
@@ -239,9 +241,12 @@ function Canvas({dimensions, isDevMode}) {
         function drawPolyline(points, context, comments) {
             for (let i=0; i<points.length; i++) {
                 // draw vertex
-                let dimension = 10
-                context.fillStyle = elementConfig[comments] // have config depending on comment
-                context.fillRect(points[i].x - dimension/2, points[i].y - dimension/2, dimension, dimension)  
+                if (currentMode === 'fdsGen' || comments === 'fire') {
+
+                    let dimension = 10
+                    context.fillStyle = elementConfig[comments] // have config depending on comment
+                    context.fillRect(points[i].x - dimension/2, points[i].y - dimension/2, dimension, dimension)  
+                }
     
                 // if i> 0 draw lines between points
                 if (i == 0){
@@ -249,7 +254,8 @@ function Canvas({dimensions, isDevMode}) {
                 if (i > 0) {
                     let prev = points[i-1]
                     let current = points[i]
-                    context.strokeStyle = 'black'
+                    context.strokeStyle = (currentMode === 'fdsGen') ? 'black' : elementConfig[comments] // depending on mode if radiation use comment for optionsObject
+                    context.lineWidth = 4; // depending on mode if radiation use 2 else 1
                     context.moveTo(prev.x, prev.y)
                     context.lineTo(current.x, current.y)
                     context.stroke()
