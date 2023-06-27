@@ -6,6 +6,8 @@ const useStore = create((set) => {
         elements: [],
         tool: "scale",
         selectedElement: null,
+        currentMode: "fdsGen",
+        comment: "",
 
         addElement: (newEl) => set((state) => ({
             elements: [...state.elements, newEl]
@@ -42,6 +44,12 @@ const useStore = create((set) => {
         setSelectedElement: (newEl) => set(() => ({
             selectedElement: newEl
         })),
+        setCurrentMode: (newMode) => set(() => ({
+            currentMode: newMode
+        })),
+        setComment: (newComment) => set(() => ({
+            comment: newComment
+        }))
 }
 })
 

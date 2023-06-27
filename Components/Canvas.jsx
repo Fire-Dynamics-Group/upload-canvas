@@ -33,7 +33,7 @@ const elementConfig = {
 }
 
 // eslint-disable-next-line react/prop-types
-function Canvas({dimensions, isDevMode, comment, setComment}) {
+function Canvas({dimensions, isDevMode}) {
     // TODO: have currentElement array with {} including type etc like elements
     const [currentPoly, setCurrentPoly] = useState([])
     const [currentRect, setCurrentRect] = useState([])
@@ -43,6 +43,9 @@ function Canvas({dimensions, isDevMode, comment, setComment}) {
     const addElement = useStore((state) => state.addElement)
     const removeElement = useStore((state) => state.removeElement)
     const changeElement = useStore((state) => state.changeElement)
+    const comment = useStore((state) => state.comment)
+    const setComment = useStore((state) => state.setComment)
+
 
     const [isDrawing, setIsDrawing] = useState(false)
     
