@@ -128,8 +128,8 @@ export default function Home() {
   const [selectedImage, setSelectedImage] = useState("")
   const [selectedFile, setSelectedFile] = useState()
   // const [ canvasDimensions, setCanvasDimensions ] = useState({})
-  const canvasDimensions = useStore((state) => state.comment)
-  const setCanvasDimensions = useStore((state) => state.setComment)  
+  const canvasDimensions = useStore((state) => state.canvasDimensions)
+  const setCanvasDimensions = useStore((state) => state.setCanvasDimensions)  
   const comment = useStore((state) => state.comment)
   const setComment = useStore((state) => state.setComment)
 

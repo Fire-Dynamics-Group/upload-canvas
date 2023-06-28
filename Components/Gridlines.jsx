@@ -12,6 +12,7 @@ function Gridlines({pixelsPerMesh, dimensions, hasScale}) {
     const canvasHeight = dimensions.height
 
     useEffect(() => {
+        console.log("gridlines check: ", hasScale, currentMode, pixelsPerMesh, dimensions)
         // TODO: needs to redraw all elements each frame
         // TODO: need to add finished polygon or points to object array
         const canvas = canvasRef.current
