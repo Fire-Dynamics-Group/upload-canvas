@@ -127,8 +127,9 @@ export default function Home() {
   const [uploading, setUploading] = useState(false)
   const [selectedImage, setSelectedImage] = useState("")
   const [selectedFile, setSelectedFile] = useState()
-  const [ canvasDimensions, setCanvasDimensions ] = useState({})
-  // const [comment, setComment] = useState("")
+  // const [ canvasDimensions, setCanvasDimensions ] = useState({})
+  const canvasDimensions = useStore((state) => state.comment)
+  const setCanvasDimensions = useStore((state) => state.setComment)  
   const comment = useStore((state) => state.comment)
   const setComment = useStore((state) => state.setComment)
 
@@ -178,12 +179,13 @@ export default function Home() {
             const canvas = pdfCanvasRef.current;
             const context = canvas.getContext('2d');
 
-            const scale = 1.5;
+            const scale = 1.5; //1.5
             const viewport = page.getViewport({ scale });
+            
 
             canvas.height = viewport.height;
             canvas.width = viewport.width;
-            setCanvasDimensions({ width: canvas.width, height: canvas.height });
+            setCanvasDimensions({ width: canvas.width, height: canvas.height }); // needs to be page
 
             const renderContext = {
               canvasContext: context,

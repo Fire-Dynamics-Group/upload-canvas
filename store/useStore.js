@@ -8,6 +8,9 @@ const useStore = create((set) => {
         selectedElement: null,
         currentMode: "fdsGen",
         comment: "",
+        originPixels: null,
+        canvasDimensions: {},
+        pixelsPerMesh: 1,
 
         addElement: (newEl) => set((state) => ({
             elements: [...state.elements, newEl]
@@ -49,6 +52,15 @@ const useStore = create((set) => {
         })),
         setComment: (newComment) => set(() => ({
             comment: newComment
+        })),
+        setOriginPixels: (newOrigin) => set(() => ({
+            originPixels: newOrigin
+        })),
+        setCanvasDimensions: (dimensions) => set(() => ({
+            canvasDimensions: dimensions
+        })),
+        setPixelsPerMesh: (pxPerMesh) => set(() => ({
+            pixelsPerMesh: pxPerMesh
         }))
 }
 })

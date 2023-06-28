@@ -60,7 +60,10 @@ function Canvas({dimensions, isDevMode}) {
     const [isEnterPressed, setIsEnterPressed] = useState(false)
     const canvasRef = useRef(null)
     // const pixelsPerMesh = 10 // calc from scale
-    const [pixelsPerMesh, setPixelsPerMesh] = useState(1)
+    // const [pixelsPerMesh, setPixelsPerMesh] = useState(1)
+    const pixelsPerMesh = useStore((state) => state.comment)
+    const setPixelsPerMesh = useStore((state) => state.setComment)
+    
     const [hasScale, setHasScale] = useState(false)
     const [scalePoints, setScalePoints] = useState([])
     const canvasWidth = dimensions.width
@@ -240,6 +243,7 @@ function Canvas({dimensions, isDevMode}) {
         }
 
         function drawPolyline(points, context, comments) {
+            // TODO: have all the options in an object, not just colours
             for (let i=0; i<points.length; i++) {
                 // draw vertex
                 if (currentMode === 'fdsGen' || comments === 'fire') {
