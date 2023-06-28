@@ -42,21 +42,16 @@ function invertYAxisOfPoint(p, screenH) {
 }
 
 
-export function returnFinalCoordinates(pixelsPerMetre, elements, originPixels) { // call from zustand?
+export function returnFinalCoordinates(pixelsPerMetre, elements, originPixels, screenH) { // call from zustand?
     let final_coords = []
-    // all or one at a time?
-    // need max height of pdf, (maxH - yCoordinate)
-    // add array final_coords with index linking to element
-    // pixels to metre
-    // then add 
+
     for (let i=0; i < elements.length; i++) {
         let currentPoints = elements[i]["points"] // use id
-        final_coords.append({"id": elements[i]["id"], "finalPoints": []})
+        final_coords.push({"id": elements[i]["id"], "finalPoints": []})
         for (let j=0; j < currentPoints.length; j++) {
             let currentP = invertYAxisOfPoint(currentPoints[j], screenH)
-            currentP = {"x": (currentP.x - originPixels.x)/pixelsPerMetre, "y": (currentP.y - originPixels.y)/pixelsPerMetre}
-            final_coords[i]["finalPoints"].append(currentP)
-
+            currentP = {"x": (currentP.x - originPixels.x)/pixelsPerMetre.toFixed(1), "y": (currentP.y - originPixels.y)/pixelsPerMetre.toFixed(1)}
+            final_coords[i]["finalPoints"].push(currentP)
 
         }
     }

@@ -62,13 +62,12 @@ const useStore = create((set) => {
             pixelsPerMesh: pxPerMesh
         })),
 
-        setConvertedPoints: (state) => set(() => {
-
-            let tempOrigin = findOriginPixels(state.elements, canvasDimensions.height)
+        setConvertedPoints: () => set((state) => {
+            let tempOrigin = findOriginPixels(state.elements, state.canvasDimensions.height)
             console.log("tempOrigin: ", tempOrigin)
             return{
                 originPixels: tempOrigin,
-                convertedPoints: returnFinalCoordinates(state.pixelsPerMesh * 10 , state.elements, tempOrigin)
+                convertedPoints: returnFinalCoordinates(state.pixelsPerMesh * 10 , state.elements, tempOrigin, state.canvasDimensions.height)
             }
         })
 }
