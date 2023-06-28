@@ -1,21 +1,21 @@
-import useStore from '../store/useStore'
+// import useStore from '../store/useStore'
 
 
-export default function ManipulatePoints() {
-    // perhaps have this called from zustand rather than hook
-    const setOriginPixels = useStore((state) => state.setOriginPixels)
-    const elements = useStore((state) => state.elements)
-    const canvasDimensions = useStore((state) => state.canvasDimensions)
-    const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
+// export default function ManipulatePoints() {
+//     // perhaps have this called from zustand rather than hook
+//     const setOriginPixels = useStore((state) => state.setOriginPixels)
+//     const elements = useStore((state) => state.elements)
+//     const canvasDimensions = useStore((state) => state.canvasDimensions)
+//     const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
 
-    let canvasH = canvasDimensions.height
-    // find min x & y => apply offset for origin
-    //  
-    let originPixels = findOriginPixels(findOriginPixels(elements), canvasH)
-    let finalPoints = returnFinalCoordinates(pixelsPerMesh * 10 , elements, originPixels)
-    return (<>
-    </>)        
-}
+//     let canvasH = canvasDimensions.height
+//     // find min x & y => apply offset for origin
+//     //  
+//     let originPixels = findOriginPixels(findOriginPixels(elements), canvasH)
+//     let finalPoints = returnFinalCoordinates(pixelsPerMesh * 10 , elements, originPixels)
+//     return (<>
+//     </>)        
+// }
 
 
 export function findOriginPixels(elements, screenH) { // need to be coords already!!

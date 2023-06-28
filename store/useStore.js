@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import {findOriginPixels, returnFinalCoordinates} from '../utils/pointManipulation'
 
 const useStore = create((set) => {
     return {
@@ -8,10 +9,11 @@ const useStore = create((set) => {
         selectedElement: null,
         currentMode: "fdsGen",
         comment: "",
-        originPixels: null,
         canvasDimensions: {},
         pixelsPerMesh: 1,
-
+        originPixels: null,
+        convertedPoints: [],
+        
         addElement: (newEl) => set((state) => ({
             elements: [...state.elements, newEl]
         })),
@@ -53,15 +55,22 @@ const useStore = create((set) => {
         setComment: (newComment) => set(() => ({
             comment: newComment
         })),
-        setOriginPixels: (newOrigin) => set(() => ({
-            originPixels: newOrigin
-        })),
         setCanvasDimensions: (dimensions) => set(() => ({
             canvasDimensions: dimensions
         })),
         setPixelsPerMesh: (pxPerMesh) => set(() => ({
             pixelsPerMesh: pxPerMesh
-        }))
+        })),
+
+        setConvertedPoints: (state) => set(() => {
+
+            let tempOrigin = findOriginPixels(state.elements, canvasDimensions.height)
+            console.log("tempOrigin: ", tempOrigin)
+            return{
+                originPixels: tempOrigin,
+                convertedPoints: returnFinalCoordinates(state.pixelsPerMesh * 10 , state.elements, tempOrigin)
+            }
+        })
 }
 })
 

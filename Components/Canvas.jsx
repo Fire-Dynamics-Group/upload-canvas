@@ -61,9 +61,9 @@ function Canvas({dimensions, isDevMode}) {
     const canvasRef = useRef(null)
     // const pixelsPerMesh = 10 // calc from scale
     // const [pixelsPerMesh, setPixelsPerMesh] = useState(1)
-    const pixelsPerMesh = useStore((state) => state.comment)
-    const setPixelsPerMesh = useStore((state) => state.setComment)
-    
+    const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
+    const setPixelsPerMesh = useStore((state) => state.setPixelsPerMesh)
+
     const [hasScale, setHasScale] = useState(false)
     const [scalePoints, setScalePoints] = useState([])
     const canvasWidth = dimensions.width
