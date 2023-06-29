@@ -6,6 +6,7 @@ import useStore from '../store/useStore'
 import { saveAs } from 'file-saver';
 import ModePopup from '../Components/ModePopup'
 import Toolbar from '../Components/ToolBar'
+import TestButtons from '../Components/TestButtons'
 
 
   /**Features:
@@ -349,6 +350,7 @@ export default function Home() {
             onChange={handleFileChange}
           />
         </label>
+        {/* TODO: move test buttons to own component & only show if localhost? */}
         <button 
 
         onClick={sendElementData}
@@ -358,7 +360,7 @@ export default function Home() {
         >
           Test download fds file
         </button>
-
+          <TestButtons />
 
       </div>
               <FDRobot hintText={'Please upload PDF'} />

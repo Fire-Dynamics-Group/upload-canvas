@@ -70,6 +70,7 @@ const useStore = create((set) => {
                 convertedPoints: returnFinalCoordinates(state.pixelsPerMesh * 10 , state.elements, tempOrigin, state.canvasDimensions.height)
             }
         })
+
 }
 })
 

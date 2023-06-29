@@ -4,6 +4,7 @@ import ScalePopup from './ScalePopup'
 import FDRobot from './FDRobot'
 import { CSVLink } from 'react-csv'
 import useStore from '../store/useStore'
+import { calcDistance } from '@/utils/helperFunctions'
 
 /**
  * TODO: trial having popup after drawing item
@@ -190,12 +191,6 @@ function Canvas({dimensions, isDevMode}) {
             window.removeEventListener("mousemove", handleMouseMove)
         }
     }, [isDrawing, currentPoly, scalePoints.length, tool, currentRect, selectedElement])
-
-    function calcDistance(p1, p2) {
-        let a = p1.x - p2.x
-        let b = p1.y - p2.y
-        return Math.sqrt( a*a + b*b );
-    }
 
     function deltaGridlines(pxPerMesh, tool) { // actioned if debug mode and after scale set normally
         setPixelsPerMesh(pxPerMesh)

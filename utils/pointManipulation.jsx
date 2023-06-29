@@ -1,21 +1,4 @@
-// import useStore from '../store/useStore'
-
-
-// export default function ManipulatePoints() {
-//     // perhaps have this called from zustand rather than hook
-//     const setOriginPixels = useStore((state) => state.setOriginPixels)
-//     const elements = useStore((state) => state.elements)
-//     const canvasDimensions = useStore((state) => state.canvasDimensions)
-//     const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
-
-//     let canvasH = canvasDimensions.height
-//     // find min x & y => apply offset for origin
-//     //  
-//     let originPixels = findOriginPixels(findOriginPixels(elements), canvasH)
-//     let finalPoints = returnFinalCoordinates(pixelsPerMesh * 10 , elements, originPixels)
-//     return (<>
-//     </>)        
-// }
+import { calcDistance } from "./helperFunctions"
 
 
 export function findOriginPixels(elements, screenH) { // need to be coords already!!
@@ -47,14 +30,109 @@ export function returnFinalCoordinates(pixelsPerMetre, elements, originPixels, s
 
     for (let i=0; i < elements.length; i++) {
         let currentPoints = elements[i]["points"] // use id
-        final_coords.push({"id": elements[i]["id"], "finalPoints": []})
+        final_coords.push({"id": elements[i]["id"], "finalPoints": [], "comments": elements[i]["comments"]})
         for (let j=0; j < currentPoints.length; j++) {
             let currentP = invertYAxisOfPoint(currentPoints[j], screenH)
-            currentP = {"x": (currentP.x - originPixels.x)/pixelsPerMetre.toFixed(1), "y": (currentP.y - originPixels.y)/pixelsPerMetre.toFixed(1)}
+            currentP = {"x": ((currentP.x - originPixels.x)/pixelsPerMetre).toFixed(1), "y": ((currentP.y - originPixels.y)/pixelsPerMetre).toFixed(1)}
             final_coords[i]["finalPoints"].push(currentP)
 
         }
     }
-    return final_coords
+    console.log("final_coords: ", final_coords)
+    return final_coords // TODO: send error msg if fire or escape route not present, obstruction perhaps not required?
 
 }
+
+export function prepForRadiationTable(wakingSpeed, final_coords) {
+    let array = []
+    // TODO: get test data running
+    // access comments from final_coords
+    // needs to check that 
+    // fire location
+    console.log("final_coords: ", final_coords)
+    let fire = final_coords.filter(el => el.comments === 'fire')
+    let escapeRoute = final_coords.filter(el => el.comments === 'escapeRoute')
+    let obstruction = final_coords.filter(el => el.comments === 'obstruction') // not always required
+
+
+    let escapeRoutePoints = escapeRoute["finalPoints"]
+    let firePoints = fire["finalPoints"]
+    if (obstruction) {
+
+        let obstructionPoints = obstruction["finalPoints"]
+    }
+
+    // time steps -> length along escape route/1.2 
+    // additional one for end but likely less than 1 second
+    // find total length of route
+
+    /**
+     * Table
+     * row 1: Time,
+     * 
+     * time step 0 @ furthest point (1.2*0 from along escape route)
+     * check if any obstructions between fire and point
+        * if not; find distance to fire
+        * use in calc for FED
+        * if obstruction in way, FED = zero   
+     *  next time step
+     */
+    let columns = [
+                    "Time", 
+                    "Distance Travelled along Escape Route (m)", 
+                    "Distance from Cooker Fire (m)", 
+                    "Radiative Heat Flux Received (kW/m2)", 
+                    "FED Contribution From Time Step",
+                    "Cumulative FED"
+                ]
+}
+
+// example data below
+// [
+//     {
+//         "id": 0,
+//         "finalPoints": [
+//             {
+//                 "x": 0,
+//                 "y": 5.206250235300577
+//             },
+//             {
+//                 "x": 0.3003605904981104,
+//                 "y": 1.9022837398213686
+//             },
+//             {
+//                 "x": 3.50420688914462,
+//                 "y": 0.8009615746616278
+//             },
+//             {
+//                 "x": 3.8045674796427313,
+//                 "y": 0
+//             }
+//         ],
+//         "comments": "escapeRoute"
+//     },
+//     {
+//         "id": 1,
+//         "finalPoints": [
+//             {
+//                 "x": 6.307572400460318,
+//                 "y": 0.40048078733081055
+//             },
+//             {
+//                 "x": 4.205048266973545,
+//                 "y": 0.40048078733081055
+//             }
+//         ],
+//         "comments": "obstruction"
+//     },
+//     {
+//         "id": 2,
+//         "finalPoints": [
+//             {
+//                 "x": 5.806971416296799,
+//                 "y": 1.9022837398213686
+//             }
+//         ],
+//         "comments": "fire"
+//     }
+// ]

@@ -1,4 +1,8 @@
+import { prepForRadiationTable } from '@/utils/pointManipulation';
 import useStore from '../store/useStore'
+import WalkingSpeedPopup from './WalkingSpeedPopup'
+import mockRadiationElements from '@/utils/mockData'
+import { useState } from 'react';
 
 const Toolbar = ({setShowModePopup}) => {
     // bring below into home i.e. index.jsx
@@ -10,6 +14,13 @@ const Toolbar = ({setShowModePopup}) => {
     const setComment = useStore((state) => state.setComment)
     const setConvertedPoints = useStore((state) => state.setConvertedPoints)
     const convertedPoints = useStore((state) => state.convertedPoints)
+    const elements = useStore((state) => state.elements)
+    // const handleWalkingInput = useStore((state) => state.handleWalkingInput)
+    // const [walkingInput, setWalkingInput] = useState(null)
+    const [showWalkingPopup, setShowWalkingPopup] = useState(false)
+
+
+    // send in function actioned on click
 
     function handleModeButtonClick() {
         // open popup or drawer
@@ -17,12 +28,17 @@ const Toolbar = ({setShowModePopup}) => {
         setShowModePopup(true)
       }
       function handleCalcButtonClick() {
-        // open popup or drawer
-        // allow user to change to radiation
-        setConvertedPoints()
-        console.log("convertedPoints: ", convertedPoints)
+        if (elements) {
+          setConvertedPoints()
+          setShowWalkingPopup(true) // TODO: get pop up to action
+        }
+        prepForRadiationTable(1.2, mockRadiationElements)
       }
-      // handleCalcButtonClick
+      function handleWalkingInput(walkingInput) {
+        // use user input
+        setShowWalkingPopup(false)
+        // 
+      }
 
     const fdsGenTools = (
         <>
@@ -76,6 +92,8 @@ const Toolbar = ({setShowModePopup}) => {
     )
     return (
     <>
+      {/* perhaps popup can't be located in menu bar? */}
+      {showWalkingPopup && <WalkingSpeedPopup handleUserInput={handleWalkingInput}/>}
         <div className="text-center">
           <button 
             onClick={handleModeButtonClick}
