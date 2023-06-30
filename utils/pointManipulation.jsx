@@ -1,4 +1,5 @@
-import { calcDistance } from "./helperFunctions"
+import { calcDistance, intersects } from "./helperFunctions"
+import * as XLSX from 'xlsx';
 
 
 export function findOriginPixels(elements, screenH) { // need to be coords already!!
@@ -43,48 +44,159 @@ export function returnFinalCoordinates(pixelsPerMetre, elements, originPixels, s
 
 }
 
-export function prepForRadiationTable(wakingSpeed, final_coords) {
+export function prepForRadiationTable(walkingSpeed, final_coords) {
     let array = []
-    // TODO: get test data running
-    // access comments from final_coords
-    // needs to check that 
-    // fire location
+    let isObstructed = false
+
     console.log("final_coords: ", final_coords)
-    let fire = final_coords.filter(el => el.comments === 'fire')
-    let escapeRoute = final_coords.filter(el => el.comments === 'escapeRoute')
+    let fire = final_coords.filter(el => el.comments === 'fire')[0]
+    let escapeRoute = final_coords.filter(el => el.comments === 'escapeRoute')[0]
     let obstruction = final_coords.filter(el => el.comments === 'obstruction') // not always required
 
 
     let escapeRoutePoints = escapeRoute["finalPoints"]
-    let firePoints = fire["finalPoints"]
-    if (obstruction) {
-
-        let obstructionPoints = obstruction["finalPoints"]
+    let firePoints = fire["finalPoints"][0]
+    if (obstruction && obstruction[0]) {
+        isObstructed = true
+        // could be more than one obstruction!!
+        let obstructionPoints = obstruction[0]["finalPoints"]
     }
+    console.log("escapeRoutePoints: ", escapeRoutePoints, firePoints)
 
     // time steps -> length along escape route/1.2 
     // additional one for end but likely less than 1 second
     // find total length of route
+    // find 1.2m sections along route
+    let subEscapePoints = [] // location of escapee in one second intervals
+    let timeArray = []
+    let hobDistanceList = []
+    let accumulatedDistanceList = []
+    subEscapePoints.push(escapeRoutePoints[0])
+    hobDistanceList.push(calcDistance(escapeRoutePoints[0], firePoints))
+    let currentTime = 0
+    timeArray.push(currentTime)
 
-    /**
-     * Table
-     * row 1: Time,
-     * 
-     * time step 0 @ furthest point (1.2*0 from along escape route)
-     * check if any obstructions between fire and point
-        * if not; find distance to fire
-        * use in calc for FED
-        * if obstruction in way, FED = zero   
-     *  next time step
-     */
+    let accumulatedDistance = 0 // total distance along route
+    let timeStepDistance = 0 // returns to zero each 1.2m
+    let distancePerSecond = walkingSpeed
+    let maxIndex = escapeRoutePoints.length - 2
+    for (let i = 0; i < maxIndex + 1; i++) {
+        let currentVertex = escapeRoutePoints[i]
+        let nextVertex = escapeRoutePoints[i+1]
+        // find distance between point and next 1
+        let deltaVertices = calcDistance(currentVertex, nextVertex)
+        let remainingDeltaVertices = deltaVertices
+        let deltaVerticesX = nextVertex["x"] - currentVertex["x"] // move out of while loop
+        let deltaVerticesY = nextVertex["y"] - currentVertex["y"]
+
+        while ((remainingDeltaVertices + timeStepDistance) > distancePerSecond) { // should be a while loop
+            // find point where distancePerSecond - timeStepDistance = subDistance
+
+            let startingDistance = deltaVertices - remainingDeltaVertices
+            let startingFraction = startingDistance / deltaVertices
+            let startingDeltaX = deltaVerticesX * startingFraction
+            let startingDeltaY = deltaVerticesY * startingFraction
+
+            var targetDelta = distancePerSecond - timeStepDistance
+            let targetDeltaFractionAlongSegment = targetDelta / deltaVertices
+            let targetDeltaX = deltaVerticesX * targetDeltaFractionAlongSegment 
+            let targetDeltaY = deltaVerticesY * targetDeltaFractionAlongSegment 
+            let subP = {"x": currentVertex["x"] + targetDeltaX + startingDeltaX, "y": currentVertex["y"] + targetDeltaY + startingDeltaY}
+            // add point
+            subEscapePoints.push(subP)
+            hobDistanceList.push(calcDistance(subP, firePoints))
+            currentTime += 1
+            timeArray.push(currentTime)
+            
+            // add targetDelta to accumulatedDistance & reset timeStepDistance = 0 
+            timeStepDistance = 0
+            accumulatedDistance += targetDelta
+            accumulatedDistanceList.push(accumulatedDistance)
+            remainingDeltaVertices -= targetDelta
+
+        } 
+        // else add deltaVertice to accumulated
+        if ((remainingDeltaVertices + timeStepDistance) < distancePerSecond) {
+            // break without adding new points
+            // add delta vertice to accumulated; timestepdistance carries over
+            timeStepDistance += remainingDeltaVertices + timeStepDistance
+            accumulatedDistance += remainingDeltaVertices + timeStepDistance
+            accumulatedDistanceList.push(accumulatedDistance)
+            // if final index => needs to add fractional time & next vertex
+            if (i === maxIndex) {
+                subEscapePoints.push(nextVertex)
+                hobDistanceList.push(calcDistance(nextVertex, firePoints))
+                // add fractional time -> fraction of actualDistance / distancePerSecond
+                let subDistance = timeStepDistance
+                let timeFraction = subDistance / distancePerSecond
+                currentTime += timeFraction
+                timeArray.push(currentTime.toFixed(2))                
+            }
+        } else if ((remainingDeltaVertices + timeStepDistance) == distancePerSecond) {
+            // add points & move to next
+            // add delta vertice to accumulated
+            subEscapePoints.push(nextVertex)
+            hobDistanceList.push(calcDistance(nextVertex, firePoints))
+            currentTime += 1
+            timeArray.push(currentTime)
+            timeStepDistance = 0
+            accumulatedDistance += distancePerSecond
+            accumulatedDistanceList.push(accumulatedDistance)
+        } 
+    }
+    let FED = []
+    let accumulatedFED = 0
+    let intersection = false
+    let rows = []
     let columns = [
-                    "Time", 
-                    "Distance Travelled along Escape Route (m)", 
-                    "Distance from Cooker Fire (m)", 
-                    "Radiative Heat Flux Received (kW/m2)", 
-                    "FED Contribution From Time Step",
-                    "Cumulative FED"
-                ]
+        "Time", 
+        "Distance Travelled along Escape Route (m)", 
+        "Distance from Cooker Fire (m)", 
+        "Radiative Heat Flux Received (kW/m2)", 
+        "FED Contribution From Time Step",
+        "Cumulative FED"
+    ]
+    rows.push(columns)
+    let radiantHeatEndpoint = 1.3333
+    for (let i = 0; i < subEscapePoints.length; i++) {
+        // add to column if intersect with obstruction lines
+        let currentHobDistance = hobDistanceList[i]
+        let q = (intersection) ? 0 : computeHeatFlux(currentHobDistance)
+        let tolRAD = (intersection) ? 0 : radiantHeatEndpoint / (q**1.33)
+        let timestepFED = (intersection) ? 0 : (1 / tolRAD) / 60
+        accumulatedFED += timestepFED
+
+        // rows.push({
+        //     "time":timeArray[i] ,
+        //     "accumulatedDistance": accumulatedDistance[i] ,
+        //     "hobDistance": currentHobDistance.toFixed(2),
+        //     "q": q.toFixed(2), 
+        //     "timestepFED": timestepFED.toFixed(2), 
+        //     "accumulatedFED": accumulatedFED.toFixed(2)
+        // })
+        rows.push([
+            timeArray[i] ,
+            accumulatedDistanceList[i].toFixed(2),
+            currentHobDistance.toFixed(2),
+            q.toFixed(2), 
+            timestepFED.toFixed(4), 
+            accumulatedFED.toFixed(4)            
+        ])
+    }
+
+    function computeHeatFlux(distance, totalHeatFlux=482, radiativeFraction=0.3333) {
+        return totalHeatFlux * radiativeFraction / (4 * Math.PI * distance ** 2)
+    }
+    // download to spreadsheet
+    if (rows) {
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+    
+        // download workbook
+        XLSX.writeFile(wb, `radiationFED@${walkingSpeed}.xlsx`);
+
+      }
 }
 
 // example data below

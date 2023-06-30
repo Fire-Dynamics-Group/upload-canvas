@@ -32,10 +32,11 @@ const Toolbar = ({setShowModePopup}) => {
           setConvertedPoints()
           setShowWalkingPopup(true) // TODO: get pop up to action
         }
-        prepForRadiationTable(1.2, mockRadiationElements)
       }
       function handleWalkingInput(walkingInput) {
         // use user input
+        console.log("handleWalkingInput")
+        prepForRadiationTable(walkingInput, convertedPoints)
         setShowWalkingPopup(false)
         // 
       }
