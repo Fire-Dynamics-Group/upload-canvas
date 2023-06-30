@@ -34,7 +34,7 @@ export function returnFinalCoordinates(pixelsPerMetre, elements, originPixels, s
         final_coords.push({"id": elements[i]["id"], "finalPoints": [], "comments": elements[i]["comments"]})
         for (let j=0; j < currentPoints.length; j++) {
             let currentP = invertYAxisOfPoint(currentPoints[j], screenH)
-            currentP = {"x": ((currentP.x - originPixels.x)/pixelsPerMetre).toFixed(1), "y": ((currentP.y - originPixels.y)/pixelsPerMetre).toFixed(1)}
+            currentP = {"x": parseFloat(((currentP.x - originPixels.x)/pixelsPerMetre).toFixed(1)), "y": parseFloat(((currentP.y - originPixels.y)/pixelsPerMetre).toFixed(1))}
             final_coords[i]["finalPoints"].push(currentP)
 
         }
@@ -75,8 +75,9 @@ export function prepForRadiationTable(walkingSpeed, final_coords) {
     hobDistanceList.push(calcDistance(escapeRoutePoints[0], firePoints))
     let currentTime = 0
     timeArray.push(currentTime)
-
+    
     let accumulatedDistance = 0 // total distance along route
+    accumulatedDistanceList.push(accumulatedDistance)
     let timeStepDistance = 0 // returns to zero each 1.2m
     let distancePerSecond = walkingSpeed
     let maxIndex = escapeRoutePoints.length - 2
@@ -121,16 +122,16 @@ export function prepForRadiationTable(walkingSpeed, final_coords) {
             // add delta vertice to accumulated; timestepdistance carries over
             timeStepDistance += remainingDeltaVertices + timeStepDistance
             accumulatedDistance += remainingDeltaVertices + timeStepDistance
-            accumulatedDistanceList.push(accumulatedDistance)
             // if final index => needs to add fractional time & next vertex
             if (i === maxIndex) {
+                accumulatedDistanceList.push(accumulatedDistance) // is accumulated distance needed here?
                 subEscapePoints.push(nextVertex)
                 hobDistanceList.push(calcDistance(nextVertex, firePoints))
                 // add fractional time -> fraction of actualDistance / distancePerSecond
                 let subDistance = timeStepDistance
                 let timeFraction = subDistance / distancePerSecond
                 currentTime += timeFraction
-                timeArray.push(currentTime.toFixed(2))                
+                timeArray.push(parseFloat(currentTime.toFixed(2)))                
             }
         } else if ((remainingDeltaVertices + timeStepDistance) == distancePerSecond) {
             // add points & move to next
@@ -144,6 +145,7 @@ export function prepForRadiationTable(walkingSpeed, final_coords) {
             accumulatedDistanceList.push(accumulatedDistance)
         } 
     }
+    console.log("subEscapePoints: ", subEscapePoints)
     let FED = []
     let accumulatedFED = 0
     let intersection = false
@@ -159,6 +161,24 @@ export function prepForRadiationTable(walkingSpeed, final_coords) {
     rows.push(columns)
     let radiantHeatEndpoint = 1.3333
     for (let i = 0; i < subEscapePoints.length; i++) {
+        // (px, py, fx, fy, obst1x, obst1y, obst2x, obst2y) 
+        // intersects(a,b,c,d,p,q,r,s)
+        let currentP = subEscapePoints[i]
+        intersection = false
+        // need to loop through obstructions
+        if (isObstructed) {
+            for (let j = 0; j < obstruction.length; j++) { // until 1 minus
+                let currentObstructionPoints = obstruction[j]["finalPoints"] // each sub vertex
+                for (let k = 0; k < currentObstructionPoints.length - 1; k++) {
+
+                    let startingObstP = currentObstructionPoints[k]
+                    let endObstP = currentObstructionPoints[k + 1]
+                    intersection = intersects(currentP["x"], currentP["y"], firePoints["x"], firePoints["y"], startingObstP["x"], startingObstP["y"], endObstP["x"], endObstP["y"])
+                    if (intersection) break 
+                }
+                if (intersection) break 
+            }
+        }
         // add to column if intersect with obstruction lines
         let currentHobDistance = hobDistanceList[i]
         let q = (intersection) ? 0 : computeHeatFlux(currentHobDistance)
@@ -166,21 +186,13 @@ export function prepForRadiationTable(walkingSpeed, final_coords) {
         let timestepFED = (intersection) ? 0 : (1 / tolRAD) / 60
         accumulatedFED += timestepFED
 
-        // rows.push({
-        //     "time":timeArray[i] ,
-        //     "accumulatedDistance": accumulatedDistance[i] ,
-        //     "hobDistance": currentHobDistance.toFixed(2),
-        //     "q": q.toFixed(2), 
-        //     "timestepFED": timestepFED.toFixed(2), 
-        //     "accumulatedFED": accumulatedFED.toFixed(2)
-        // })
         rows.push([
             timeArray[i] ,
-            accumulatedDistanceList[i].toFixed(2),
-            currentHobDistance.toFixed(2),
-            q.toFixed(2), 
-            timestepFED.toFixed(4), 
-            accumulatedFED.toFixed(4)            
+            parseFloat(accumulatedDistanceList[i].toFixed(2)),
+            parseFloat(currentHobDistance.toFixed(2)),
+            parseFloat(q.toFixed(2)), 
+            parseFloat(timestepFED.toFixed(4)), 
+            parseFloat(accumulatedFED.toFixed(4) )           
         ])
     }
 
