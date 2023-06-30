@@ -18,6 +18,8 @@ const Toolbar = ({setShowModePopup}) => {
     // const handleWalkingInput = useStore((state) => state.handleWalkingInput)
     // const [walkingInput, setWalkingInput] = useState(null)
     const [showWalkingPopup, setShowWalkingPopup] = useState(false)
+    // const [hasDoor, setHasDoor] = useState(false)
+    const setHasDoor = useStore((state) => state.setHasDoor)
 
 
     // send in function actioned on click
@@ -29,14 +31,23 @@ const Toolbar = ({setShowModePopup}) => {
       }
       function handleCalcButtonClick() {
         if (elements) {
+          // const door = elements.filter(el => el.comments === 'door') // not always required
+          if ((elements.filter(el => el.comments === 'door')).length > 0) {
+            setHasDoor(true)
+
+            // check if door within elements -> if true hasDoor -> true
+          }
+          
           setConvertedPoints()
           setShowWalkingPopup(true) // TODO: get pop up to action
         }
       }
-      function handleWalkingInput(walkingInput) {
+      function handleWalkingInput(userInput) {
         // use user input
-        console.log("handleWalkingInput")
-        prepForRadiationTable(walkingInput, convertedPoints)
+        let doorOpeningDuration = (userInput.length > 1 ) ? userInput[1] : 10 
+        console.log("handleWalkingInput", userInput[0], convertedPoints, doorOpeningDuration)
+
+        prepForRadiationTable(userInput[0], convertedPoints, doorOpeningDuration)
         setShowWalkingPopup(false)
         // 
       }

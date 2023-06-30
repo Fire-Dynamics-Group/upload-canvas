@@ -13,6 +13,7 @@ const useStore = create((set) => {
         pixelsPerMesh: 1,
         originPixels: null,
         convertedPoints: [],
+        hasDoor: false,
         
         addElement: (newEl) => set((state) => ({
             elements: [...state.elements, newEl]
@@ -69,7 +70,11 @@ const useStore = create((set) => {
                 originPixels: tempOrigin,
                 convertedPoints: returnFinalCoordinates(state.pixelsPerMesh * 10 , state.elements, tempOrigin, state.canvasDimensions.height)
             }
-        })
+        }),
+
+        setHasDoor: (newBool) => set(() => ({
+            hasDoor: newBool
+        })),
 
 }
 })
