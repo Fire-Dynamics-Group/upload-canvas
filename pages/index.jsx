@@ -5,7 +5,7 @@ import FDRobot from '../Components/FDRobot'
 import useStore from '../store/useStore'
 import { saveAs } from 'file-saver';
 import ModePopup from '../Components/ModePopup'
-import Toolbar from '../Components/ToolBar'
+import Toolbar from '../Components/Toolbar'
 import TestButtons from '../Components/TestButtons'
 
 
