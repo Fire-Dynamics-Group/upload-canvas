@@ -44,24 +44,37 @@ export function returnFinalCoordinates(pixelsPerMetre, elements, originPixels, s
 
 }
 
-export function prepForRadiationTable(walkingSpeed, final_coords) {
+export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTime=10) {
     let array = []
     let isObstructed = false
+    let hasDoor = false // should be escape door in toolbar for clarity perhaps?
 
     console.log("final_coords: ", final_coords)
     let fire = final_coords.filter(el => el.comments === 'fire')[0]
     let escapeRoute = final_coords.filter(el => el.comments === 'escapeRoute')[0]
     let obstruction = final_coords.filter(el => el.comments === 'obstruction') // not always required
+    let door = final_coords.filter(el => el.comments === 'door') // not always required
 
 
     let escapeRoutePoints = escapeRoute["finalPoints"]
     let firePoints = fire["finalPoints"][0]
     if (obstruction && obstruction[0]) {
         isObstructed = true
-        // could be more than one obstruction!!
-        let obstructionPoints = obstruction[0]["finalPoints"]
+
+    }
+    if (door && door[0]) {
+        hasDoor = true
+        // if door -> change ultimate final_coords to be mid point of the door
+        let doorPoints = door[0]["finalPoints"]
+        let doorMidPointX = parseFloat(((doorPoints[0]["x"] + doorPoints[1]["x"]) / 2).toFixed(2))
+        let doorMidPointY = parseFloat(((doorPoints[0]["y"] + doorPoints[1]["y"]) / 2).toFixed(2))
+        escapeRoutePoints[escapeRoutePoints.length - 1] = {"x": doorMidPointX, "y": doorMidPointY}
     }
     console.log("escapeRoutePoints: ", escapeRoutePoints, firePoints)
+
+    // TODO: inlcude logic for door -> add x amount of seconds
+    // likely fractional time and distance to door
+    // easier if door always end
 
     // time steps -> length along escape route/1.2 
     // additional one for end but likely less than 1 second
@@ -126,12 +139,21 @@ export function prepForRadiationTable(walkingSpeed, final_coords) {
             if (i === maxIndex) {
                 accumulatedDistanceList.push(accumulatedDistance) // is accumulated distance needed here?
                 subEscapePoints.push(nextVertex)
-                hobDistanceList.push(calcDistance(nextVertex, firePoints))
+                let currentHobDistance = calcDistance(nextVertex, firePoints)
+                hobDistanceList.push(currentHobDistance)
                 // add fractional time -> fraction of actualDistance / distancePerSecond
                 let subDistance = timeStepDistance
                 let timeFraction = subDistance / distancePerSecond
                 currentTime += timeFraction
-                timeArray.push(parseFloat(currentTime.toFixed(2)))                
+                timeArray.push(parseFloat(currentTime.toFixed(2)))
+                // if has door -> add further line for door opening time
+                if (hasDoor) {
+                    accumulatedDistanceList.push(accumulatedDistance) // is accumulated distance needed here?
+                    subEscapePoints.push(nextVertex)
+                    hobDistanceList.push(currentHobDistance)
+                    currentTime += doorOpeningTime
+                    timeArray.push(parseFloat(currentTime.toFixed(2)))                                        
+                }
             }
         } else if ((remainingDeltaVertices + timeStepDistance) == distancePerSecond) {
             // add points & move to next
@@ -183,11 +205,12 @@ export function prepForRadiationTable(walkingSpeed, final_coords) {
         let currentHobDistance = hobDistanceList[i]
         let q = (intersection) ? 0 : computeHeatFlux(currentHobDistance)
         let tolRAD = (intersection) ? 0 : radiantHeatEndpoint / (q**1.33)
-        let timestepFED = (intersection) ? 0 : (1 / tolRAD) / 60
+        let timestepDuration = (i > 0) ? timeArray[i] - timeArray[i - 1] : 1
+        let timestepFED = (intersection) ? 0 : (timestepDuration / tolRAD) / 60 // change divider depending on duration of timestep * durationTimestep/60
         accumulatedFED += timestepFED
 
         rows.push([
-            timeArray[i] ,
+            timeArray[i],
             parseFloat(accumulatedDistanceList[i].toFixed(2)),
             parseFloat(currentHobDistance.toFixed(2)),
             parseFloat(q.toFixed(2)), 
@@ -210,53 +233,3 @@ export function prepForRadiationTable(walkingSpeed, final_coords) {
 
       }
 }
-
-// example data below
-// [
-//     {
-//         "id": 0,
-//         "finalPoints": [
-//             {
-//                 "x": 0,
-//                 "y": 5.206250235300577
-//             },
-//             {
-//                 "x": 0.3003605904981104,
-//                 "y": 1.9022837398213686
-//             },
-//             {
-//                 "x": 3.50420688914462,
-//                 "y": 0.8009615746616278
-//             },
-//             {
-//                 "x": 3.8045674796427313,
-//                 "y": 0
-//             }
-//         ],
-//         "comments": "escapeRoute"
-//     },
-//     {
-//         "id": 1,
-//         "finalPoints": [
-//             {
-//                 "x": 6.307572400460318,
-//                 "y": 0.40048078733081055
-//             },
-//             {
-//                 "x": 4.205048266973545,
-//                 "y": 0.40048078733081055
-//             }
-//         ],
-//         "comments": "obstruction"
-//     },
-//     {
-//         "id": 2,
-//         "finalPoints": [
-//             {
-//                 "x": 5.806971416296799,
-//                 "y": 1.9022837398213686
-//             }
-//         ],
-//         "comments": "fire"
-//     }
-// ]

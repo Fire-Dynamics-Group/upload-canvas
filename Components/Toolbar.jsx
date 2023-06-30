@@ -157,6 +157,16 @@ const Toolbar = ({setShowModePopup}) => {
             }}
           />
           <label htmlFor="fire">Fire</label>
+
+         {/* Door */}
+         <input type="radio" id="line" 
+          checked={tool === "polyline" && comment == 'door'} 
+          onChange={() => {
+            setTool("polyline") // max two points
+            setComment("door")
+            }} />
+          <label htmlFor="line">Door</label>
+
           <div className="text-center">
             <button 
               onClick={handleCalcButtonClick}

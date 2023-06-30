@@ -428,7 +428,7 @@ function Canvas({dimensions, isDevMode}) {
             }
         })
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode])
 
     function snapVertexOrtho(vertex, prevVertex) {
         // check if diff is greater in x or y between vertices
@@ -468,20 +468,47 @@ function Canvas({dimensions, isDevMode}) {
             context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)        
         }
         else if (tool === 'polyline') {
-            setIsDrawing(true) 
-            // draw vertex
-            let dimension = 10
-            context.fillStyle = 'green'
-            let newP = {x: event.pageX, y: event.pageY}
-            // if ctrl pressed -> next point ortho
-            if (isCtrlPressed && currentPoly.length > 0) { // and not first point
-                newP = snapVertexOrtho(newP, currentPoly[currentPoly.length-1])
+            if (comment === 'door') {
+                if (currentPoly.length < 2) {
+                    let prevIndex = currentPoly.length
+                    setIsDrawing(true) 
+                    let dimension = 10
+                    context.fillStyle = elementConfig["door"]
+                    // // draw vertex
+                    let newP = {x: event.pageX, y: event.pageY}
+                    // if ctrl pressed -> next point ortho
+                    if (isCtrlPressed && currentPoly.length > 0) { // and not first point
+                        newP = snapVertexOrtho(newP, currentPoly[currentPoly.length-1])
+                    }
+                    newP = snapVertexToGrid(newP)
+                    context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension) 
+                    if (prevIndex === 1) {
+                        // add element 
+                        // reset currentPoly
+                        let current_el = returnElementObject(tool, [currentPoly[0], newP], comment)
+                        addElement(current_el)
+                        setIsDrawing(false)
+                        setCurrentPoly([])
+                    } else {
+                        setCurrentPoly((prev) => [...prev, newP])
+                    }    
+                }
+            } else {
+                setIsDrawing(true) 
+                // draw vertex
+                let dimension = 10
+                context.fillStyle = 'green'
+                let newP = {x: event.pageX, y: event.pageY}
+                // if ctrl pressed -> next point ortho
+                if (isCtrlPressed && currentPoly.length > 0) { // and not first point
+                    newP = snapVertexOrtho(newP, currentPoly[currentPoly.length-1])
+                }
+                newP = snapVertexToGrid(newP)
+                context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)  
+                // add point to currentPoly
+                setCurrentPoly((prev) => [...prev, newP])
+                // 
             }
-            newP = snapVertexToGrid(newP)
-            context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)  
-            // add point to currentPoly
-            setCurrentPoly((prev) => [...prev, newP])
-            // 
         } else if(tool === 'rect') {
             setIsDrawing(true)
             context.fillStyle = 'blue'
@@ -577,10 +604,6 @@ function Canvas({dimensions, isDevMode}) {
                 // }
                 let prevIndex = scalePoints.length
                 setIsDrawing(true) // drawing set to false on press of enter or return to origin
-    
-                // if not first vertex -> draw line from last index to vertex (on mousemove)
-                // only allow two dots and then enter length
-                // draw vertex
                 let dimension = 10
                 context.fillStyle = 'red'
                 let newP = {x: event.pageX, y: event.pageY}
