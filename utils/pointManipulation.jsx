@@ -151,8 +151,10 @@ export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTim
                     accumulatedDistanceList.push(accumulatedDistance) // is accumulated distance needed here?
                     subEscapePoints.push(nextVertex)
                     hobDistanceList.push(currentHobDistance)
-                    currentTime += doorOpeningTime
-                    timeArray.push(parseFloat(currentTime.toFixed(2)))                                        
+                    currentTime += Number(doorOpeningTime)
+                    console.log("currentTime: ", currentTime)
+                    // timeArray.push(currentTime)
+                    timeArray.push(parseFloat(Number(currentTime).toFixed(2)))                                       
                 }
             }
         } else if ((remainingDeltaVertices + timeStepDistance) == distancePerSecond) {
@@ -210,7 +212,8 @@ export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTim
         accumulatedFED += timestepFED
 
         rows.push([
-            timeArray[i],
+            // parseFloat(timeArray[i].toFixed(2)),
+            parseFloat(timeArray[i]),
             parseFloat(accumulatedDistanceList[i].toFixed(2)),
             parseFloat(currentHobDistance.toFixed(2)),
             parseFloat(q.toFixed(2)), 
