@@ -223,7 +223,7 @@ export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTim
         ])
     }
 
-    function computeHeatFlux(distance, totalHeatFlux=472, radiativeFraction=0.3333) { // was 482 // 150 
+    function computeHeatFlux(distance, totalHeatFlux=472, radiativeFraction=0.3333) { // was 472 // 150 
         return totalHeatFlux * radiativeFraction / (4 * Math.PI * distance ** 2)
     }
     // download to spreadsheet

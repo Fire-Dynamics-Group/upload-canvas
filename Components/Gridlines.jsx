@@ -4,6 +4,7 @@ import useStore from '../store/useStore'
 // TODO: send in 
 // eslint-disable-next-line react/prop-types
 function Gridlines({pixelsPerMesh, dimensions, hasScale}) {
+    let showGrid = true // later control via toggle
     console.log(dimensions, "grid")
     const canvasRef = useRef(null)
     const currentMode = useStore((state) => state.currentMode)
@@ -21,7 +22,7 @@ function Gridlines({pixelsPerMesh, dimensions, hasScale}) {
         // FUTURE: recalc gridlines depending on viewport
         // allow zoom and pan of pdf floor plan
         // all gridlines
-        if (hasScale && currentMode == 'fdsGen') {
+        if (hasScale && showGrid) {
 
             let rows = Math.floor(canvas.height / pixelsPerMesh)
     
@@ -44,7 +45,7 @@ function Gridlines({pixelsPerMesh, dimensions, hasScale}) {
     
             }
         }
-    }, [pixelsPerMesh, hasScale, currentMode])
+    }, [pixelsPerMesh, hasScale, currentMode, showGrid, dimensions])
 
 // should be width and height of image
   return (
