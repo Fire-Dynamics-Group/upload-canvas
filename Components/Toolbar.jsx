@@ -24,6 +24,10 @@ const Toolbar = ({setShowModePopup}) => {
     const pdfIsGreyscale = useStore((state) => state.pdfIsGreyscale)
     const pdfData = useStore((state) => state.pdfData)
     const toggleIsPdfGreyscale = useStore((state) => state.toggleIsPdfGreyscale)
+    const [fireInputs, setFireInputs] = useState({
+                                                    "totalHeatFlux":472,
+                                                    "radiantHeatEndpoint":1.3333
+                                                  })
 
 
     // send in function actioned on click
@@ -55,26 +59,19 @@ const Toolbar = ({setShowModePopup}) => {
         setShowWalkingPopup(false)
         // 
       }
+      function handleFireButtonClick() {
+        // open modal popup
+        // fire size i.e. q
+        // fire 
+        // 
+
+      }
 
       function handleGreyscaleButtonClick() {
         if (pdfCanvasRef.current) {
           const canvas = pdfCanvasRef.current;
           const context = canvas.getContext('2d');
           let imageData
-
-          // const scale = 1.5; //1.5
-          // const viewport = page.getViewport({ scale });
-          
-
-          // canvas.height = viewport.height;
-          // canvas.width = viewport.width;
-          // setCanvasDimensions({ width: canvas.width, height: canvas.height }); // needs to be page
-
-          // const renderContext = {
-          //   canvasContext: context,
-          //   viewport: viewport,
-          // };
-
           if (pdfIsGreyscale) {
             // apply colour image
             imageData = pdfData["coloured"]
@@ -213,7 +210,15 @@ const Toolbar = ({setShowModePopup}) => {
             }} />
           <label htmlFor="line">Door</label>
 
+
           <div className="text-center">
+          <button 
+              onClick={handleFireButtonClick}
+              className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
+              type="button"
+              >
+              Fire Inputs
+            </button>
             <button 
               onClick={handleCalcButtonClick}
               className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 

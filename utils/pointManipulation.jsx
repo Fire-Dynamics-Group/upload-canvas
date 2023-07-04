@@ -44,7 +44,7 @@ export function returnFinalCoordinates(pixelsPerMetre, elements, originPixels, s
 
 }
 
-export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTime=10) {
+export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTime=10, totalHeatFlux=472, radiantHeatEndpoint = 1.3333) {
     // TODO: need parameter checking for doorOpeningTime etc
     let array = []
     let isObstructed = false
@@ -184,7 +184,7 @@ export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTim
         "Cumulative FED"
     ]
     rows.push(columns)
-    let radiantHeatEndpoint = 1.3333
+    // let radiantHeatEndpoint = 1.3333
     for (let i = 0; i < subEscapePoints.length; i++) {
         // (px, py, fx, fy, obst1x, obst1y, obst2x, obst2y) 
         // intersects(a,b,c,d,p,q,r,s)
@@ -206,7 +206,7 @@ export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTim
         }
         // add to column if intersect with obstruction lines
         let currentHobDistance = hobDistanceList[i]
-        let q = (intersection) ? 0 : computeHeatFlux(currentHobDistance)
+        let q = (intersection) ? 0 : computeHeatFlux(currentHobDistance, totalHeatFlux)
         let tolRAD = (intersection) ? 0 : radiantHeatEndpoint / (q**1.33)
         let timestepDuration = (i > 0) ? timeArray[i] - timeArray[i - 1] : 1
         let timestepFED = (intersection) ? 0 : (timestepDuration / tolRAD) / 60 // change divider depending on duration of timestep * durationTimestep/60
