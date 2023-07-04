@@ -84,7 +84,6 @@ function Canvas({dimensions, isDevMode}) {
     const nullSelectedAndEditedElements = useStore((state) => state.nullSelectedAndEditedElements)
 
 
-
     const tool = useStore((state) => state.tool)
     const setTool = useStore((state) => state.setTool)
 
@@ -445,6 +444,7 @@ function Canvas({dimensions, isDevMode}) {
 
     }
     function snapVertexToGrid(vertex) {
+        if (currentMode === 'radiation') return vertex
         // snap to grid using pixels per mesh -> use 1
         vertex.x = (Math.round(vertex.x / pixelsPerMesh)) * pixelsPerMesh
         vertex.y = (Math.round(vertex.y / pixelsPerMesh)) * pixelsPerMesh
