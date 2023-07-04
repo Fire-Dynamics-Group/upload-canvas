@@ -20,6 +20,10 @@ const Toolbar = ({setShowModePopup}) => {
     const [showWalkingPopup, setShowWalkingPopup] = useState(false)
     // const [hasDoor, setHasDoor] = useState(false)
     const setHasDoor = useStore((state) => state.setHasDoor)
+    const pdfCanvasRef = useStore((state) => state.pdfCanvasRef)
+    const pdfIsGreyscale = useStore((state) => state.pdfIsGreyscale)
+    const pdfData = useStore((state) => state.pdfData)
+    const toggleIsPdfGreyscale = useStore((state) => state.toggleIsPdfGreyscale)
 
 
     // send in function actioned on click
@@ -50,6 +54,37 @@ const Toolbar = ({setShowModePopup}) => {
         prepForRadiationTable(userInput[0], convertedPoints, doorOpeningDuration)
         setShowWalkingPopup(false)
         // 
+      }
+
+      function handleGreyscaleButtonClick() {
+        if (pdfCanvasRef.current) {
+          const canvas = pdfCanvasRef.current;
+          const context = canvas.getContext('2d');
+          let imageData
+
+          // const scale = 1.5; //1.5
+          // const viewport = page.getViewport({ scale });
+          
+
+          // canvas.height = viewport.height;
+          // canvas.width = viewport.width;
+          // setCanvasDimensions({ width: canvas.width, height: canvas.height }); // needs to be page
+
+          // const renderContext = {
+          //   canvasContext: context,
+          //   viewport: viewport,
+          // };
+
+          if (pdfIsGreyscale) {
+            // apply colour image
+            imageData = pdfData["coloured"]
+          } else {
+            // apply greyscale image
+            imageData = pdfData["greyscaled"]
+          }
+          toggleIsPdfGreyscale(!pdfIsGreyscale)
+          context.putImageData(imageData, 0, 0);
+        }
       }
 
     const fdsGenTools = (
@@ -186,7 +221,15 @@ const Toolbar = ({setShowModePopup}) => {
               >
               Run Calc
             </button>
+            <button 
+              onClick={handleGreyscaleButtonClick}
+              className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
+              type="button"
+              >
+              Toggle Greyscale
+            </button>
           </div>
+
     </>
     );
   };

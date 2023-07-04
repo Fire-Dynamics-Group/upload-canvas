@@ -136,13 +136,19 @@ export default function Home() {
 
   const [ fdsData, setFdsData] = useState("")
   const [showModePopup, setShowModePopup] = useState(true)
-  const pdfCanvasRef = useRef()
+  const setPdfCanvasRef = useStore((state) => state.setPdfCanvasRef)
+  setPdfCanvasRef(useRef())
+
+  const pdfCanvasRef = useStore((state) => state.pdfCanvasRef)
 
   // const [tool, setTool] = useState("scale")
   const tool = useStore((state) => state.tool)
   const setTool = useStore((state) => state.setTool)
 
   const elements = useStore((state) => state.elements)
+  const setPdfData = useStore((state) => state.setPdfData)
+  const pdfData = useStore((state) => state.pdfData)
+  const toggleIsPdfGreyscale = useStore((state) => state.toggleIsPdfGreyscale)
 
   console.log("elements log: ", elements)
   // const setElements = useStore((state) => state.setElements)
@@ -179,7 +185,6 @@ export default function Home() {
           pdf.getPage(pageNumber).then((page) => {
             const canvas = pdfCanvasRef.current;
             const context = canvas.getContext('2d');
-            context.filter = 'grayscale(1)';
 
             const scale = 1.5; //1.5
             const viewport = page.getViewport({ scale });
@@ -193,21 +198,27 @@ export default function Home() {
               canvasContext: context,
               viewport: viewport,
             };
+            // save renderContext
             const renderTask = page.render(renderContext);
             renderTask.promise.then(() => {
               console.log('Page rendered');
-              const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-              const data = imageData.data;
+              const colouredImageData = context.getImageData(0, 0, canvas.width, canvas.height);
+              const greyScaledImageData = context.getImageData(0, 0, canvas.width, canvas.height);
+              const data = greyScaledImageData.data;
               for(let i = 0; i < data.length; i += 4) {
                 const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
                 data[i]     = avg; // red
                 data[i + 1] = avg; // green
                 data[i + 2] = avg; // blue
               }
-              context.putImageData(imageData, 0, 0);
+              context.putImageData(greyScaledImageData, 0, 0);
+              toggleIsPdfGreyscale(true)
               setSelectedFile(true);
+              setPdfData({
+                "coloured": colouredImageData,
+                "greyscaled": greyScaledImageData
+              })
             });
-            // setSelectedFile(true);
           });
         });
       };

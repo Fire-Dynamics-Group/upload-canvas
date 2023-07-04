@@ -14,6 +14,9 @@ const useStore = create((set) => {
         originPixels: null,
         convertedPoints: [],
         hasDoor: false,
+        pdfData: null,
+        pdfIsGreyscale: false,
+        pdfCanvasRef: null,
         
         addElement: (newEl) => set((state) => ({
             elements: [...state.elements, newEl]
@@ -75,6 +78,16 @@ const useStore = create((set) => {
         setHasDoor: (newBool) => set(() => ({
             hasDoor: newBool
         })),
+
+        setPdfData: (newPdfData) => set(() => ({
+            pdfData: newPdfData
+        })),
+        toggleIsPdfGreyscale: (newBool) => set(() => ({
+            pdfIsGreyscale: newBool
+        })),
+        setPdfCanvasRef: (newRef) => set(() => ({
+            pdfCanvasRef: newRef
+        }))
 
 }
 })
