@@ -45,6 +45,7 @@ export function returnFinalCoordinates(pixelsPerMetre, elements, originPixels, s
 }
 
 export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTime=10) {
+    // TODO: need parameter checking for doorOpeningTime etc
     let array = []
     let isObstructed = false
     let hasDoor = false // should be escape door in toolbar for clarity perhaps?
@@ -222,7 +223,7 @@ export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTim
         ])
     }
 
-    function computeHeatFlux(distance, totalHeatFlux=482, radiativeFraction=0.3333) {
+    function computeHeatFlux(distance, totalHeatFlux=150, radiativeFraction=0.3333) { // was 482
         return totalHeatFlux * radiativeFraction / (4 * Math.PI * distance ** 2)
     }
     // download to spreadsheet

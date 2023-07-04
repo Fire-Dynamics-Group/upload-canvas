@@ -179,6 +179,7 @@ export default function Home() {
           pdf.getPage(pageNumber).then((page) => {
             const canvas = pdfCanvasRef.current;
             const context = canvas.getContext('2d');
+            context.filter = 'grayscale(1)';
 
             const scale = 1.5; //1.5
             const viewport = page.getViewport({ scale });
@@ -195,8 +196,18 @@ export default function Home() {
             const renderTask = page.render(renderContext);
             renderTask.promise.then(() => {
               console.log('Page rendered');
+              const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+              const data = imageData.data;
+              for(let i = 0; i < data.length; i += 4) {
+                const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                data[i]     = avg; // red
+                data[i + 1] = avg; // green
+                data[i + 2] = avg; // blue
+              }
+              context.putImageData(imageData, 0, 0);
+              setSelectedFile(true);
             });
-            setSelectedFile(true);
+            // setSelectedFile(true);
           });
         });
       };
