@@ -29,7 +29,9 @@ const Toolbar = ({setShowModePopup}) => {
                                                     "totalHeatFlux":472,
                                                     "radiantHeatEndpoint":1.3333
                                                   })
-    const [showFireInputsPopup, setShowFireInputsPopup] = useState(false)                                        
+    const [showFireInputsPopup, setShowFireInputsPopup] = useState(false)   
+    const totalHeatFlux = useStore((state) => state.totalHeatFlux)
+    const heatEndPoint = useStore((state) => state.heatEndPoint)
 
     // send in function actioned on click
 
@@ -56,7 +58,7 @@ const Toolbar = ({setShowModePopup}) => {
         let doorOpeningDuration = (userInput.length > 1 ) ? userInput[1] : 10 
         console.log("handleWalkingInput", userInput[0], convertedPoints, doorOpeningDuration)
 
-        prepForRadiationTable(userInput[0], convertedPoints, doorOpeningDuration)
+        prepForRadiationTable(userInput[0], convertedPoints, doorOpeningDuration, totalHeatFlux, heatEndPoint)
         setShowWalkingPopup(false)
         // 
       }

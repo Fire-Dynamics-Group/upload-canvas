@@ -175,8 +175,15 @@ export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTim
     let accumulatedFED = 0
     let intersection = false
     let rows = []
+    let config = [
+        `walking speed: ${walkingSpeed}`,
+        `total heatflux: ${totalHeatFlux}`,
+        `radiant heat endpoint: ${radiantHeatEndpoint}`,
+         `door opening time: ${(hasDoor) ? doorOpeningTime : "N/A"}`,
+]
+    rows.push(config)
     let columns = [
-        "Time", 
+        "Time",
         "Distance Travelled along Escape Route (m)", 
         "Distance from Cooker Fire (m)", 
         "Radiative Heat Flux Received (kW/m2)", 
