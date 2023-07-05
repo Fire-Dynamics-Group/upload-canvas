@@ -130,6 +130,7 @@ function Canvas({dimensions, isDevMode}) {
                 function addElementToState() {
                     // only needed for polyline?
                     if (tool == 'polyline') {
+                        // if selection == true; then finalise position
                         if (currentPoly.length > 0 ) {
                             let current_el = returnElementObject(tool, currentPoly, comment)
                             addElement(current_el)
@@ -237,12 +238,16 @@ function Canvas({dimensions, isDevMode}) {
         }
 
         function drawPolyline(points, context, comments) {
+            console.log("polyline inputs: ",points, context, comments)
             // TODO: have all the options in an object, not just colours
             for (let i=0; i<points.length; i++) {
                 // draw vertex
                 if (currentMode === 'fdsGen' || comments === 'fire') {
 
                     let dimension = 10
+                    // bug when fire point selected and shifted
+                    // no comments available
+                    console.log("comments: ", comments, elementConfig[comments])
                     context.fillStyle = elementConfig[comments] // have config depending on comment
                     context.fillRect(points[i].x - dimension/2, points[i].y - dimension/2, dimension, dimension)  
                 }
@@ -355,10 +360,11 @@ function Canvas({dimensions, isDevMode}) {
             // draw intermediate for selected shape
             // let selectedType = selectedElement["element"]["type"]
 
+            // need to setComment when selection
             if (selectedType === 'polyline') {
                 drawPolyAndGuide(selectedPoints, comment)
             } else if (selectedType === 'point'){
-                drawPolyline(selectedPoints, comment) // should just add to state
+                drawPolyline(selectedPoints, context,"fire") // should just add to state
             } else if (selectedType == 'rect') {
                 // console.log("rect drawing: ", currentRect)
                 if (selectedPoints.length == 1) { // will be two -> unless second shaved
@@ -394,7 +400,7 @@ function Canvas({dimensions, isDevMode}) {
                 }else if (tool === 'scale') {
                     drawPolyAndGuide(scalePoints, tool)
                 } else if (tool === 'point'){
-                    drawPolyline(currentPoint, comment) // should just add to state
+                    drawPolyline(currentPoint, context, comment) // should just add to state
                 } else if (tool == 'rect') {
                     console.log("rect drawing: ", currentRect)
                     if (currentRect.length == 1) {
@@ -585,13 +591,15 @@ function Canvas({dimensions, isDevMode}) {
                 }
             if (closestDistance) {
                 // TO be user tested if pointerDown location or location of closestPoint more useful
-                setSelectedElement({"element": closestElement, "pointerDown": closestPoint}) 
+                setSelectedElement({"element": closestElement, "pointerDown": closestPoint})
+                // setComment(closestElement["type"]) 
                 // add to current - directly render from useLayout effect
                 // let elType = closestElement["type"]
 
 
             } else {
                 setSelectedElement(null)
+                // setComment(null)
             }
             }
 
