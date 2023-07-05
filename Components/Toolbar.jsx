@@ -1,6 +1,7 @@
 import { prepForRadiationTable } from '@/utils/pointManipulation';
 import useStore from '../store/useStore'
 import WalkingSpeedPopup from './WalkingSpeedPopup'
+import FireInputsPopup from './FireInputsPopup'
 import mockRadiationElements from '@/utils/mockData'
 import { useState } from 'react';
 
@@ -28,7 +29,7 @@ const Toolbar = ({setShowModePopup}) => {
                                                     "totalHeatFlux":472,
                                                     "radiantHeatEndpoint":1.3333
                                                   })
-
+    const [showFireInputsPopup, setShowFireInputsPopup] = useState(false)                                        
 
     // send in function actioned on click
 
@@ -40,10 +41,10 @@ const Toolbar = ({setShowModePopup}) => {
       function handleCalcButtonClick() {
         if (elements) {
           // const door = elements.filter(el => el.comments === 'door') // not always required
-          if ((elements.filter(el => el.comments === 'door')).length > 0) {
-            setHasDoor(true)
-
-            // check if door within elements -> if true hasDoor -> true
+          let doors = elements.filter(el => el.comments === 'door')
+          if (doors.length > 0 && doors[doors.length-1]['points'].length > 1) {
+            // check if two points 
+              setHasDoor(true)
           }
           
           setConvertedPoints()
@@ -60,11 +61,16 @@ const Toolbar = ({setShowModePopup}) => {
         // 
       }
       function handleFireButtonClick() {
+        setShowFireInputsPopup(true)
         // open modal popup
+        
+      }
+      function handleFireInput(userInput) {
+        setShowFireInputsPopup(false)
         // fire size i.e. q
         // fire 
         // 
-
+        
       }
 
       function handleGreyscaleButtonClick() {
@@ -137,6 +143,7 @@ const Toolbar = ({setShowModePopup}) => {
     return (
     <>
       {/* perhaps popup can't be located in menu bar? */}
+      {showFireInputsPopup && <FireInputsPopup handleUserInput={handleFireInput}/>}
       {showWalkingPopup && <WalkingSpeedPopup handleUserInput={handleWalkingInput}/>}
         <div className="text-center">
           <button 
