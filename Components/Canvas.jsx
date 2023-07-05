@@ -673,6 +673,7 @@ function Canvas({dimensions, isDevMode}) {
             //         }
             //     })
             // } )
+            setSelectedElement(null)
         } 
         // if element selected -> move from previous to new position
         // need previous pointer down point
