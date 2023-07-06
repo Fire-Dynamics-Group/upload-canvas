@@ -17,6 +17,8 @@ const useStore = create((set) => {
         pdfData: null,
         pdfIsGreyscale: false,
         pdfCanvasRef: null,
+        totalHeatFlux: 472,
+        heatEndpoint: 1.3333,
         
         addElement: (newEl) => set((state) => ({
             elements: [...state.elements, newEl]
@@ -87,6 +89,12 @@ const useStore = create((set) => {
         })),
         setPdfCanvasRef: (newRef) => set(() => ({
             pdfCanvasRef: newRef
+        })),
+        setTotalHeatFlux: (newVal) => set(() => ({
+            totalHeatFlux: newVal
+        })),
+        setHeatEndPoint: (newVal) => set(() => ({
+            heatEndPoint: newVal
         }))
 
 }

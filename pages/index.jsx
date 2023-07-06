@@ -6,6 +6,8 @@ import useStore from '../store/useStore'
 import { saveAs } from 'file-saver';
 import ModePopup from '../Components/ModePopup'
 import Toolbar from '../Components/Toolbar'
+import ErrorPopup from '../Components/ErrorPopup'
+
 import TestButtons from '../Components/TestButtons'
 
 
@@ -279,24 +281,6 @@ export default function Home() {
   //     }
   //   });
   // };
-  function handleModeButtonClick() {
-    // open popup or drawer
-    // allow user to change to radiation
-    setShowModePopup(true)
-  }
-
-  // const topButtons = (          
-  //   <>
-  //       <div className="text-center">
-  //         <button 
-  //           onClick={handleModeButtonClick}
-  //           className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
-  //           type="button"
-  //           >
-  //           Change Mode
-  //         </button>
-  //       </div>
-
 
   //             {/* TODO: make overlay content dynamic depending on what mode selected  */}
   //   {/* 
@@ -328,8 +312,6 @@ export default function Home() {
     />
   </svg>
   <div className="flex justify-center py-4 relative absolute z-30" style={{ zIndex: 100 }} >
-    {/* {topButtons} */}
-    {/* may be better to have mode popup in toolbar */}
     <Toolbar setShowModePopup={setShowModePopup}/>
   </div>
 </div>

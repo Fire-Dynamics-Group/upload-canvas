@@ -1,8 +1,10 @@
 import { prepForRadiationTable } from '@/utils/pointManipulation';
 import useStore from '../store/useStore'
 import WalkingSpeedPopup from './WalkingSpeedPopup'
+import FireInputsPopup from './FireInputsPopup'
 import mockRadiationElements from '@/utils/mockData'
 import { useState } from 'react';
+import ErrorPopup from './ErrorPopup';
 
 const Toolbar = ({setShowModePopup}) => {
     // bring below into home i.e. index.jsx
@@ -25,8 +27,21 @@ const Toolbar = ({setShowModePopup}) => {
     const pdfData = useStore((state) => state.pdfData)
     const toggleIsPdfGreyscale = useStore((state) => state.toggleIsPdfGreyscale)
 
+    const [showFireInputsPopup, setShowFireInputsPopup] = useState(false)   
+    const totalHeatFlux = useStore((state) => state.totalHeatFlux)
+    const heatEndPoint = useStore((state) => state.heatEndPoint)
+    // let showErrorPopup = true
+    // only actioned on calc button
+    const [showErrorPopup, setShowErrorPopup] = useState(false)
+    // have errors in zustand; show and setShowPopup
+    let defaultErrorList = [ // send in from state
+    "2 doors present, please delete one",
+    "please include a fire/hob",
+    "please include an escape route"
+]
 
-    // send in function actioned on click
+const [errorList, setErrorList] = useState(defaultErrorList)
+
 
     function handleModeButtonClick() {
         // open popup or drawer
@@ -34,16 +49,25 @@ const Toolbar = ({setShowModePopup}) => {
         setShowModePopup(true)
       }
       function handleCalcButtonClick() {
+        // check for errors
         if (elements) {
+          if (elements.length === 0) {
+            setErrorList([defaultErrorList[1], defaultErrorList[2]])
+            setShowErrorPopup(true)
+            return
+          }
+          // further errors: if no escape route etc
           // const door = elements.filter(el => el.comments === 'door') // not always required
-          if ((elements.filter(el => el.comments === 'door')).length > 0) {
-            setHasDoor(true)
-
-            // check if door within elements -> if true hasDoor -> true
+          let doors = elements.filter(el => el.comments === 'door')
+          if (doors.length > 0 && doors[doors.length-1]['points'].length > 1) {
+            // check if two points 
+              setHasDoor(true)
           }
           
           setConvertedPoints()
           setShowWalkingPopup(true) // TODO: get pop up to action
+        } else {
+          setShowErrorPopup(true)
         }
       }
       function handleWalkingInput(userInput) {
@@ -51,9 +75,21 @@ const Toolbar = ({setShowModePopup}) => {
         let doorOpeningDuration = (userInput.length > 1 ) ? userInput[1] : 10 
         console.log("handleWalkingInput", userInput[0], convertedPoints, doorOpeningDuration)
 
-        prepForRadiationTable(userInput[0], convertedPoints, doorOpeningDuration)
+        prepForRadiationTable(userInput[0], convertedPoints, doorOpeningDuration, totalHeatFlux, heatEndPoint)
         setShowWalkingPopup(false)
         // 
+      }
+      function handleFireButtonClick() {
+        setShowFireInputsPopup(true)
+        // open modal popup
+        
+      }
+      function handleFireInput(userInput) {
+        setShowFireInputsPopup(false)
+        // fire size i.e. q
+        // fire 
+        // 
+        
       }
 
       function handleGreyscaleButtonClick() {
@@ -61,20 +97,6 @@ const Toolbar = ({setShowModePopup}) => {
           const canvas = pdfCanvasRef.current;
           const context = canvas.getContext('2d');
           let imageData
-
-          // const scale = 1.5; //1.5
-          // const viewport = page.getViewport({ scale });
-          
-
-          // canvas.height = viewport.height;
-          // canvas.width = viewport.width;
-          // setCanvasDimensions({ width: canvas.width, height: canvas.height }); // needs to be page
-
-          // const renderContext = {
-          //   canvasContext: context,
-          //   viewport: viewport,
-          // };
-
           if (pdfIsGreyscale) {
             // apply colour image
             imageData = pdfData["coloured"]
@@ -140,6 +162,8 @@ const Toolbar = ({setShowModePopup}) => {
     return (
     <>
       {/* perhaps popup can't be located in menu bar? */}
+      {showErrorPopup && <ErrorPopup setShowPopup={setShowErrorPopup} errorList={errorList}/>}
+      {showFireInputsPopup && <FireInputsPopup handleUserInput={handleFireInput}/>}
       {showWalkingPopup && <WalkingSpeedPopup handleUserInput={handleWalkingInput}/>}
         <div className="text-center">
           <button 
@@ -213,7 +237,16 @@ const Toolbar = ({setShowModePopup}) => {
             }} />
           <label htmlFor="line">Door</label>
 
+
           <div className="text-center">
+            {currentMode === 'radiation' && (<>
+          <button 
+              onClick={handleFireButtonClick}
+              className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
+              type="button"
+              >
+              Fire Inputs
+            </button>
             <button 
               onClick={handleCalcButtonClick}
               className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
@@ -221,6 +254,8 @@ const Toolbar = ({setShowModePopup}) => {
               >
               Run Calc
             </button>
+            </>
+              )}
             <button 
               onClick={handleGreyscaleButtonClick}
               className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
