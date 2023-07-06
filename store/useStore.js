@@ -19,6 +19,7 @@ const useStore = create((set) => {
         pdfCanvasRef: null,
         totalHeatFlux: 472,
         heatEndpoint: 1.3333,
+        showTimeEqPopup: false,
         
         addElement: (newEl) => set((state) => ({
             elements: [...state.elements, newEl]
@@ -76,6 +77,9 @@ const useStore = create((set) => {
                 convertedPoints: returnFinalCoordinates(state.pixelsPerMesh * 10 , state.elements, tempOrigin, state.canvasDimensions.height)
             }
         }),
+        mockConvertedPoints: (mockedConvertedPoints) => set(() => ({
+                convertedPoints: mockedConvertedPoints
+        })),
 
         setHasDoor: (newBool) => set(() => ({
             hasDoor: newBool
@@ -95,6 +99,9 @@ const useStore = create((set) => {
         })),
         setHeatEndPoint: (newVal) => set(() => ({
             heatEndPoint: newVal
+        })),
+        setShowTimeEqPopup: (newBool) => set(() => ({
+            showTimeEqPopup: newBool
         }))
 
 }

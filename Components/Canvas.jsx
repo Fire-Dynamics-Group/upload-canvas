@@ -31,7 +31,8 @@ const elementConfig = {
     "fire": "orange",
     "scale": "green",
     "selection": "orange",
-    "escapeRoute": "blue"
+    "escapeRoute": "blue",
+    "opening": "blue"
 }
 
 // eslint-disable-next-line react/prop-types

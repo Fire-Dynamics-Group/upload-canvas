@@ -2,6 +2,8 @@ import { prepForRadiationTable } from '@/utils/pointManipulation';
 import useStore from '../store/useStore'
 import WalkingSpeedPopup from './WalkingSpeedPopup'
 import FireInputsPopup from './FireInputsPopup'
+import TimeEquivalenceInputPopup from './TimeEquivalenceInputPopup'
+
 import mockRadiationElements from '@/utils/mockData'
 import { useState } from 'react';
 import ErrorPopup from './ErrorPopup';
@@ -33,6 +35,10 @@ const Toolbar = ({setShowModePopup}) => {
     // let showErrorPopup = true
     // only actioned on calc button
     const [showErrorPopup, setShowErrorPopup] = useState(false)
+    // const [showTimeEqPopup, setShowTimeEqPopup] = useState(false)
+    const showTimeEqPopup = useStore((state) => state.showTimeEqPopup)
+    const setShowTimeEqPopup = useStore((state) => state.setShowTimeEqPopup)
+
     // have errors in zustand; show and setShowPopup
     let defaultErrorList = [ // send in from state
     "2 doors present, please delete one",
@@ -49,23 +55,37 @@ const [errorList, setErrorList] = useState(defaultErrorList)
         setShowModePopup(true)
       }
       function handleCalcButtonClick() {
-        // check for errors
+        if (currentMode === 'fdsGen') return
+
         if (elements) {
           if (elements.length === 0) {
+            // below for radiation mode
+            // should access error object dependant on mode
             setErrorList([defaultErrorList[1], defaultErrorList[2]])
             setShowErrorPopup(true)
             return
           }
-          // further errors: if no escape route etc
-          // const door = elements.filter(el => el.comments === 'door') // not always required
-          let doors = elements.filter(el => el.comments === 'door')
-          if (doors.length > 0 && doors[doors.length-1]['points'].length > 1) {
-            // check if two points 
-              setHasDoor(true)
+          if (currentMode === 'radiation') {
+            // further errors: if no escape route etc
+            // const door = elements.filter(el => el.comments === 'door') // not always required
+            let doors = elements.filter(el => el.comments === 'door')
+            if (doors.length > 0 && doors[doors.length-1]['points'].length > 1) {
+              // check if two points 
+                setHasDoor(true)
+            }
+            
+            setConvertedPoints()
+            setShowWalkingPopup(true) // TODO: get pop up to action
+
+          } else if (currentMode === 'timeEq') {
+            setConvertedPoints()
+
+            setShowTimeEqPopup(true)
+            // popup for assignment of wall materials
+            // assignment for opening heights
+            // cycle through -> point at each one
+            // mvp have all walls and opening form lines
           }
-          
-          setConvertedPoints()
-          setShowWalkingPopup(true) // TODO: get pop up to action
         } else {
           setShowErrorPopup(true)
         }
@@ -163,6 +183,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
     <>
       {/* perhaps popup can't be located in menu bar? */}
       {showErrorPopup && <ErrorPopup setShowPopup={setShowErrorPopup} errorList={errorList}/>}
+      {showTimeEqPopup && <TimeEquivalenceInputPopup />}
       {showFireInputsPopup && <FireInputsPopup handleUserInput={handleFireInput}/>}
       {showWalkingPopup && <WalkingSpeedPopup handleUserInput={handleWalkingInput}/>}
         <div className="text-center">
@@ -205,37 +226,46 @@ const [errorList, setErrorList] = useState(defaultErrorList)
           <label htmlFor="line">Obstruction</label>
 
           { currentMode === 'fdsGen' ?
-            <> 
             {fdsGenTools}
-            </>
-
-            : <>
+            : currentMode === 'radiation' ?
                 {radiationTools}
-            </>
+                : <>
+                <input type="radio" id="opening" 
+                checked={tool === "opening" && comment == 'opening'} 
+                onChange={() => {
+                  setTool("polyline")
+                  setComment("opening")
+                  }} />
+                <label htmlFor="opening">Opening</label>
+                </> 
           }
           {/* Point  
                 * if point & stair-> point for stair climb
                 * if point & not stair -> fire (can be centre of box), inlet (can be polyline with two points)
           */}
-          <input
-            type="radio"
-            id="fire"
-            checked={tool === "point"}
-            onChange={() => {
-              setTool("point")
-              setComment("fire")
-            }}
-          />
-          <label htmlFor="fire">Fire</label>
+          {/* fire not needed for timeEq */}
+          { currentMode !== 'timeEq' && <>
+            <input
+              type="radio"
+              id="fire"
+              checked={tool === "point"}
+              onChange={() => {
+                setTool("point")
+                setComment("fire")
+              }}
+            />
+            <label htmlFor="fire">Fire</label>
 
-         {/* Door */}
-         <input type="radio" id="line" 
-          checked={tool === "polyline" && comment == 'door'} 
-          onChange={() => {
-            setTool("polyline") // max two points
-            setComment("door")
-            }} />
-          <label htmlFor="line">Door</label>
+          {/* Door */}
+          <input type="radio" id="line" 
+            checked={tool === "polyline" && comment == 'door'} 
+            onChange={() => {
+              setTool("polyline") // max two points
+              setComment("door")
+              }} />
+            <label htmlFor="line">Door</label>
+            </>
+          }
 
 
           <div className="text-center">
@@ -247,6 +277,8 @@ const [errorList, setErrorList] = useState(defaultErrorList)
               >
               Fire Inputs
             </button>
+            </>
+              )}
             <button 
               onClick={handleCalcButtonClick}
               className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
@@ -254,8 +286,6 @@ const [errorList, setErrorList] = useState(defaultErrorList)
               >
               Run Calc
             </button>
-            </>
-              )}
             <button 
               onClick={handleGreyscaleButtonClick}
               className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 

@@ -1,6 +1,3 @@
-import useStore from '../store/useStore'
-import { useRef } from "react";
-
 let errorListDefault = [ // send in from state
     "2 doors present, please delete one",
     "please include a fire/hob",

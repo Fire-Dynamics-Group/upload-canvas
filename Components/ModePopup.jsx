@@ -35,6 +35,16 @@ const ModePopup = ({setToggleShowPopup}) => {
           />
           <label htmlFor="radiation">Radiation</label>
           <br />
+          <input
+            type="radio"
+            id="timeEq"
+            checked={currentMode === "timeEq"}
+            onChange={() => {
+            setCurrentMode("timeEq")
+            }}
+          />
+          <label htmlFor="timeEq">Time Equivalence</label>
+          <br />
           <button className="px-4 py-2 bg-blue-500 text-white rounded-lg" onClick={handleClick}>
             Enter
           </button>          
