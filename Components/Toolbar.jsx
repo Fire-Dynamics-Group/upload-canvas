@@ -183,7 +183,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
     <>
       {/* perhaps popup can't be located in menu bar? */}
       {showErrorPopup && <ErrorPopup setShowPopup={setShowErrorPopup} errorList={errorList}/>}
-      {showTimeEqPopup && <TimeEquivalenceInputPopup />}
+      {showTimeEqPopup && <TimeEquivalenceInputPopup mockData={null}/>}
       {showFireInputsPopup && <FireInputsPopup handleUserInput={handleFireInput}/>}
       {showWalkingPopup && <WalkingSpeedPopup handleUserInput={handleWalkingInput}/>}
         <div className="text-center">
