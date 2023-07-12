@@ -1,12 +1,19 @@
-import {mockRadiationElements, mockTimeEqElements} from '../utils/mockData'
-
 const server_urls = {
     "localhost": 'http://127.0.0.1:8000',
     "server": 'https://fdsbackend-1-r7337380.deta.app'
   }
 
 //   feed in input box contents
-export const sendTimeEqData = async (elementList, roomComposition=null, openingHeights=null) => {
+// add
+export const sendTimeEqData = async (
+    elementList,
+    roomComposition=null, 
+    openingHeights=null,
+    isSprinklered=null,
+    fireLoadDensity=null,
+    compartmentHeight=null,
+    tLim=null
+    ) => {
     let convertedPoints = elementList
     let obstructions = elementList.filter(el => el.comments === 'obstruction')
     let openings = elementList.filter(el => el.comments === 'opening')
@@ -30,7 +37,15 @@ export const sendTimeEqData = async (elementList, roomComposition=null, openingH
 
     let bodyContent = [ convertedPoints, roomComposition ]
 
-    bodyContent = JSON.stringify( {convertedPoints, roomComposition, openingHeights} )
+    bodyContent = JSON.stringify( {
+        convertedPoints, 
+        roomComposition, 
+        openingHeights, 
+        isSprinklered,
+        fireLoadDensity,
+        compartmentHeight,
+        tLim
+    } )
     console.log("body: ", bodyContent)
     const response = await fetch(`${server_urls.localhost}/timeEq`, {
       method: 'POST',

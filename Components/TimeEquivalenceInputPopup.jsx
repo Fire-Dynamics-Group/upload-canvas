@@ -32,6 +32,10 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
     const [wallProperties, setWallProperties] = useState(returnZeroArray(obstructions[0]["finalPoints"].length - 1, "concrete")) // need floor and ceiling too
     const [openingHeights, setOpeningHeights] = useState(returnZeroArray(openings.length, 1))
     const [floorAndCeilingMaterials, setFloorAndCeilingMaterials] = useState(returnZeroArray(2, "concrete"))
+    const [ fireLoadDensity, setFireLoadDensity ] = useState(511)
+    const [ tLim, setTLim ] = useState(20)
+    const [ compartmentHeight, setCompartmentHeight] = useState(3.15)
+    const [ isSprinklered, setIsSprinklered ] = useState(false)
 
     //  has door when one placed
     function handleClick(e) {
@@ -47,7 +51,15 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
         } else {
             tempData = convertedPoints
         }
-        let returnedData = sendTimeEqData(tempData, roomComposition, openingHeights)
+        let returnedData = sendTimeEqData(
+            tempData, 
+            roomComposition, 
+            openingHeights, 
+            isSprinklered, 
+            fireLoadDensity, 
+            compartmentHeight, 
+            tLim
+            )
         // close popup -> send api call
         // error each cell
         // change to numbers
@@ -61,6 +73,32 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
       <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 overflow-hidden">
         <div className="bg-white p-4 rounded-lg shadow-lg text-black overflow-y-auto h-[80vh]">
             <ul>
+                <li key={"sprinklers"}>
+                <input
+            type="checkbox"
+            id="selection"
+            // checked={tool === "selection"}
+            defaultChecked={isSprinklered}
+            onChange={() => {
+                setIsSprinklered(!isSprinklered)
+            }}
+          />
+          <label className="text-lg font-bold mb-2" htmlFor="selection">is sprinklered?</label>
+                    {/* <h2 className="text-lg font-bold mb-2">is sprinklered?</h2>
+                    <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={isSprinklered} onChange={(e) => setIsSprinklered(e.target.value)}/> */}
+                </li>
+                <li key={"tLim"}>
+                    <h2 className="text-lg font-bold mb-2">t_lim (mins)</h2>
+                    <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={tLim} onChange={(e) => setTLim(e.target.value)}/>
+                </li>
+                <li key={"fireLoadDensity"}>
+                    <h2 className="text-lg font-bold mb-2">Enter Fire Load Density (MJm-2)</h2>
+                    <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={fireLoadDensity} onChange={(e) => setFireLoadDensity(e.target.value)}/>
+                </li>
+                <li key={"compartmentHeight"}>
+                    <h2 className="text-lg font-bold mb-2">Compartment Height (m)</h2>
+                    <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={compartmentHeight} onChange={(e) => setCompartmentHeight(e.target.value)}/>
+                </li>
                 <li key={"floorInput"}>
                 <h2 className="text-lg font-bold mb-2">Enter Floor Material</h2>
                 <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={floorAndCeilingMaterials[0]} onChange={(e) =>
