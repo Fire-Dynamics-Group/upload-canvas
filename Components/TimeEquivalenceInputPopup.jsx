@@ -44,14 +44,14 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
     const [ fireResistancePeriod, setFireResistancePeriod] = useState(90)
     const [ compartmentHeight, setCompartmentHeight] = useState(3.15)
     const [ isSprinklered, setIsSprinklered ] = useState(false)
-    const [ use, setUse] = useState("office")
-
     const useObject = [
         {'occupancy':'Office', 'tLim': 20, "fractile": 511},
         {'occupancy':'Hotel', 'tLim': 20, "fractile": 377}, 
         {'occupancy':'Classroom', 'tLim': 20, "fractile": 347}, 
         {'occupancy':'Library', 'tLim': 20, "fractile": 1824}, 
     ]
+    const [ use, setUse] = useState(useObject[0]['occupancy'])
+
 
     const materialList = [
         "concrete",
@@ -76,7 +76,16 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
         // set tLim and fld from use of building
         let currentUse = useObject.find(obj => obj.occupancy === use)
         const { occupancy, tLim, fractile } = currentUse || {}
-
+        console.log(
+            "tempData: ", tempData,
+            "roomComposition: ", roomComposition,
+            openingHeights, 
+            isSprinklered, 
+            fractile, //undefined
+            compartmentHeight, 
+            tLim, // undefined
+            fireResistancePeriod
+            )
         let returnedData = sendTimeEqData(
             tempData, 
             roomComposition, 

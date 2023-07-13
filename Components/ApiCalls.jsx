@@ -50,7 +50,7 @@ export const sendTimeEqData = async (
         fireResistancePeriod
     } )
     console.log("body: ", bodyContent)
-    const response = await fetch(`${server_urls.localhost}/timeEq`, {
+    const response = await fetch(`${server_urls.server}/timeEq`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
