@@ -97,6 +97,10 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
     const useDropDownContent = (useObject).map((item, i) => {
         return <option key={i} value={item.occupancy}>{item.occupancy}</option>
       })
+
+    const materialDropDownContent = materialList.map((item, i) => {
+        return <option key={i} value={item}>{item}</option>
+    })
     // TODO: join floor to start and ceiling material to end of construction list before sending
     return (
       // todo: loop through obstruction elements between vertices/points
@@ -105,6 +109,7 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
         <div className="bg-white p-4 rounded-lg shadow-lg text-black overflow-y-auto h-[80vh]">
             <ul>
                 <li key={"sprinklers"}>
+                <label className="text-lg font-bold mb-2">{"Tick if sprinklered: "}</label>
                 <input
             type="checkbox"
             id="selection"
@@ -114,24 +119,24 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
                 setIsSprinklered(!isSprinklered)
             }}
           />
-          <label className="text-lg font-bold mb-2" htmlFor="selection">is sprinklered?</label>
           {/* TODO: add fire resistance period input box */}
           {/* TODO: add use dropdown */}
-          <br />
-          <label>{`Use of space: `}
-            <select
-            onChange={(e) => {
-                setUse(e.target.value)
-            }}
-            name='use'
-            value={use}
-            >
-              { useDropDownContent }
-            </select>
-
-          </label>          
                     {/* <h2 className="text-lg font-bold mb-2">is sprinklered?</h2>
                     <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={isSprinklered} onChange={(e) => setIsSprinklered(e.target.value)}/> */}
+                </li>
+                <li>
+                <h2 className="text-lg font-bold mb-2">Enter Use of Space:</h2>
+                      <select
+                      onChange={(e) => {
+                          setUse(e.target.value)
+                      }}
+                      name='use'
+                      value={use}
+                      >
+                        { useDropDownContent }
+                      </select>
+     
+
                 </li>
                 {/* <li key={"tLim"}>
                     <h2 className="text-lg font-bold mb-2">t_lim (mins)</h2>
@@ -147,7 +152,23 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
                 </li>
                 <li key={"floorInput"}>
                 <h2 className="text-lg font-bold mb-2">Enter Floor Material</h2>
-                <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={floorAndCeilingMaterials[0]} onChange={(e) =>
+                <select
+                onChange={(e) =>
+                    {const temp = floorAndCeilingMaterials.map((c, i) => {
+                        if (i === 0) {
+                            return e.target.value
+                        } else {
+                            return c
+                        }
+                    })
+                
+                    setFloorAndCeilingMaterials(temp) 
+                    }}
+                value={floorAndCeilingMaterials[0]}
+                >
+                    { materialDropDownContent } 
+                </select>
+                {/* <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={floorAndCeilingMaterials[0]} onChange={(e) =>
                 {const temp = floorAndCeilingMaterials.map((c, i) => {
                     if (i === 0) {
                         return e.target.value
@@ -157,11 +178,27 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
                 })
             
                 setFloorAndCeilingMaterials(temp) 
-                }}/>
+                }}/> */}
                 </li>
                 <li key={"ceilingInput"}>
                 <h2 className="text-lg font-bold mb-2">Enter Ceiling Material</h2>
-                <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={floorAndCeilingMaterials[1]} onChange={(e) =>
+                <select 
+                onChange={(e) =>
+                    {const temp = floorAndCeilingMaterials.map((c, i) => {
+                        if (i === 1) {
+                            return e.target.value
+                        } else {
+                            return c
+                        }
+                    })
+                
+                    setFloorAndCeilingMaterials(temp) 
+                    }}
+                    value={floorAndCeilingMaterials[1]}
+                >
+                        { materialDropDownContent }                    
+                </select>
+                {/* <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={floorAndCeilingMaterials[1]} onChange={(e) =>
                 {const temp = floorAndCeilingMaterials.map((c, i) => {
                     if (i === 1) {
                         return e.target.value
@@ -171,23 +208,29 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
                 })
             
                 setFloorAndCeilingMaterials(temp) 
-                }}/>
+                }}/> */}
                 </li>
             {wallProperties.map((current, index) => {
                 return (<>
                 <li key={"wallInput"+ index}>
                     {/* plan if first or last */}
                 <h2 className="text-lg font-bold mb-2">Enter Wall {index + 1} Material</h2>
-                {/* set wall x property on change */}
-                <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={wallProperties[index]} onChange={(e) => 
-                    {const temp = wallProperties.map((c, i) => {
-                        if (i === index) {
-                            return e.target.value
-                        } else {
-                            return c
-                        }
-                    })
-                    setWallProperties(temp)}}/>
+                {/* <label>{`Use of space: `} */}
+                        <select
+                        onChange={(e) => 
+                            {const temp = wallProperties.map((c, i) => {
+                                if (i === index) {
+                                    return e.target.value
+                                } else {
+                                    return c
+                                }
+                            })
+                            setWallProperties(temp)}}
+                        name='use'
+                        value={wallProperties[index]}
+                        >
+                        { materialDropDownContent }
+                        </select>
                 </li>
                 </>)
                 
