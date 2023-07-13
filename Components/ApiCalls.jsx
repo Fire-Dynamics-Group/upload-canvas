@@ -1,6 +1,7 @@
 const server_urls = {
     "localhost": 'http://127.0.0.1:8000',
-    "server": 'https://fdsbackend-1-r7337380.deta.app'
+    // "server": 'https://fdsbackend-1-r7337380.deta.app'
+    "server": 'https://backendfornextapp-production.up.railway.app'
   }
 
 //   feed in input box contents
