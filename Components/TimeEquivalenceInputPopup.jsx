@@ -133,8 +133,15 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
                     {/* <h2 className="text-lg font-bold mb-2">is sprinklered?</h2>
                     <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={isSprinklered} onChange={(e) => setIsSprinklered(e.target.value)}/> */}
                 </li>
+                    <h2 className="text-lg font-bold mb-2">Enter Fire Resistance Period (mins):</h2>
+                    <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={fireResistancePeriod} onChange={(e) => {
+                        setFireResistancePeriod(e.value.target)
+                    }}/>
                 <li>
-                <h2 className="text-lg font-bold mb-2">Enter Use of Space:</h2>
+
+                </li>
+                <li>
+                <h2 className="text-lg font-bold mb-2">Select Use of Space:</h2>
                       <select
                       onChange={(e) => {
                           setUse(e.target.value)
@@ -152,15 +159,15 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
                     <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={tLim} onChange={(e) => setTLim(e.target.value)}/>
                 </li>
                 <li key={"fireLoadDensity"}>
-                    <h2 className="text-lg font-bold mb-2">Enter Fire Load Density (MJm-2)</h2>
+                    <h2 className="text-lg font-bold mb-2">Select Fire Load Density (MJm-2)</h2>
                     <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={fireLoadDensity} onChange={(e) => setFireLoadDensity(e.target.value)}/>
                 </li> */}
                 <li key={"compartmentHeight"}>
-                    <h2 className="text-lg font-bold mb-2">Compartment Height (m)</h2>
+                    <h2 className="text-lg font-bold mb-2">Enter Compartment Height (m):</h2>
                     <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={compartmentHeight} onChange={(e) => setCompartmentHeight(e.target.value)}/>
                 </li>
                 <li key={"floorInput"}>
-                <h2 className="text-lg font-bold mb-2">Enter Floor Material</h2>
+                <h2 className="text-lg font-bold mb-2">Select Floor Material:</h2>
                 <select
                 onChange={(e) =>
                     {const temp = floorAndCeilingMaterials.map((c, i) => {
@@ -190,7 +197,7 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
                 }}/> */}
                 </li>
                 <li key={"ceilingInput"}>
-                <h2 className="text-lg font-bold mb-2">Enter Ceiling Material</h2>
+                <h2 className="text-lg font-bold mb-2">Select Ceiling Material:</h2>
                 <select 
                 onChange={(e) =>
                     {const temp = floorAndCeilingMaterials.map((c, i) => {
@@ -223,7 +230,7 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
                 return (<>
                 <li key={"wallInput"+ index}>
                     {/* plan if first or last */}
-                <h2 className="text-lg font-bold mb-2">Enter Wall {index + 1} Material</h2>
+                <h2 className="text-lg font-bold mb-2">Select Wall {index + 1} Material:</h2>
                 {/* <label>{`Use of space: `} */}
                         <select
                         onChange={(e) => 
@@ -247,7 +254,7 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
             {openingHeights.map((current, index) => {
                 return (<>
                 <li key={"opening" + index}>
-                    <h2 className="text-lg font-bold mb-2">Enter Opening {index + 1} Height (m)</h2>
+                    <h2 className="text-lg font-bold mb-2">Enter Opening {index + 1} Height (m):</h2>
                     {/* set wall x property on change */}
                     <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={openingHeights[index]} onChange={(e) => 
                         {const temp = openingHeights.map((c, i) => {
