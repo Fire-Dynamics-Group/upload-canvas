@@ -135,7 +135,7 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
                 </li>
                     <h2 className="text-lg font-bold mb-2">Enter Fire Resistance Period (mins):</h2>
                     <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={fireResistancePeriod} onChange={(e) => {
-                        setFireResistancePeriod(e.value.target)
+                        setFireResistancePeriod(e.target.value)
                     }}/>
                 <li>
 
