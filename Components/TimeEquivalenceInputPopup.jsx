@@ -2,6 +2,10 @@ import useStore from '@/store/useStore';
 import { useState } from 'react';
 import {sendTimeEqData} from './ApiCalls'
 
+// TODO: add fire resitance period input
+// add choice of use of building
+// change several input boxes to dropdowns
+// TODO: discern tLim and others from use
 const TimeEquivalenceInputPopup = ({mockData=null}) => {
 
     let walls = [0, 1, 2, 3]
@@ -32,10 +36,28 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
     const [wallProperties, setWallProperties] = useState(returnZeroArray(obstructions[0]["finalPoints"].length - 1, "concrete")) // need floor and ceiling too
     const [openingHeights, setOpeningHeights] = useState(returnZeroArray(openings.length, 1))
     const [floorAndCeilingMaterials, setFloorAndCeilingMaterials] = useState(returnZeroArray(2, "concrete"))
-    const [ fireLoadDensity, setFireLoadDensity ] = useState(511)
-    const [ tLim, setTLim ] = useState(20)
+    // needs dropdown
+    // needs option to have all same material
+    // if box ticked, show only one dropdown
+    // const [ fireLoadDensity, setFireLoadDensity ] = useState(511)
+    // const [ tLim, setTLim ] = useState(20)
+    const [ fireResistancePeriod, setFireResistancePeriod] = useState(90)
     const [ compartmentHeight, setCompartmentHeight] = useState(3.15)
     const [ isSprinklered, setIsSprinklered ] = useState(false)
+    const [ use, setUse] = useState("office")
+
+    const useObject = [
+        {'occupancy':'Office', 'tLim': 20, "fractile": 511},
+        {'occupancy':'Hotel', 'tLim': 20, "fractile": 377}, 
+        {'occupancy':'Classroom', 'tLim': 20, "fractile": 347}, 
+        {'occupancy':'Library', 'tLim': 20, "fractile": 1824}, 
+    ]
+
+    const materialList = [
+        "concrete",
+        "brick",
+        "plasterboard"
+    ]
 
     //  has door when one placed
     function handleClick(e) {
@@ -51,14 +73,19 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
         } else {
             tempData = convertedPoints
         }
+        // set tLim and fld from use of building
+        let currentUse = useObject.find(obj => obj.occupancy === use)
+        const { occupancy, tLim, fractile } = currentUse || {}
+
         let returnedData = sendTimeEqData(
             tempData, 
             roomComposition, 
             openingHeights, 
             isSprinklered, 
-            fireLoadDensity, 
+            fractile, 
             compartmentHeight, 
-            tLim
+            tLim,
+            fireResistancePeriod
             )
         // close popup -> send api call
         // error each cell
@@ -66,6 +93,10 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
         // action calc
 
     }
+
+    const useDropDownContent = (useObject).map((item, i) => {
+        return <option key={i} value={item.occupancy}>{item.occupancy}</option>
+      })
     // TODO: join floor to start and ceiling material to end of construction list before sending
     return (
       // todo: loop through obstruction elements between vertices/points
@@ -84,17 +115,32 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
             }}
           />
           <label className="text-lg font-bold mb-2" htmlFor="selection">is sprinklered?</label>
+          {/* TODO: add fire resistance period input box */}
+          {/* TODO: add use dropdown */}
+          <br />
+          <label>{`Use of space: `}
+            <select
+            onChange={(e) => {
+                setUse(e.target.value)
+            }}
+            name='use'
+            value={use}
+            >
+              { useDropDownContent }
+            </select>
+
+          </label>          
                     {/* <h2 className="text-lg font-bold mb-2">is sprinklered?</h2>
                     <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={isSprinklered} onChange={(e) => setIsSprinklered(e.target.value)}/> */}
                 </li>
-                <li key={"tLim"}>
+                {/* <li key={"tLim"}>
                     <h2 className="text-lg font-bold mb-2">t_lim (mins)</h2>
                     <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={tLim} onChange={(e) => setTLim(e.target.value)}/>
                 </li>
                 <li key={"fireLoadDensity"}>
                     <h2 className="text-lg font-bold mb-2">Enter Fire Load Density (MJm-2)</h2>
                     <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={fireLoadDensity} onChange={(e) => setFireLoadDensity(e.target.value)}/>
-                </li>
+                </li> */}
                 <li key={"compartmentHeight"}>
                     <h2 className="text-lg font-bold mb-2">Compartment Height (m)</h2>
                     <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={compartmentHeight} onChange={(e) => setCompartmentHeight(e.target.value)}/>

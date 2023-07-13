@@ -13,7 +13,8 @@ export const sendTimeEqData = async (
     isSprinklered=null,
     fireLoadDensity=null,
     compartmentHeight=null,
-    tLim=null
+    tLim=null,
+    fireResistancePeriod=null
     ) => {
     let convertedPoints = elementList
     let obstructions = elementList.filter(el => el.comments === 'obstruction')
@@ -45,10 +46,11 @@ export const sendTimeEqData = async (
         isSprinklered,
         fireLoadDensity,
         compartmentHeight,
-        tLim
+        tLim,
+        fireResistancePeriod
     } )
     console.log("body: ", bodyContent)
-    const response = await fetch(`${server_urls.server}/timeEq`, {
+    const response = await fetch(`${server_urls.localhost}/timeEq`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
