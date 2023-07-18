@@ -59,8 +59,22 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
         "plasterboard"
     ]
 
+    function inputValidation(
+        tempData, 
+        roomComposition, 
+        openingHeights, 
+        isSprinklered, 
+        fractile, 
+        compartmentHeight, 
+        tLim,
+        fireResistancePeriod
+    ) {
+
+    }
     //  has door when one placed
     function handleClick(e) {
+        // input validation step to be applied here
+        // change style to red 
         console.log("wallProperties: ", wallProperties)
         console.log("mockData: ", mockData, convertedPoints)
         // bring floor, wall and ceiling properties together
@@ -76,16 +90,16 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
         // set tLim and fld from use of building
         let currentUse = useObject.find(obj => obj.occupancy === use)
         const { occupancy, tLim, fractile } = currentUse || {}
-        console.log(
-            "tempData: ", tempData,
-            "roomComposition: ", roomComposition,
-            openingHeights, 
-            isSprinklered, 
-            fractile, //undefined
-            compartmentHeight, 
-            tLim, // undefined
-            fireResistancePeriod
-            )
+        // console.log(
+        //     tempData,
+        //     roomComposition,
+        //     openingHeights, 
+        //     isSprinklered, 
+        //     fractile, 
+        //     compartmentHeight, 
+        //     tLim, 
+        //     fireResistancePeriod
+        //     )
         let returnedData = sendTimeEqData(
             tempData, 
             roomComposition, 
