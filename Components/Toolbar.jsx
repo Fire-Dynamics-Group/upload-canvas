@@ -92,7 +92,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
       }
       function handleWalkingInput(userInput) {
         // use user input
-        let doorOpeningDuration = (userInput.length > 1 ) ? userInput[1] : 10 
+        let doorOpeningDuration = (userInput.length > 1 ) ? userInput[1] : 11 
         console.log("handleWalkingInput", userInput[0], convertedPoints, doorOpeningDuration)
 
         prepForRadiationTable(userInput[0], convertedPoints, doorOpeningDuration, totalHeatFlux, heatEndPoint)

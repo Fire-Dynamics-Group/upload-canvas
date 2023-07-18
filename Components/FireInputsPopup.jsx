@@ -23,14 +23,6 @@ const FireInputsPopup = ({handleUserInput}) => {
 
     }
 
-    const walkingSpeedObject = [
-      {"description": "Normal Visibility", "speed": 1.2},
-      {"description": "Reduced Visibility", "speed": 0.3},
-    ]
-    const walkingSpeedDropDownContent = (walkingSpeedObject).map((item, i) => {
-      return <option key={i} value={item.speed}>{item.speed}m/s - {item.description}</option>
-    })
-    const [ walkingDropdownSelected, setWalkingDropdownSelected ] = useState(walkingSpeedObject[0]["speed"])
     
 
     const fireSizeObject = [
