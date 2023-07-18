@@ -1,5 +1,5 @@
 import useStore from '../store/useStore'
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 const FireInputsPopup = ({handleUserInput}) => {
     const userHeatFluxInput = useRef()
@@ -22,12 +22,58 @@ const FireInputsPopup = ({handleUserInput}) => {
         }
 
     }
+
+    const walkingSpeedObject = [
+      {"description": "Normal Visibility", "speed": 1.2},
+      {"description": "Reduced Visibility", "speed": 0.3},
+    ]
+    const walkingSpeedDropDownContent = (walkingSpeedObject).map((item, i) => {
+      return <option key={i} value={item.speed}>{item.speed}m/s - {item.description}</option>
+    })
+    const [ walkingDropdownSelected, setWalkingDropdownSelected ] = useState(walkingSpeedObject[0]["speed"])
+    
+
+    const fireSizeObject = [
+      {"description": "Chip Pan", "size": 476},
+      {"description": "Chip Pan Banned", "size": 150.5},
+    ]    
+    const fireSizeDropDownContent = (fireSizeObject).map((item, i) => {
+      return <option key={i} value={item.size}>{item.description} - {item.size}kW</option>
+    })
+    const [ fireSizeDropdownSelected, setFireSizeDropdownSelected ] = useState(walkingSpeedObject[0]["size"])
+    const [ isCustomFireSize, setIsCustomFireSize ] = useState(false)
+
     return (
       // todo: have default values either from state or hardcoded; better state; shows current value
       <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
         <div className="bg-white p-4 rounded-lg shadow-lg text-black">
-          <h2 className="text-lg font-bold mb-2">Enter Fire Heat Flux</h2>
-          <input ref={userHeatFluxInput} type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={totalHeatFlux} onChange={(e) => setTotalHeatFlux(e.target.value)}/>
+          <h2 className="text-lg font-bold mb-2">Enter Fire Heat Flux:</h2>
+
+          {/* TODO: have dropdown and option for specific figure */}
+          {/* only show further input if checkbox selected */}
+          {/* <h2 className="text-lg font-bold mb-2">Select Fire Source:</h2> */}
+
+                      { !isCustomFireSize ? <select
+                      onChange={(e) => {
+                        setFireSizeDropdownSelected(e.target.value)
+                        setTotalHeatFlux(e.target.value)
+                      }}
+                      name='use'
+                      value={fireSizeDropdownSelected}
+                      >
+                        { fireSizeDropDownContent }
+                      </select>    
+                      :
+          <input ref={userHeatFluxInput} type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={totalHeatFlux} onChange={(e) => setTotalHeatFlux(e.target.value)}/>}
+                      <label className="text-lg font-bold mb-2">{"Tick if custom heat flux: "}</label>
+                        <input
+                          type="checkbox"
+                          id="selection"
+                          defaultChecked={isCustomFireSize}
+                          onChange={() => {
+                              setIsCustomFireSize(!isCustomFireSize)
+                          }}
+                        />
           <h2 className="text-lg font-bold mb-2">Enter Heat Endpoint</h2>
           <input ref={userHeatEndpointInput} type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={heatEndpoint} onChange={(e) => setHeatEndpoint(e.target.value)}/>            
           <button className="px-4 py-2 bg-blue-500 text-white rounded-lg" onClick={handleClick}>

@@ -76,16 +76,7 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
         // set tLim and fld from use of building
         let currentUse = useObject.find(obj => obj.occupancy === use)
         const { occupancy, tLim, fractile } = currentUse || {}
-        console.log(
-            "tempData: ", tempData,
-            "roomComposition: ", roomComposition,
-            openingHeights, 
-            isSprinklered, 
-            fractile, //undefined
-            compartmentHeight, 
-            tLim, // undefined
-            fireResistancePeriod
-            )
+
         let returnedData = sendTimeEqData(
             tempData, 
             roomComposition, 
@@ -122,7 +113,6 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
                 <input
             type="checkbox"
             id="selection"
-            // checked={tool === "selection"}
             defaultChecked={isSprinklered}
             onChange={() => {
                 setIsSprinklered(!isSprinklered)

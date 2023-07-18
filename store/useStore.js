@@ -17,7 +17,7 @@ const useStore = create((set) => {
         pdfData: null,
         pdfIsGreyscale: false,
         pdfCanvasRef: null,
-        totalHeatFlux: 472,
+        totalHeatFlux: 476,
         heatEndpoint: 1.3333,
         showTimeEqPopup: false,
         
