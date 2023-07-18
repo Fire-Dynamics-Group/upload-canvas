@@ -129,8 +129,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
         }
       }
 
-    const fdsGenTools = (
-        <>
+    const fdsGenTools = <>
                 {/* non stair mesh */}
                 <input
                     type="radio"
@@ -164,7 +163,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                 <label htmlFor="rectangle">Stair Mesh</label> 
 
         </>
-    )
+    
 
     const radiationTools = (
         <>
@@ -226,9 +225,9 @@ const [errorList, setErrorList] = useState(defaultErrorList)
           <label htmlFor="line">Obstruction</label>
 
           { currentMode === 'fdsGen' ?
-            {fdsGenTools}
+            fdsGenTools
             : currentMode === 'radiation' ?
-                {radiationTools}
+                radiationTools
                 : <>
                 <input type="radio" id="opening" 
                 checked={tool === "opening" && comment == 'opening'} 

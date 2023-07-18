@@ -1,11 +1,8 @@
 import useStore from '@/store/useStore';
 import { useState } from 'react';
 import {sendTimeEqData} from './ApiCalls'
+import { string, z } from 'zod'
 
-// TODO: add fire resitance period input
-// add choice of use of building
-// change several input boxes to dropdowns
-// TODO: discern tLim and others from use
 const TimeEquivalenceInputPopup = ({mockData=null}) => {
 
     let walls = [0, 1, 2, 3]
@@ -21,11 +18,8 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
         obstructions = convertedPoints.filter(el => el.comments === 'obstruction')
         openings = convertedPoints.filter(el => el.comments === 'opening')        
     }// else convert elements
-    // get convertedPoints
-    // find obstructions -> num == len -1
-    // find openings -> num == len
-    // create array of len(walls); all default value; zero to start
-    function returnZeroArray(length, content=0) {
+
+    function returnSameValueArray(length, content=0) {
         let array = [] 
         for (let i=0; i<length; i++) {
             array.push(content)
@@ -33,14 +27,10 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
         return array
 
     }
-    const [wallProperties, setWallProperties] = useState(returnZeroArray(obstructions[0]["finalPoints"].length - 1, "concrete")) // need floor and ceiling too
-    const [openingHeights, setOpeningHeights] = useState(returnZeroArray(openings.length, 1))
-    const [floorAndCeilingMaterials, setFloorAndCeilingMaterials] = useState(returnZeroArray(2, "concrete"))
-    // needs dropdown
-    // needs option to have all same material
-    // if box ticked, show only one dropdown
-    // const [ fireLoadDensity, setFireLoadDensity ] = useState(511)
-    // const [ tLim, setTLim ] = useState(20)
+    const [wallProperties, setWallProperties] = useState(returnSameValueArray(obstructions[0]["finalPoints"].length - 1, "concrete")) // need floor and ceiling too
+    const [openingHeights, setOpeningHeights] = useState(returnSameValueArray(openings.length, 1))
+    const [floorAndCeilingMaterials, setFloorAndCeilingMaterials] = useState(returnSameValueArray(2, "concrete"))
+
     const [ fireResistancePeriod, setFireResistancePeriod] = useState(90)
     const [ compartmentHeight, setCompartmentHeight] = useState(3.15)
     const [ isSprinklered, setIsSprinklered ] = useState(false)
@@ -90,16 +80,7 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
         // set tLim and fld from use of building
         let currentUse = useObject.find(obj => obj.occupancy === use)
         const { occupancy, tLim, fractile } = currentUse || {}
-        // console.log(
-        //     tempData,
-        //     roomComposition,
-        //     openingHeights, 
-        //     isSprinklered, 
-        //     fractile, 
-        //     compartmentHeight, 
-        //     tLim, 
-        //     fireResistancePeriod
-        //     )
+
         let returnedData = sendTimeEqData(
             tempData, 
             roomComposition, 
@@ -124,10 +105,8 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
     const materialDropDownContent = materialList.map((item, i) => {
         return <option key={i} value={item}>{item}</option>
     })
-    // TODO: join floor to start and ceiling material to end of construction list before sending
     return (
-      // todo: loop through obstruction elements between vertices/points
-    //   how to add to state object on click
+
       <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 overflow-hidden">
         <div className="bg-white p-4 rounded-lg shadow-lg text-black overflow-y-auto h-[80vh]">
             <ul>
@@ -136,16 +115,11 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
                 <input
             type="checkbox"
             id="selection"
-            // checked={tool === "selection"}
             defaultChecked={isSprinklered}
             onChange={() => {
                 setIsSprinklered(!isSprinklered)
             }}
           />
-          {/* TODO: add fire resistance period input box */}
-          {/* TODO: add use dropdown */}
-                    {/* <h2 className="text-lg font-bold mb-2">is sprinklered?</h2>
-                    <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={isSprinklered} onChange={(e) => setIsSprinklered(e.target.value)}/> */}
                 </li>
                     <h2 className="text-lg font-bold mb-2">Enter Fire Resistance Period (mins):</h2>
                     <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={fireResistancePeriod} onChange={(e) => {
@@ -168,14 +142,6 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
      
 
                 </li>
-                {/* <li key={"tLim"}>
-                    <h2 className="text-lg font-bold mb-2">t_lim (mins)</h2>
-                    <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={tLim} onChange={(e) => setTLim(e.target.value)}/>
-                </li>
-                <li key={"fireLoadDensity"}>
-                    <h2 className="text-lg font-bold mb-2">Select Fire Load Density (MJm-2)</h2>
-                    <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={fireLoadDensity} onChange={(e) => setFireLoadDensity(e.target.value)}/>
-                </li> */}
                 <li key={"compartmentHeight"}>
                     <h2 className="text-lg font-bold mb-2">Enter Compartment Height (m):</h2>
                     <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={compartmentHeight} onChange={(e) => setCompartmentHeight(e.target.value)}/>
@@ -198,17 +164,7 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
                 >
                     { materialDropDownContent } 
                 </select>
-                {/* <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={floorAndCeilingMaterials[0]} onChange={(e) =>
-                {const temp = floorAndCeilingMaterials.map((c, i) => {
-                    if (i === 0) {
-                        return e.target.value
-                    } else {
-                        return c
-                    }
-                })
-            
-                setFloorAndCeilingMaterials(temp) 
-                }}/> */}
+
                 </li>
                 <li key={"ceilingInput"}>
                 <h2 className="text-lg font-bold mb-2">Select Ceiling Material:</h2>
@@ -228,17 +184,6 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
                 >
                         { materialDropDownContent }                    
                 </select>
-                {/* <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={floorAndCeilingMaterials[1]} onChange={(e) =>
-                {const temp = floorAndCeilingMaterials.map((c, i) => {
-                    if (i === 1) {
-                        return e.target.value
-                    } else {
-                        return c
-                    }
-                })
-            
-                setFloorAndCeilingMaterials(temp) 
-                }}/> */}
                 </li>
             {wallProperties.map((current, index) => {
                 return (<>
