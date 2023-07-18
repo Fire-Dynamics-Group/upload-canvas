@@ -14,7 +14,7 @@ const ErrorPopup = ({setShowPopup, errorList=errorListDefault}) => {
 
     return (
       // todo: have default values either from state or hardcoded; better state; shows current value
-      <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+      <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-60">
         <div className="bg-white p-4 rounded-lg shadow-lg text-black">
         <h2 className="text-lg font-bold mb-2">Error!</h2>
             <ul>

@@ -2,6 +2,7 @@ import useStore from '@/store/useStore';
 import { useState } from 'react';
 import {sendTimeEqData} from './ApiCalls'
 import { string, z } from 'zod'
+import ErrorPopup from './ErrorPopup';
 
 const TimeEquivalenceInputPopup = ({mockData=null}) => {
 
@@ -34,6 +35,8 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
     const [ fireResistancePeriod, setFireResistancePeriod] = useState(90)
     const [ compartmentHeight, setCompartmentHeight] = useState(3.15)
     const [ isSprinklered, setIsSprinklered ] = useState(false)
+    const [ errorList, setErrorList] = useState([])
+    const [ showErrorPopup, setShowErrorPopup ] = useState(false)
     const useObject = [
         {'occupancy':'Office', 'tLim': 20, "fractile": 511},
         {'occupancy':'Hotel', 'tLim': 20, "fractile": 377}, 
@@ -50,7 +53,7 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
     ]
 
     function inputValidation(
-        tempData, 
+        tempData, // what does min require?
         roomComposition, 
         openingHeights, 
         isSprinklered, 
@@ -59,6 +62,33 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
         tLim,
         fireResistancePeriod
     ) {
+        let isValid = true
+        let errorObject = []
+
+        function beginsWithFloat(val) {
+            val = parseFloat(val);
+            return ! isNaN(val);
+          }
+        // loop through openingHeights
+        for (let i=0; i<openingHeights.length; i++) {
+            if (!beginsWithFloat(openingHeights[i])) {
+                errorObject.push(`opening height ${i + 1} should be a positive number/float`)
+            }
+        }
+        if (!beginsWithFloat(compartmentHeight)) {
+            errorObject.push(`compartment height should be a positive number/float`)
+        }
+        // fireResistancePeriod
+        if (!beginsWithFloat(fireResistancePeriod)) {
+            errorObject.push(`the fire resistance period should be a positive number`)
+        }
+
+        if (errorObject.length > 0) {
+            isValid = false
+        }
+        setErrorList(errorObject)
+
+        return [isValid, errorObject]
 
     }
     //  has door when one placed
@@ -81,8 +111,8 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
         let currentUse = useObject.find(obj => obj.occupancy === use)
         const { occupancy, tLim, fractile } = currentUse || {}
 
-        let returnedData = sendTimeEqData(
-            tempData, 
+        const [isValid, errorObject] = inputValidation(
+            tempData, // what does min require?
             roomComposition, 
             openingHeights, 
             isSprinklered, 
@@ -90,7 +120,24 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
             compartmentHeight, 
             tLim,
             fireResistancePeriod
-            )
+        )
+
+        if (isValid) {
+            
+                    let returnedData = sendTimeEqData(
+                        tempData, 
+                        roomComposition, 
+                        openingHeights, 
+                        isSprinklered, 
+                        fractile, 
+                        compartmentHeight, 
+                        tLim,
+                        fireResistancePeriod
+                        )
+
+        } else {
+            setShowErrorPopup(true)
+        }
         // close popup -> send api call
         // error each cell
         // change to numbers
@@ -106,7 +153,8 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
         return <option key={i} value={item}>{item}</option>
     })
     return (
-
+        <>
+        <ErrorPopup errorList={errorList} setShowPopup={setShowErrorPopup}/>
       <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 overflow-hidden">
         <div className="bg-white p-4 rounded-lg shadow-lg text-black overflow-y-auto h-[80vh]">
             <ul>
@@ -235,6 +283,7 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
           </button>          
         </div>
       </div>
+      </>
     );
   };
   
