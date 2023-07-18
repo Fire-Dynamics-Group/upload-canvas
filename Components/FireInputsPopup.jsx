@@ -32,7 +32,7 @@ const FireInputsPopup = ({handleUserInput}) => {
     const fireSizeDropDownContent = (fireSizeObject).map((item, i) => {
       return <option key={i} value={item.size}>{item.description} - {item.size}kW</option>
     })
-    const [ fireSizeDropdownSelected, setFireSizeDropdownSelected ] = useState(walkingSpeedObject[0]["size"])
+    const [ fireSizeDropdownSelected, setFireSizeDropdownSelected ] = useState(fireSizeObject[0]["size"])
     const [ isCustomFireSize, setIsCustomFireSize ] = useState(false)
 
     return (
