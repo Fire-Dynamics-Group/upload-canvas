@@ -12,8 +12,8 @@ const FireInputsPopup = ({handleUserInput}) => {
     //  has door when one placed
     function handleClick() {
         let input = []
-        if (userHeatFluxInput.current && userHeatFluxInput.current.value) {
-            input.push(userHeatFluxInput.current.value)
+        if (!isCustomFireSize || isCustomFireSize && userHeatFluxInput.current && userHeatFluxInput.current.value) {
+            input.push(totalHeatFlux)
             if (userHeatEndpointInput.current && userHeatEndpointInput.current.value) {
               input.push(userHeatEndpointInput.current.value)
 
