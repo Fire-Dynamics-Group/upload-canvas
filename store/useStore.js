@@ -97,8 +97,8 @@ const useStore = create((set) => {
         setTotalHeatFlux: (newVal) => set(() => ({
             totalHeatFlux: newVal
         })),
-        setHeatEndPoint: (newVal) => set(() => ({
-            heatEndPoint: newVal
+        setHeatEndpoint: (newVal) => set(() => ({
+            heatEndpoint: newVal
         })),
         setShowTimeEqPopup: (newBool) => set(() => ({
             showTimeEqPopup: newBool

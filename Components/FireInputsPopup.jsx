@@ -67,7 +67,13 @@ const FireInputsPopup = ({handleUserInput}) => {
                           }}
                         />
           <h2 className="text-lg font-bold mb-2">Enter Heat Endpoint</h2>
-          <input ref={userHeatEndpointInput} type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={heatEndpoint} onChange={(e) => setHeatEndpoint(e.target.value)}/>            
+          <input 
+          ref={userHeatEndpointInput} 
+          type="text" 
+          className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" 
+          value={heatEndpoint} 
+          onChange={(e) => setHeatEndpoint(e.target.value)}
+          />            
           <button className="px-4 py-2 bg-blue-500 text-white rounded-lg" onClick={handleClick}>
             Enter
           </button>          
