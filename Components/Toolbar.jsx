@@ -226,9 +226,10 @@ const [errorList, setErrorList] = useState(defaultErrorList)
           <label htmlFor="line">Obstruction</label>
 
           { currentMode === 'fdsGen' ?
-            {fdsGenTools}
+            fdsGenTools
+
             : currentMode === 'radiation' ?
-                {radiationTools}
+                radiationTools
                 : <>
                 <input type="radio" id="opening" 
                 checked={tool === "opening" && comment == 'opening'} 
