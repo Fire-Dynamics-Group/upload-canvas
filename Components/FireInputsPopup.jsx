@@ -9,7 +9,6 @@ const FireInputsPopup = ({handleUserInput}) => {
     const heatEndpoint = useStore((state) => state.heatEndpoint)
     const setHeatEndpoint = useStore((state) => state.setHeatEndpoint)
 
-    //  has door when one placed
     function handleClick() {
         let input = []
         if (!isCustomFireSize || isCustomFireSize && userHeatFluxInput.current && userHeatFluxInput.current.value) {
@@ -36,15 +35,9 @@ const FireInputsPopup = ({handleUserInput}) => {
     const [ isCustomFireSize, setIsCustomFireSize ] = useState(false)
 
     return (
-      // todo: have default values either from state or hardcoded; better state; shows current value
       <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
         <div className="bg-white p-4 rounded-lg shadow-lg text-black">
           <h2 className="text-lg font-bold mb-2">Enter Fire Heat Flux:</h2>
-
-          {/* TODO: have dropdown and option for specific figure */}
-          {/* only show further input if checkbox selected */}
-          {/* <h2 className="text-lg font-bold mb-2">Select Fire Source:</h2> */}
-
                       { !isCustomFireSize ? <select
                       onChange={(e) => {
                         setFireSizeDropdownSelected(e.target.value)
@@ -57,7 +50,7 @@ const FireInputsPopup = ({handleUserInput}) => {
                       </select>    
                       :
           <input ref={userHeatFluxInput} type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={totalHeatFlux} onChange={(e) => setTotalHeatFlux(e.target.value)}/>}
-                      <label className="text-lg font-bold mb-2">{"Tick if custom heat flux: "}</label>
+                      <label className="mb-2">{"Tick if custom heat flux: "}</label>
                         <input
                           type="checkbox"
                           id="selection"
