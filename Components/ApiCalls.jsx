@@ -62,7 +62,72 @@ export const sendTimeEqData = async (
     link.href = URL.createObjectURL(blob);
     link.download = 'chart.jpeg';
     link.click();
+    console.log(response.status);
+    console.log(response.headers);
 
     return true;
   
+  }
+
+  export const sendRadiationData = async (
+    timeArray, 
+    accumulatedDistanceList, 
+    hobDistanceList, 
+    qList,
+    timestepFEDList,
+    accumulatedFEDList,
+    totalHeatFlux,
+    walkingSpeed,
+    doorOpeningDuration,   
+    docName="chart.docx"
+  ) => {
+    
+    console.log(
+      timeArray, 
+      accumulatedDistanceList, 
+      hobDistanceList, 
+      qList,
+      timestepFEDList,
+      accumulatedFEDList,
+      totalHeatFlux,
+      walkingSpeed,
+      doorOpeningDuration,
+      docName
+    )
+    // receive 
+    let bodyContent = JSON.stringify( {
+      timeArray, 
+      accumulatedDistanceList, 
+      hobDistanceList, 
+      qList,
+      timestepFEDList,
+      accumulatedFEDList,
+      totalHeatFlux,
+      walkingSpeed,
+      doorOpeningDuration,
+      docName
+    } )   
+
+    try{
+      const response = await fetch(`${server_urls.localhost}/radiation`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: bodyContent,
+      });
+      try{
+        const blob = await response.blob(); // get the image as a blob
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = docName;
+        link.click();    
+  
+      } catch (err) { 
+        showMessage("Error: ",err)
+      }
+
+    } catch (err) { 
+      showMessage("Error: ",err)
+    }
   }

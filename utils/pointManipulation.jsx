@@ -1,4 +1,5 @@
 import { calcDistance, intersects } from "./helperFunctions"
+import { sendRadiationData } from "../Components/ApiCalls"
 import * as XLSX from 'xlsx';
 
 
@@ -44,7 +45,7 @@ export function returnFinalCoordinates(pixelsPerMetre, elements, originPixels, s
 
 }
 
-export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTime=10, totalHeatFlux=472, radiantHeatEndpoint = 1.3333) {
+export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningDuration=10, totalHeatFlux=472, radiantHeatEndpoint = 1.3333) {
     // TODO: need parameter checking for doorOpeningTime etc
     let array = []
     let isObstructed = false
@@ -152,7 +153,7 @@ export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTim
                     accumulatedDistanceList.push(accumulatedDistance) // is accumulated distance needed here?
                     subEscapePoints.push(nextVertex)
                     hobDistanceList.push(currentHobDistance)
-                    currentTime += Number(doorOpeningTime)
+                    currentTime += Number(doorOpeningDuration)
                     console.log("currentTime: ", currentTime)
                     // timeArray.push(currentTime)
                     timeArray.push(parseFloat(Number(currentTime).toFixed(2)))                                       
@@ -172,6 +173,10 @@ export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTim
     }
     console.log("subEscapePoints: ", subEscapePoints)
     let FED = []
+    let qList = []
+    let timestepFEDList = []
+    let accumulatedFEDList = []
+
     let accumulatedFED = 0
     let intersection = false
     let rows = []
@@ -179,7 +184,7 @@ export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTim
         `walking speed: ${walkingSpeed}`,
         `total heatflux: ${totalHeatFlux}`,
         `radiant heat endpoint: ${radiantHeatEndpoint}`,
-         `door opening time: ${(hasDoor) ? doorOpeningTime : "N/A"}`,
+         `door opening time: ${(hasDoor) ? doorOpeningDuration : "N/A"}`,
 ]
     rows.push(config)
     let columns = [
@@ -214,10 +219,13 @@ export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTim
         // add to column if intersect with obstruction lines
         let currentHobDistance = hobDistanceList[i]
         let q = (intersection) ? 0 : computeHeatFlux(currentHobDistance, totalHeatFlux)
+        qList.push(q)
         let tolRAD = (intersection) ? 0 : radiantHeatEndpoint / (q**1.33)
         let timestepDuration = (i > 0) ? timeArray[i] - timeArray[i - 1] : 1
         let timestepFED = (intersection) ? 0 : (timestepDuration / tolRAD) / 60 // change divider depending on duration of timestep * durationTimestep/60
+        timestepFEDList.push(timestepFED)
         accumulatedFED += timestepFED
+        accumulatedFEDList.push(accumulatedFED)
 
         rows.push([
             // parseFloat(timeArray[i].toFixed(2)),
@@ -233,6 +241,7 @@ export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTim
     function computeHeatFlux(distance, totalHeatFlux=472, radiativeFraction=0.3333) { // was 472 // 150 
         return totalHeatFlux * radiativeFraction / (4 * Math.PI * distance ** 2)
     }
+    // TODO: send data to backend
     // download to spreadsheet
     if (rows) {
         const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -243,4 +252,16 @@ export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningTim
         XLSX.writeFile(wb, `radiationFED@${walkingSpeed}.xlsx`);
 
       }
+     
+      sendRadiationData(
+        timeArray, 
+        accumulatedDistanceList, 
+        hobDistanceList, 
+        qList,
+        timestepFEDList,
+        accumulatedFEDList,
+        totalHeatFlux,
+        walkingSpeed,
+        doorOpeningDuration,   
+      )
 }

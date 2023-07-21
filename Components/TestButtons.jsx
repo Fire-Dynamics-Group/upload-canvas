@@ -1,9 +1,9 @@
 // import useStore from '../store/useStore'
 import useStore from '@/store/useStore';
-import {mockRadiationElements, mockTimeEqElements} from '../utils/mockData'
+import {mockRadiationElements, mockTimeEqElements, mockRadAPIParams} from '../utils/mockData'
 import { prepForRadiationTable } from '../utils/pointManipulation';
 import TimeEquivalenceInputPopup from './TimeEquivalenceInputPopup';
-import {sendTimeEqData} from './ApiCalls'
+import {sendTimeEqData, sendRadiationData} from './ApiCalls'
 
 
 const TestButtons = () => {
@@ -12,8 +12,9 @@ const TestButtons = () => {
     const setShowTimeEqPopup = useStore((state) => state.setShowTimeEqPopup)
 
     const handleRadiation = () => {
-        console.log("mockRadiationElements: ", mockRadiationElements)
-        prepForRadiationTable(1.2, mockRadiationElements)
+        // console.log("mockRadiationElements: ", mockRadiationElements)
+        // prepForRadiationTable(1.2, mockRadiationElements)
+        sendRadiationData(mockRadAPIParams[0], mockRadAPIParams[1], mockRadAPIParams[2], mockRadAPIParams[3], mockRadAPIParams[4], mockRadAPIParams[5], 476, 1.2, 11)
     }
 
     const handleTimeEq = () => {
@@ -44,7 +45,7 @@ const TestButtons = () => {
             <button
             onClick={handleRadiation}
             >
-            Test radiation
+            Test radiation API
             </button>
             <button
             onClick={handleTimeEq}
