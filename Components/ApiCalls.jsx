@@ -109,7 +109,7 @@ export const sendTimeEqData = async (
     } )   
 
     try{
-      const response = await fetch(`${server_urls.localhost}/radiation`, {
+      const response = await fetch(`${server_urls.server}/radiation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
