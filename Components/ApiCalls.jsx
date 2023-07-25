@@ -79,7 +79,7 @@ export const sendTimeEqData = async (
     totalHeatFlux,
     walkingSpeed,
     doorOpeningDuration,   
-    docName="chart.docx"
+    docName="Oil Pan Fire Appendix.docx"
   ) => {
     
     console.log(
@@ -104,7 +104,7 @@ export const sendTimeEqData = async (
       accumulatedFEDList,
       totalHeatFlux,
       walkingSpeed,
-      doorOpeningDuration,
+      doorOpeningDuration, // need to send null if not applicable!!
       docName
     } )   
 
