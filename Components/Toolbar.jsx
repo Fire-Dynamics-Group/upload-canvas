@@ -4,7 +4,6 @@ import WalkingSpeedPopup from './WalkingSpeedPopup'
 import FireInputsPopup from './FireInputsPopup'
 import TimeEquivalenceInputPopup from './TimeEquivalenceInputPopup'
 
-import mockRadiationElements from '@/utils/mockData'
 import { useState } from 'react';
 import ErrorPopup from './ErrorPopup';
 

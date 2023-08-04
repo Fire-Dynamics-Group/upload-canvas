@@ -13,8 +13,8 @@ const TestButtons = () => {
 
     const handleRadiation = () => {
         // console.log("mockRadiationElements: ", mockRadiationElements)
-        // prepForRadiationTable(1.2, mockRadiationElements)
-        sendRadiationData(mockRadAPIParams[0], mockRadAPIParams[1], mockRadAPIParams[2], mockRadAPIParams[3], mockRadAPIParams[4], mockRadAPIParams[5], 476, 1.2, null)
+        prepForRadiationTable(0.57, mockRadiationElements)
+        // sendRadiationData(mockRadAPIParams[0], mockRadAPIParams[1], mockRadAPIParams[2], mockRadAPIParams[3], mockRadAPIParams[4], mockRadAPIParams[5], 476, 1.2, null)
     }
 
     const handleTimeEq = () => {

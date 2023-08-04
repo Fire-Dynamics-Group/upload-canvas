@@ -45,7 +45,7 @@ export function returnFinalCoordinates(pixelsPerMetre, elements, originPixels, s
 
 }
 
-export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningDuration=10, totalHeatFlux=472, radiantHeatEndpoint = 1.3333) {
+export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningDuration=11, totalHeatFlux=472, radiantHeatEndpoint = 1.3333) {
     // TODO: need parameter checking for doorOpeningTime etc
     let array = []
     let isObstructed = false
@@ -130,13 +130,15 @@ export function prepForRadiationTable(walkingSpeed, final_coords, doorOpeningDur
             accumulatedDistanceList.push(accumulatedDistance)
             remainingDeltaVertices -= targetDelta
 
+
         } 
         // else add deltaVertice to accumulated
         if ((remainingDeltaVertices + timeStepDistance) < distancePerSecond) {
+
             // break without adding new points
             // add delta vertice to accumulated; timestepdistance carries over
-            timeStepDistance += remainingDeltaVertices + timeStepDistance
-            accumulatedDistance += remainingDeltaVertices + timeStepDistance
+            timeStepDistance += remainingDeltaVertices 
+            accumulatedDistance += remainingDeltaVertices 
             // if final index => needs to add fractional time & next vertex
             if (i === maxIndex) {
                 accumulatedDistanceList.push(accumulatedDistance) // is accumulated distance needed here?
