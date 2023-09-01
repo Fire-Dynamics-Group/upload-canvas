@@ -3,7 +3,7 @@ name: Check Server URL
 on:
   push:
     branches:
-      - master # Replace with the branch you want to protect
+      - main # Replace with the branch you want to protect
 
 jobs:
   check-server-url:
