@@ -1,0 +1,39 @@
+name: Check Server URL
+
+on:
+  push:
+    branches:
+      - master # Replace with the branch you want to protect
+
+jobs:
+  check-server-url:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Use Node.js
+      uses: actions/setup-node@v2
+      with:
+        node-version: '14.x' # or another version you prefer
+
+    - name: Install Dependencies
+      run: npm install
+
+    - name: Check for incorrect URLs
+      run: |
+        files=$(find ./pages/api -name '*.js')
+        for file in $files; do
+          incorrect=$(cat $file | grep "localhost")
+          if [[ ! -z $incorrect ]]; then
+            echo "Incorrect URL (localhost) found in $file"
+            exit 1
+          fi
+
+          correct=$(cat $file | grep "server_urls\['server'\]")
+          if [[ -z $correct ]]; then
+            echo "Correct server URL not found in $file"
+            exit 1
+          fi
+        done
