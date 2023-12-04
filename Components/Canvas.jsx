@@ -238,6 +238,45 @@ function Canvas({dimensions, isDevMode}) {
 
         }
 
+        function drawRectAndGuide(points, context, comments, dotted=true) { 
+            // need if beingEdited
+            console.log("selectedElement and guideLine: ",selectedElement, guideLine)
+            if (selectedElement) {
+                // change polypoints before drawing
+                // if beingEdited
+                // use guideLine for selectedPoint
+                // 
+                let startingPointPosition = selectedElement["pointerDown"]
+                if (guideLine != null) {
+                    let current = guideLine
+                    for (let i = 0; i < points.length; i++) {
+                        let point = points[i]
+                        if (point == startingPointPosition) {
+                            points[i].x = current.x
+                            points[i].y = current.y 
+                        }
+                    }
+                }
+                drawRect(points, context, comments, dotted)
+
+            } else {
+                drawRect(points, context, comments, dotted)
+
+                if (guideLine != null) {
+                    // line from last polypoint to guideline
+                    let prev = points[points.length-1]
+                    let current = guideLine
+                    if (isCtrlPressed){
+                        current = snapVertexOrtho(current, prev)
+                    }
+                    context.moveTo(prev.x, prev.y)
+                    context.lineTo(current.x, current.y)
+                    context.stroke()            
+                }
+
+            }
+        }
+
         function drawPolyline(points, context, comments) {
             console.log("polyline inputs: ",points, context, comments)
             // TODO: have all the options in an object, not just colours
@@ -268,7 +307,7 @@ function Canvas({dimensions, isDevMode}) {
     
             }            
         }
-        function drawPolyAndGuide(poly, comment) {
+        function drawPolyAndGuide(poly, comment, context=context) {
                     
             // need if beingEdited
             console.log("selectedElement and guideLine: ",selectedElement, guideLine)
@@ -365,21 +404,15 @@ function Canvas({dimensions, isDevMode}) {
             if (selectedType === 'polyline') {
                 drawPolyAndGuide(selectedPoints, comment)
             } else if (selectedType === 'point'){
-                drawPolyline(selectedPoints, context,"fire") // should just add to state
+                // should use guide
+                drawPolyAndGuide(selectedPoints, "fire", context)
+                // drawPolyline(selectedPoints, context,"fire") // should just add to state
             } else if (selectedType == 'rect') {
-                // console.log("rect drawing: ", currentRect)
-                if (selectedPoints.length == 1) { // will be two -> unless second shaved
-                    // use guide for mousePosition
-                    if (guideLine != null) {
 
-                        // have guide point for rect -> send to draw rect
-                        // not use closest point
-                        // use offset only?
-                        // // apply offset
-                        // let rectPoints = [selectedPoints[0], guideLine]
-                        // drawRect(rectPoints, context, comment)
-                    }
-                }
+                console.log("rect drawing: ", selectedElement)
+                drawRectAndGuide(selectedPoints, context, comment)
+
+                
         //     if (selectedElement["element"]["type"] === 'polyline') {
         //         drawPolyAndGuide(currentPoly, comment)
         //     // later have contrasting colour
@@ -647,36 +680,15 @@ function Canvas({dimensions, isDevMode}) {
             let offsetX = pointer.x - startingPointPosition.x
             let offsetY = pointer.y - startingPointPosition.y
 
-            // apply offset to all points
-            // later this should only be actioned when moving
-            // if moving one point of polyline or corner of rect; different logic
-            // el.points.forEach(point => {
-            //     point.x =  point.x + offsetX
-            //     point.y = point.y + offsetY
-            // })
-            // // if polyline
-
             for (let i = 0; i < el.points.length; i++) {
                 let point = el.points[i]
                 if (point == startingPointPosition) {
-                // if (point == startingPointPosition || selectedElement["element"]["type"] != "polyline") {
-                    // TODO: if rect -> change shapesize not move entire shape
-                    // change only point closest to pointer down
                     el.points[i].x = point.x + offsetX
                     el.points[i].y = point.y + offsetY 
                 }
             }
             console.log("el offset", offsetX, offsetY)
             changeElement(el)
-            // addElement(prev =>{
-            //     prev.map(element => {
-            //         if (element.id === elementId) {
-            //             return el
-            //         } else {
-            //             return element
-            //         }
-            //     })
-            // } )
             setSelectedElement(null)
         } 
         // if element selected -> move from previous to new position
