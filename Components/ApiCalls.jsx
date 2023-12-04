@@ -6,6 +6,52 @@ const server_urls = {
 
 //   feed in input box contents
 // add
+// TODO: send: missing 3 required positional arguments: 'fire_floor', 'total_floors', and 'stair_enclosure_roof_z'
+export const sendFdsData = async (
+  elementList,
+  z=10,
+  wall_height=3,
+  wall_thickness=0.2,
+  stair_height=30,
+  px_per_m=33.6,
+  fire_floor=3,
+  total_floors=6,
+  stair_enclosure_roof_z=35
+  // TODO: have z, wall height, wall_thickness, stair_height (if any), px_per_m
+) => {
+    console.log("elementList at api call: ", elementList)
+    let bodyContent = JSON.stringify( {
+      elementList,
+      z,
+      wall_height,
+      wall_thickness,
+      stair_height,
+      px_per_m,
+      fire_floor,
+      total_floors,
+      stair_enclosure_roof_z      
+    } )
+    const response = await fetch(`${server_urls.localhost}/fds`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: bodyContent,
+    });  
+    try{
+      const data = await response.json();
+      console.log("data received: ", data)
+      const blob = new Blob([data], { type: "text/plain;charset=utf-8" });
+      saveAs(blob, "test.fds");
+      return data;
+
+    } catch (err) { 
+      showMessage("Error: ",err)
+    }
+ 
+  }
+
+
 export const sendTimeEqData = async (
     elementList,
     roomComposition=null, 

@@ -3,10 +3,14 @@ import useStore from '../store/useStore'
 import WalkingSpeedPopup from './WalkingSpeedPopup'
 import FireInputsPopup from './FireInputsPopup'
 import TimeEquivalenceInputPopup from './TimeEquivalenceInputPopup'
+import {sendFdsData} from './ApiCalls'
 
 import { useState } from 'react';
 import ErrorPopup from './ErrorPopup';
+import { testElements } from '@/utils/mockData';
 
+// TODO: if fds mode, don't show run calc; show create fds button
+// send further elements in api call in fdsmode
 const Toolbar = ({setShowModePopup}) => {
     // bring below into home i.e. index.jsx
     // TODO: change content depending on mode
@@ -111,6 +115,11 @@ const [errorList, setErrorList] = useState(defaultErrorList)
         
       }
 
+      function handleFDSClick() {
+        sendFdsData(elements)
+        // send api call -> with all elements
+      }
+
       function handleGreyscaleButtonClick() {
         if (pdfCanvasRef.current) {
           const canvas = pdfCanvasRef.current;
@@ -161,6 +170,18 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                 }}
                 />
                 <label htmlFor="rectangle">Stair Mesh</label> 
+                {/* stair landing */}
+                <input
+                type="radio"
+                id="landing"
+                checked={tool === "rect" && comment=== "landing"}
+                onChange={() => {
+                    // TODO: add landing tool/comment?
+                    setTool("rect") 
+                    setComment("landing")
+                }}
+                />
+                <label htmlFor="rectangle">Stair Landing</label> 
 
         </>
     )
@@ -279,13 +300,26 @@ const [errorList, setErrorList] = useState(defaultErrorList)
             </button>
             </>
               )}
+            {currentMode !== 'fdsGen' ? <>
+              <button 
+                onClick={handleCalcButtonClick}
+                className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
+                type="button"
+                >
+                Run Calc
+              </button>
+            </>
+            :
+            <>
             <button 
-              onClick={handleCalcButtonClick}
-              className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
-              type="button"
-              >
-              Run Calc
-            </button>
+            onClick={handleFDSClick}
+            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
+            type="button"
+            >
+            Generate FDS code
+          </button>
+            </>
+            }
             <button 
               onClick={handleGreyscaleButtonClick}
               className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 

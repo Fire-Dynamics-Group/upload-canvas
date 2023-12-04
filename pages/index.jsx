@@ -242,14 +242,14 @@ export default function Home() {
       saveAs(blob, "test.fds");
     }
   }
- 
+
 
 
   const sendElementData = async () => {
     let elements = testElements
     let bodyContent = JSON.stringify( elements )
     console.log("body: ", bodyContent)
-    const response = await fetch(`${server_urls.server}/test`, {
+    const response = await fetch(`${server_urls.localhost}/fds`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -260,6 +260,8 @@ export default function Home() {
     const data = await response.json();
     console.log("data received: ", data)
     setFdsData(data)
+    const blob = new Blob([data], { type: "text/plain;charset=utf-8" });
+    saveAs(blob, "test.fds");
     return data;
   
   }
@@ -359,11 +361,7 @@ export default function Home() {
 
         onClick={sendElementData}
         >Test API</button>
-        <button
-          onClick={handleDownload}
-        >
-          Test download fds file
-        </button>
+        
           <TestButtons />
 
       </div>
@@ -374,7 +372,6 @@ export default function Home() {
         <canvas 
         ref={pdfCanvasRef}
         className='z-1'
-        // onClick={sendElementData()}
         />
       </div>
     </>

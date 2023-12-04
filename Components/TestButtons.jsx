@@ -1,9 +1,9 @@
 // import useStore from '../store/useStore'
 import useStore from '@/store/useStore';
-import {mockRadiationElements, mockTimeEqElements, mockRadAPIParams} from '../utils/mockData'
+import {mockRadiationElements, mockTimeEqElements, mockRadAPIParams, testElements} from '../utils/mockData'
 import { prepForRadiationTable } from '../utils/pointManipulation';
 import TimeEquivalenceInputPopup from './TimeEquivalenceInputPopup';
-import {sendTimeEqData, sendRadiationData} from './ApiCalls'
+import {sendTimeEqData, sendFdsData} from './ApiCalls'
 
 
 const TestButtons = () => {
@@ -31,17 +31,38 @@ const TestButtons = () => {
 
         sendTimeEqData(mockTimeEqElements)
     }
+
+    const handleDownload = () => {
+        // need data as state
+        // const fdsData = dummy_fds
+        if (testElements) {
+    
+          const blob = new Blob([testElements], { type: "text/plain;charset=utf-8" });
+          saveAs(blob, "test.fds");
+        }
+      }
+
+    function handleTestFDSClick() {
+    sendFdsData(testElements)
+    // send api call -> with all elements
+    }
+
     return (
         <>
             {/* <button 
             onClick={sendElementData}
             >Test API</button> */}
             {showTimeEqPopup && <TimeEquivalenceInputPopup mockData={mockTimeEqElements}/>}
-            {/* <button
+            <button
             onClick={handleDownload}
             >
             Test download fds file
-            </button> */}
+            </button>
+            <button
+            onClick={handleTestFDSClick}
+            >
+            *Test FDS API!*
+            </button>
             <button
             onClick={handleRadiation}
             >

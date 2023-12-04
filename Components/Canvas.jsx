@@ -592,6 +592,7 @@ function Canvas({dimensions, isDevMode}) {
                 }
             if (closestDistance) {
                 // TO be user tested if pointerDown location or location of closestPoint more useful
+                // TODO: moving rect should resize shape, not move shape
                 setSelectedElement({"element": closestElement, "pointerDown": closestPoint})
                 // setComment(closestElement["type"]) 
                 // add to current - directly render from useLayout effect
@@ -657,13 +658,15 @@ function Canvas({dimensions, isDevMode}) {
 
             for (let i = 0; i < el.points.length; i++) {
                 let point = el.points[i]
-                if (point == startingPointPosition || selectedElement["element"]["type"] != "polyline") {
+                if (point == startingPointPosition) {
+                // if (point == startingPointPosition || selectedElement["element"]["type"] != "polyline") {
+                    // TODO: if rect -> change shapesize not move entire shape
+                    // change only point closest to pointer down
                     el.points[i].x = point.x + offsetX
                     el.points[i].y = point.y + offsetY 
                 }
             }
             console.log("el offset", offsetX, offsetY)
-            // // replace in elements
             changeElement(el)
             // addElement(prev =>{
             //     prev.map(element => {
@@ -704,7 +707,6 @@ function Canvas({dimensions, isDevMode}) {
       height={canvasHeight}
       className='border border-black rounded-md bg-transparent inset-0 absolute z-10'
       onPointerDown={handlePointerDown}
-    //   onPointerMove={handlePointerMove} // later move shapes here
       onPointerUp={handlePointerUp}
       />
   </>
