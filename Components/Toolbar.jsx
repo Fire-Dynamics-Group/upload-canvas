@@ -2,6 +2,7 @@ import { prepForRadiationTable } from '@/utils/pointManipulation';
 import useStore from '../store/useStore'
 import WalkingSpeedPopup from './WalkingSpeedPopup'
 import FireInputsPopup from './FireInputsPopup'
+import FDSInputsPopup from './FDSInputsPopup'
 import TimeEquivalenceInputPopup from './TimeEquivalenceInputPopup'
 import {sendFdsData} from './ApiCalls'
 
@@ -32,7 +33,9 @@ const Toolbar = ({setShowModePopup}) => {
     const pdfData = useStore((state) => state.pdfData)
     const toggleIsPdfGreyscale = useStore((state) => state.toggleIsPdfGreyscale)
 
-    const [showFireInputsPopup, setShowFireInputsPopup] = useState(false)   
+    const [showFireInputsPopup, setShowFireInputsPopup] = useState(false) 
+    const [showFDSInputsPopup, setShowFDSInputsPopup] = useState(false) 
+
     const totalHeatFlux = useStore((state) => state.totalHeatFlux)
     const heatEndPoint = useStore((state) => state.heatEndPoint)
     // let showErrorPopup = true
@@ -120,6 +123,15 @@ const [errorList, setErrorList] = useState(defaultErrorList)
         // send api call -> with all elements
       }
 
+      function handleFDSInput() {
+        setShowFDSInputsPopup(false)
+      }
+
+      function handleInputsClick() {
+        // open modal
+        setShowFDSInputsPopup(true) 
+      }
+
       function handleGreyscaleButtonClick() {
         if (pdfCanvasRef.current) {
           const canvas = pdfCanvasRef.current;
@@ -202,6 +214,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
     return (
     <>
       {/* perhaps popup can't be located in menu bar? */}
+      {showFDSInputsPopup && <FDSInputsPopup handleUserInput={handleFDSInput}/>}
       {showErrorPopup && <ErrorPopup setShowPopup={setShowErrorPopup} errorList={errorList}/>}
       {showTimeEqPopup && <TimeEquivalenceInputPopup mockData={null}/>}
       {showFireInputsPopup && <FireInputsPopup handleUserInput={handleFireInput}/>}
@@ -312,6 +325,14 @@ const [errorList, setErrorList] = useState(defaultErrorList)
             :
             <>
             <button 
+            // show modal with stair list input boxes for z, stair stats
+            onClick={handleInputsClick}
+            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
+            type="button"
+            >
+            Inputs
+          </button>
+          <button 
             onClick={handleFDSClick}
             className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
             type="button"
@@ -320,13 +341,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
           </button>
             </>
             }
-            <button 
-              onClick={handleGreyscaleButtonClick}
-              className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
-              type="button"
-              >
-              Toggle Greyscale
-            </button>
+
           </div>
 
     </>
