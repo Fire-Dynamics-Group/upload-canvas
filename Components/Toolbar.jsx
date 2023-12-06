@@ -2,7 +2,7 @@ import { prepForRadiationTable } from '@/utils/pointManipulation';
 import useStore from '../store/useStore'
 import WalkingSpeedPopup from './WalkingSpeedPopup'
 import FireInputsPopup from './FireInputsPopup'
-import FDSInputsPopup from './FDSInputsPopup'
+import FDSInputsPopup from './FDSInputsPopup.tsx'
 import TimeEquivalenceInputPopup from './TimeEquivalenceInputPopup'
 import {sendFdsData} from './ApiCalls'
 
@@ -23,6 +23,7 @@ const Toolbar = ({setShowModePopup}) => {
     const setConvertedPoints = useStore((state) => state.setConvertedPoints)
     const convertedPoints = useStore((state) => state.convertedPoints)
     const elements = useStore((state) => state.elements)
+    const fireFloorZ = useStore((state) => state.fireFloorZ)
     // const handleWalkingInput = useStore((state) => state.handleWalkingInput)
     // const [walkingInput, setWalkingInput] = useState(null)
     const [showWalkingPopup, setShowWalkingPopup] = useState(false)
@@ -119,7 +120,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
       }
 
       function handleFDSClick() {
-        sendFdsData(elements)
+        sendFdsData(elements, fireFloorZ)
         // send api call -> with all elements
       }
 

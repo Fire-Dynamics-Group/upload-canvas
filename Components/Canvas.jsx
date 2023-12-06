@@ -428,11 +428,12 @@ function Canvas({dimensions, isDevMode}) {
                 console.log("hits here")
                 
                 if (tool === 'polyline') {
-                    drawPolyAndGuide(currentPoly, comment)
+                    drawPolyAndGuide(currentPoly, comment, context)
                 // } else if (selectedElement) {
                 //     drawPolyAndGuide(selectedElement["element"]["points"], tool)
                 }else if (tool === 'scale') {
-                    drawPolyAndGuide(scalePoints, tool)
+                    // without context in this case!!
+                    drawPolyAndGuide(scalePoints, tool, context)
                 } else if (tool === 'point'){
                     drawPolyline(currentPoint, context, comment) // should just add to state
                 } else if (tool == 'rect') {

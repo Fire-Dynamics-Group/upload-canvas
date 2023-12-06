@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import {findOriginPixels, returnFinalCoordinates} from '../utils/pointManipulation'
 
 const useStore = create((set) => {
+    const defaultStairObject = {"fire_floor": 0, "total_floors": 5, "stair_roof_z": 25, "top_storey_height": 21}
     return {
 
         elements: [],
@@ -19,7 +20,24 @@ const useStore = create((set) => {
         pdfCanvasRef: null,
         totalHeatFlux: 476,
         heatEndpoint: 1.3333,
+        fireFloorZ: 0,
+        fireFloorNumber: 0,
         showTimeEqPopup: false,
+        numberOfStairs: 0,
+        
+        stairObject: [],
+        mapStairObject: () => set((state) => ({
+            stairObject: state.stairObject.map((stair, index) => {
+                return {
+                    ...defaultStairObject,
+                    index: index
+                }
+            })
+        })),
+        // have local state and update object only when user clicks okay
+        changeStairObject: (newStairObject) => set(() => ({
+            stairObject: newStairObject
+        })),
         
         addElement: (newEl) => set((state) => ({
             elements: [...state.elements, newEl]
@@ -102,6 +120,9 @@ const useStore = create((set) => {
         })),
         setShowTimeEqPopup: (newBool) => set(() => ({
             showTimeEqPopup: newBool
+        })),
+        setFireFloorZ: (newVal) => set(() => ({
+            fireFloorZ: newVal
         }))
 
 }
