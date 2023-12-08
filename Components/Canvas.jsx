@@ -307,7 +307,7 @@ function Canvas({dimensions, isDevMode}) {
     
             }            
         }
-        function drawPolyAndGuide(poly, comment, context=context) {
+        function drawPolyAndGuide(poly, comment, context) {
                     
             // need if beingEdited
             console.log("selectedElement and guideLine: ",selectedElement, guideLine)
@@ -402,7 +402,7 @@ function Canvas({dimensions, isDevMode}) {
 
             // need to setComment when selection
             if (selectedType === 'polyline') {
-                drawPolyAndGuide(selectedPoints, comment)
+                drawPolyAndGuide(selectedPoints, comment, context)
             } else if (selectedType === 'point'){
                 // should use guide
                 drawPolyAndGuide(selectedPoints, "fire", context)

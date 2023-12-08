@@ -11,12 +11,12 @@ export const sendFdsData = async (
   elementList,
   z=10,
   wall_height=3,
-  wall_thickness=0.2,
   stair_height=30,
-  px_per_m=33.6,
   fire_floor=3,
   total_floors=6,
-  stair_enclosure_roof_z=35
+  stair_enclosure_roof_z=35,
+  wall_thickness=0.2,
+  px_per_m=33.6,
   // TODO: have z, wall height, wall_thickness, stair_height (if any), px_per_m
 ) => {
     console.log("elementList at api call: ", elementList)
@@ -31,6 +31,7 @@ export const sendFdsData = async (
       total_floors,
       stair_enclosure_roof_z      
     } )
+    console.log("bodyContent: ", bodyContent)
     const response = await fetch(`${server_urls.localhost}/fds`, {
       method: 'POST',
       headers: {

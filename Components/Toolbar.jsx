@@ -23,7 +23,15 @@ const Toolbar = ({setShowModePopup}) => {
     const setConvertedPoints = useStore((state) => state.setConvertedPoints)
     const convertedPoints = useStore((state) => state.convertedPoints)
     const elements = useStore((state) => state.elements)
+    // , fireFloorNumber, topStoreyHeight, stairRoofZ
     const fireFloorZ = useStore((state) => state.fireFloorZ)
+    const fireFloorNumber = useStore((state) => state.fireFloorNumber)
+    // add in below
+    const wallHeight = useStore((state) => state.wallHeight)
+    const totalFloors = useStore((state) => state.totalFloors)
+    const topStoreyHeight = useStore((state) => state.topStoreyHeight)
+    // add in above
+    const stairRoofZ = useStore((state) => state.stairRoofZ)
     // const handleWalkingInput = useStore((state) => state.handleWalkingInput)
     // const [walkingInput, setWalkingInput] = useState(null)
     const [showWalkingPopup, setShowWalkingPopup] = useState(false)
@@ -120,7 +128,15 @@ const [errorList, setErrorList] = useState(defaultErrorList)
       }
 
       function handleFDSClick() {
-        sendFdsData(elements, fireFloorZ)
+        sendFdsData(
+                    elements, 
+                    fireFloorZ, 
+                    wallHeight,
+                    topStoreyHeight, // stairheight
+                    fireFloorNumber,
+                    totalFloors, 
+                    stairRoofZ
+                    )
         // send api call -> with all elements
       }
 

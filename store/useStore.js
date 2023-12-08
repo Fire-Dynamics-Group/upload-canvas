@@ -24,6 +24,10 @@ const useStore = create((set) => {
         fireFloorNumber: 0,
         showTimeEqPopup: false,
         numberOfStairs: 0,
+        totalFloors: 8,
+        stairRoofZ: 25,
+        wallHeight: 3,
+        topStoreyHeight: 20,
         
         stairObject: [],
         mapStairObject: () => set((state) => ({
@@ -123,8 +127,24 @@ const useStore = create((set) => {
         })),
         setFireFloorZ: (newVal) => set(() => ({
             fireFloorZ: newVal
-        }))
-
+        })),
+        // setFireFloorZ: (newVal) => set(() => ({
+        //     fireFloorZ: newVal
+        // })),
+        setFireFloorNumber: (newVal) => set(() => ({
+            fireFloorNumber: newVal
+        })),
+        setTopStoreyHeight: (newVal) => set(() => ({
+            totalFloors: newVal
+        })),
+        // stairRoofZ
+        setStairRoofZ: (newVal) => set(() => ({
+            stairRoofZ: newVal
+        })),
+        // topStoreyHeight
+        setTopStoreyHeight: (newVal) => set(() => ({
+            topStoreyHeight: newVal
+        })),
 }
 })
 

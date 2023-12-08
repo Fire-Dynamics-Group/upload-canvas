@@ -1,6 +1,6 @@
 // import useStore from '../store/useStore'
 import useStore from '@/store/useStore';
-import {mockRadiationElements, mockTimeEqElements, mockRadAPIParams, testElements} from '../utils/mockData'
+import {mockRadiationElements, mockTimeEqElements, stair_els, testElements} from '../utils/mockData'
 import { prepForRadiationTable } from '../utils/pointManipulation';
 import TimeEquivalenceInputPopup from './TimeEquivalenceInputPopup';
 import {sendTimeEqData, sendFdsData} from './ApiCalls'
@@ -23,9 +23,6 @@ const TestButtons = () => {
         // and openings
         setConvertedPoints(mockTimeEqElements)
         setShowTimeEqPopup(true)
-
-        // open popup
-
     }
     const handleTimeEqAPI = () => {
 
@@ -43,7 +40,7 @@ const TestButtons = () => {
       }
 
     function handleTestFDSClick() {
-    sendFdsData(testElements)
+    sendFdsData(stair_els)
     // send api call -> with all elements
     }
 

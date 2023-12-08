@@ -19,6 +19,14 @@ const FDSInputsPopup = ({handleUserInput}) => {
     const fireFloorNumber = useStore((state) => state.fireFloorNumber)
     const setFireFloorNumber = useStore((state) => state.setFireFloorNumber)
     const stairsObject = useStore((state) => state.stairsObject)
+    const totalFloors = useStore((state) => state.totalFloors)
+    const setTotalFloors = useStore((state) => state.setTotalFloors)
+    const stairRoofZ = useStore((state) => state.stairRoofZ)
+    const setStairRoofZ = useStore((state) => state.setStairRoofZ)
+    const wallHeight = useStore((state) => state.wallHeight)
+    const setWallHeight = useStore((state) => state.setWallHeight)
+    const topStoreyHeight = useStore((state) => state.topStoreyHeight)
+    const setTopStoreyHeight = useStore((state) => state.setTopStoreyHeight)
     // let fireFloorNumber = 0
     // send firefloor height with api call
 
@@ -47,6 +55,13 @@ const FDSInputsPopup = ({handleUserInput}) => {
           value={fireFloorZ} 
           onChange={(e) => setFireFloorZ(e.target.value)}
           />  
+          <h2 className="text-lg font-bold mb-2">Wall Height (m):</h2>
+          <input 
+          type="text" 
+          className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" 
+          value={wallHeight} 
+          onChange={(e) => setWallHeight(e.target.value)}
+          />  
           <h2 className="text-lg font-bold mb-2">Enter Fire Floor Number:</h2>
           <input 
           type="text" 
@@ -54,9 +69,30 @@ const FDSInputsPopup = ({handleUserInput}) => {
           value={fireFloorNumber} 
           onChange={(e) => setFireFloorNumber(e.target.value)}
           />  
+          <h2 className="text-lg font-bold mb-2">Total Number of Storeys:</h2>
+          <input 
+          type="text" 
+          className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" 
+          value={totalFloors} 
+          onChange={(e) => setTotalFloors(e.target.value)}
+          />  
+          <h2 className="text-lg font-bold mb-2">Stair top storey height (m):</h2>
+          <input 
+          type="text" 
+          className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" 
+          value={topStoreyHeight} 
+          onChange={(e) => setTopStoreyHeight(e.target.value)}
+          />  
+          <h2 className="text-lg font-bold mb-2">Stair roof height (m):</h2>
+          <input 
+          type="text" 
+          className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" 
+          value={stairRoofZ} 
+          onChange={(e) => setStairRoofZ(e.target.value)}
+          />  
           <button className="px-4 py-2 bg-blue-500 text-white rounded-lg" onClick={handleClick}>
             Enter
-          </button>          
+          </button>
         </div>
       </div>
     );
