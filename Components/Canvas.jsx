@@ -5,22 +5,14 @@ import FDRobot from './FDRobot'
 import { CSVLink } from 'react-csv'
 import useStore from '../store/useStore'
 import { calcDistance } from '@/utils/helperFunctions'
+import { get } from 'http'
 
 /**
- * TODO: trial having popup after drawing item
- * dropdown menu -> stair or other
- * obstruction, mesh, 
- * if stair -> landing, half landing, 
- * if point & stair-> point for stair climb
- * if point & not stair -> fire (can be centre of box), inlet (can be polyline with two points)  
- * doors to be lines
  * 
- * colour config
- * stair: blue
- * other: green
- * doors: red
+ * TODO: have indication the mesh aligned with other mesh -> perhaps a cross?
  * 
- * bug: moving not working for top right corner of a mesh rect
+ * 
+ * bug: only allowing top left and bottom right for rect changing size
 */
 const elementConfig = {
     "obstruction": "green",
@@ -220,6 +212,124 @@ function Canvas({dimensions, isDevMode}) {
         
         context.clearRect(0, 0, canvas.width, canvas.height)
 
+        function rectLinesAlign(line1Start, line1End, line2Start, line2End) {
+            // Check if lines are parallel (in this case, either horizontally or vertically aligned)
+            if ((line1Start.x === line1End.x && line2Start.x === line2End.x) || // Vertical lines
+                (line1Start.y === line1End.y && line2Start.y === line2End.y)) { // Horizontal lines
+                // Check if they align
+                return (line1Start.x === line2Start.x || line1Start.y === line2Start.y);
+            }
+            return false;
+        }
+        function linesSharePoint(line1Start, line1End, line2Start, line2End) {
+
+            let line1minX = Math.round(Math.min(line1Start.x, line1End.x))
+            let line1maxX = Math.round(Math.max(line1Start.x, line1End.x))
+            let line1minY = Math.round(Math.min(line1Start.y, line1End.y))
+            let line1maxY = Math.round(Math.max(line1Start.y, line1End.y))
+
+            let line2minX = Math.round(Math.min(line2Start.x, line2End.x))
+            let line2maxX = Math.round(Math.max(line2Start.x, line2End.x))
+            let line2minY = Math.round(Math.min(line2Start.y, line2End.y))
+            let line2maxY = Math.round(Math.max(line2Start.y, line2End.y))
+
+            // TODO: return point of central intersection -> or colour lines?
+            if (line1minY === line1maxY && line1maxY === line2minY && line2minY === line2maxY) {
+                if (line1minX <= line2minX && line1maxX >= line2minX || line2minX <= line1minX && line2maxX >= line1minX) {
+                    return true
+                }
+                if (line1minX <= line2maxX && line1maxX >= line2maxX || line2minX <= line1maxX && line2maxX >= line1maxX) {
+                    return true
+                }
+
+            } 
+            if (line1minX === line1maxX && line1maxX === line2minX && line2minX === line2maxX) {
+
+                if (line1minY <= line2minY && line1maxY >= line2minY || line2minY <= line1minY && line2maxY >= line1minY) {
+                    return true
+                }
+                if (line1minY <= line2maxY && line1maxY >= line2maxY || line2minY <= line1maxY && line2maxY >= line1maxY) {
+                    return true
+                }
+            }
+
+            return false
+        }
+        function areListsDifferent(list1, list2) {
+            // Check if lists have different lengths
+            if (list1.length !== list2.length) {
+                return true;
+            }
+        
+            for (let i = 0; i < list1.length; i++) {
+                const obj1 = list1[i];
+                const obj2 = list2[i];
+        
+                // // Check if both x and y properties are arrays
+                // if (!Array.isArray(obj1.x) || !Array.isArray(obj1.y) ||
+                //     !Array.isArray(obj2.x) || !Array.isArray(obj2.y)) {
+                //     return true;
+                // }
+        
+                // Compare lengths of the x arrays
+                if (obj1.x.length !== obj2.x.length) {
+                    return true;
+                }
+        
+                // Compare lengths of the y arrays
+                if (obj1.y.length !== obj2.y.length) {
+                    return true;
+                }
+        
+
+                    if (Math.round(obj1.x) !== Math.round(obj2.x)) {
+                        return true;
+                    }
+
+
+                    if (Math.round(obj1.y) !== Math.round(obj2.y)) {
+                        return true;
+                    }
+
+            }
+        
+            return false;
+        }
+        
+        // TODO: have indication if two meshes aligned -> perhaps a cross?
+        function isMeshAligned(currentPoints, elements) { // probably finished shapes only
+            // check if currentPoints align with any meshElements
+            let currentCorners = getRectCorners(currentPoints)
+            for (let i = 0; i < currentCorners.length; i++) {
+                let currentStart = currentCorners[i]
+                let currentEnd = currentCorners[(i+1)%4]
+                for (let j = 0; j < elements.length; j++) {
+                    if (isMesh(elements[j])) {
+                        // all 4 sides of mesh
+                        let checkCorners = getRectCorners(elements[j]["points"])
+                        // check not the same element
+                        if (areListsDifferent(checkCorners, currentCorners)) {
+                            for (let k = 0; k < checkCorners.length; k++) {
+                                let checkStart = checkCorners[k]
+                                let checkEnd = checkCorners[(k+1)%4]
+                                console.log("checking alignment")
+                                // check if any of the sides align
+                                
+                                // return {"isAligned":true, keyPoints: [currentStart, currentEnd, checkStart, checkEnd]}
+                                if (linesSharePoint(currentStart, currentEnd, checkStart, checkEnd)) {
+                                    return {"isAligned":true, keyPoints: [currentStart, currentEnd, checkStart, checkEnd]}; // need side that aligns
+                                }
+                            }
+
+                        }
+                    }
+                }
+                // return {"isAligned":true, keyPoints: [currentStart, currentEnd, currentStart, currentEnd]}
+            }
+            return {"isAligned":false, keyPoints: null}
+            // if so -> return true
+            // else return false
+        }
         function drawRect(points, context, comments, dotted=false) {
             let p1 = points[0]
             let p2 = points[1]
@@ -235,6 +345,7 @@ function Canvas({dimensions, isDevMode}) {
 
             context.lineWidth = 1;
             context.setLineDash([])
+
 
         }
 
@@ -460,7 +571,30 @@ function Canvas({dimensions, isDevMode}) {
                 if (element.type == 'polyline' || element.type == 'scale') {   
                     drawPolyline(element.points, context, element.comments)
                 } else if (element.type == 'rect') {
+                    // TODO: check if mesh aligns with other mesh edges -> perhaps a cross? or colour change edge
                     drawRect(element.points, context, element.comments)
+                                // signal if mesh is aligned with other mesh
+            console.log("checking alignment")
+            if (isMesh(element)) { 
+                let alignedObject = isMeshAligned(element.points, elements)
+                if (alignedObject["isAligned"]) { 
+                    console.log("is aligned")
+                    // draw cross
+                    let keyPoints = alignedObject["keyPoints"]
+                    let p1 = keyPoints[0]
+                    let p2 = keyPoints[1]
+                    let p3 = keyPoints[2]
+                    let p4 = keyPoints[3]
+                    context.strokeStyle = "red"
+                    context.beginPath()
+                    context.moveTo(p1.x, p1.y)
+                    context.lineTo(p2.x, p2.y)
+                    context.strokeStyle = "yellow"
+                    context.moveTo(p3.x, p3.y)
+                    context.lineTo(p4.x, p4.y)
+                    context.stroke()
+                }
+            }
                     console.log("useLayoutRect: ", element.points)
                 } else if (element.type == 'point') {
                     drawPolyline(element.points, context, element.comments)
@@ -469,6 +603,21 @@ function Canvas({dimensions, isDevMode}) {
         })
 
     }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode])
+
+    function isMesh(currentEl) {
+        if (currentEl["comments"].toLowerCase().includes("mesh")) {                       
+            return true
+        }        
+        return false
+    }
+    function getRectCorners(rectPoints) {
+        let p1 = rectPoints[0]
+        let p3 = rectPoints[1]
+        let p2 = {"x":p1.x, "y": p3.y}
+        let p4 = {"x":p3.x, "y": p1.y}
+        return [p1, p2, p3, p4]
+
+    }
 
     function snapVertexOrtho(vertex, prevVertex) {
         // check if diff is greater in x or y between vertices
@@ -595,13 +744,8 @@ function Canvas({dimensions, isDevMode}) {
                 // requires to loop through all points in element 
                 if (currentPoints) {
                     // needs further points for rect
-                    if (currentEl["comments"].toLowerCase().includes("mesh")) {
-                        let p1 = currentPoints[0]
-                        let p3 = currentPoints[1]
-                        let p2 = {"x":p1.x, "y": p3.y}
-                        let p4 = {"x":p3.x, "y": p1.y}
-                        
-                        currentPoints = [p1, p2, p3, p4]
+                    if (currentEl["comments"].toLowerCase().includes("mesh")) {                       
+                        currentPoints = getRectCorners(currentPoints)
                         console.log("p's:", currentPoints)
                     }
                     for (let j = 0; j < currentPoints.length; j++) {

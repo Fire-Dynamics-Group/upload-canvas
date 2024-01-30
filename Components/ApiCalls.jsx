@@ -4,6 +4,8 @@ const server_urls = {
     "server": 'https://backendfornextapp-production.up.railway.app'
   }
 
+  // TODO: make typesafe
+  
 //   feed in input box contents
 // add
 // TODO: send: missing 3 required positional arguments: 'fire_floor', 'total_floors', and 'stair_enclosure_roof_z'
