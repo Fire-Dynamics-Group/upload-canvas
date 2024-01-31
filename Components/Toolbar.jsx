@@ -128,6 +128,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
       }
 
       function handleFDSClick() {
+        console.log("handleFDSClick elements: ", elements)
         sendFdsData(
                     elements, 
                     fireFloorZ, 

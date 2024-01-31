@@ -9,7 +9,8 @@ import { get } from 'http'
 
 /**
  * 
- * TODO: have indication the mesh aligned with other mesh -> perhaps a cross?
+ * TODO: have indication the mesh aligned with other mesh -> only colour subsections of mesh edge that align
+ * bug: addiitonal meshes added when mesh changed size
  * 
  * 
  * bug: only allowing top left and bottom right for rect changing size
@@ -265,12 +266,6 @@ function Canvas({dimensions, isDevMode}) {
                 const obj1 = list1[i];
                 const obj2 = list2[i];
         
-                // // Check if both x and y properties are arrays
-                // if (!Array.isArray(obj1.x) || !Array.isArray(obj1.y) ||
-                //     !Array.isArray(obj2.x) || !Array.isArray(obj2.y)) {
-                //     return true;
-                // }
-        
                 // Compare lengths of the x arrays
                 if (obj1.x.length !== obj2.x.length) {
                     return true;
@@ -314,22 +309,19 @@ function Canvas({dimensions, isDevMode}) {
                                 let checkEnd = checkCorners[(k+1)%4]
                                 console.log("checking alignment")
                                 // check if any of the sides align
-                                
-                                // return {"isAligned":true, keyPoints: [currentStart, currentEnd, checkStart, checkEnd]}
                                 if (linesSharePoint(currentStart, currentEnd, checkStart, checkEnd)) {
                                     return {"isAligned":true, keyPoints: [currentStart, currentEnd, checkStart, checkEnd]}; // need side that aligns
+                                    // later only return subsection that overlaps the other line
                                 }
                             }
 
                         }
                     }
                 }
-                // return {"isAligned":true, keyPoints: [currentStart, currentEnd, currentStart, currentEnd]}
             }
             return {"isAligned":false, keyPoints: null}
-            // if so -> return true
-            // else return false
         }
+
         function drawRect(points, context, comments, dotted=false) {
             let p1 = points[0]
             let p2 = points[1]
@@ -574,7 +566,7 @@ function Canvas({dimensions, isDevMode}) {
                     // TODO: check if mesh aligns with other mesh edges -> perhaps a cross? or colour change edge
                     drawRect(element.points, context, element.comments)
                                 // signal if mesh is aligned with other mesh
-            console.log("checking alignment")
+            // console.log("checking alignment")
             if (isMesh(element)) { 
                 let alignedObject = isMeshAligned(element.points, elements)
                 if (alignedObject["isAligned"]) { 
@@ -610,13 +602,42 @@ function Canvas({dimensions, isDevMode}) {
         }        
         return false
     }
+
     function getRectCorners(rectPoints) {
+        // works when first point is top left
         let p1 = rectPoints[0]
         let p3 = rectPoints[1]
         let p2 = {"x":p1.x, "y": p3.y}
         let p4 = {"x":p3.x, "y": p1.y}
-        return [p1, p2, p3, p4]
-
+        let topLeft, bottomLeft, bottomRight, topRight = null
+        if (p1.x > p3.x) {
+            if (p1.y > p3.y) {
+                topLeft = p1
+                bottomRight = p3
+                topRight = p4
+                bottomLeft = p2
+            } else {
+                topLeft = p2
+                bottomRight = p4
+                topRight = p3
+                bottomLeft = p1
+            
+            }
+        } else {
+            if (p1.y > p3.y) {
+                topLeft = p4
+                bottomRight = p2
+                topRight = p1
+                bottomLeft = p3
+            } else {
+                topLeft = p3
+                bottomRight = p1
+                topRight = p2
+                bottomLeft = p4
+            }
+        }
+        // return top left, bottom left, bottom right, top right
+        return [topLeft, bottomLeft, bottomRight, topRight]
     }
 
     function snapVertexOrtho(vertex, prevVertex) {
@@ -624,7 +645,6 @@ function Canvas({dimensions, isDevMode}) {
         const deltaX = Math.abs(prevVertex.x - vertex.x)
         const deltaY = Math.abs(prevVertex.y - vertex.y)
 
-        // snap to the same of least difference
         if (deltaX < deltaY) {
             vertex.x = prevVertex.x
         } else {
@@ -813,7 +833,12 @@ function Canvas({dimensions, isDevMode}) {
             // else allow to restart scale process
         }
     }
-
+    function isRect(el) {
+        if (el["type"] === 'rect') {
+            return true
+        }
+        return false
+    }
     function handlePointerUp(event){
         console.log("pointerUP")
         let pointer = {x: event.pageX, y: event.pageY}
@@ -824,12 +849,50 @@ function Canvas({dimensions, isDevMode}) {
             let startingPointPosition = selectedElement["pointerDown"]
             let offsetX = pointer.x - startingPointPosition.x
             let offsetY = pointer.y - startingPointPosition.y
+            // if rect need to include corners too!
+            console.log("el is rect?: ", el)
+            if (isRect(el)) {
+                let rectPoints = getRectCorners(el.points)
+                console.log("rectPoints: ", rectPoints)
+                for (let i = 0; i < rectPoints.length; i++) {
+                    let point = rectPoints[i]
+                    console.log("point: ", point, startingPointPosition)
+                    if (point.x == startingPointPosition.x && point.y == startingPointPosition.y) {
+                        // if bottom left -> change top left in x and bottom right in y
+                        // if top right -> change bottom right in x and top left in y
+                        // if top left or bottom right; change only that point
+                        // works when first point is top left
+                        let pointX = point.x + offsetX
+                        let pointY = point.y + offsetY
+                        rectPoints[i].x = pointX
+                        rectPoints[i].y = pointY
+                        rectPoints[((i-1)+4)%4].x += offsetX
+                        rectPoints[((i+1)+4)%4].y += offsetY
+                        console.log("rectPoints after offset starting pos: ", rectPoints, offsetX, offsetY)
+                        // Update adjacent points
+                        // if (i % 2 === 0) { // For points 0 and 2
+                        //     rectPoints[(i + 1) % 4].x = rectPoints[(i + 2) % 4].x;
+                        //     rectPoints[(i + 3) % 4].y = rectPoints[(i + 2) % 4].y;
+                        // } else { // For points 1 and 3
+                        //     rectPoints[(i + 1) % 4].y = rectPoints[(i + 2) % 4].y;
+                        //     rectPoints[(i + 3) % 4].x = rectPoints[(i + 2) % 4].x;
+                        // }
+                        // need to save offset and which point; then apply to applicable points 
+                    }
 
-            for (let i = 0; i < el.points.length; i++) {
-                let point = el.points[i]
-                if (point == startingPointPosition) {
-                    el.points[i].x = point.x + offsetX
-                    el.points[i].y = point.y + offsetY 
+                }
+                console.log("rectPoints after offset: ", rectPoints, offsetX, offsetY)
+                // find top left and bottom right points for rect
+                el.points = [rectPoints[0], rectPoints[2]]
+                console.log("el after offset: ", el)
+            } else {
+
+                for (let i = 0; i < el.points.length; i++) {
+                    let point = el.points[i]
+                    if (point == startingPointPosition) {
+                        el.points[i].x = point.x + offsetX
+                        el.points[i].y = point.y + offsetY 
+                    }
                 }
             }
             console.log("el offset", offsetX, offsetY)
