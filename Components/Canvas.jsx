@@ -173,6 +173,7 @@ function Canvas({dimensions, isDevMode}) {
         const handleMouseMove = (event) => {
             // currentElement should have type and can include scale
             if (selectedElement || isDrawing && currentPoly.length > 0 || tool === 'scale' && scalePoints.length == 1 || tool === 'rect' && currentRect.length == 1) { // and tool == polyline
+                event.preventDefault();
                 setGuideLine({x: event.pageX, y: event.pageY})
             } else {
                 setGuideLine(null)
@@ -459,12 +460,6 @@ function Canvas({dimensions, isDevMode}) {
 
             if (selectedType === 'rect') {
                 rectOutlinePoints = getRectCorners(rectOutlinePoints)
-                // let p1 = rectOutlinePoints[0]
-                // let p3 = rectOutlinePoints[1]
-                // let p2 = {"x":p1.x, "y": p3.y}
-                // let p4 = {"x":p3.x, "y": p1.y}
-                
-                // rectOutlinePoints = [p1, p2, p3, p4]
             }
             // find bottom left, right, top left and right
             for (let i = 0; i < rectOutlinePoints.length; i++) {
@@ -661,7 +656,7 @@ function Canvas({dimensions, isDevMode}) {
     }
     //   TODO: polyline and mark point tools
     function handlePointerDown(event) { // should this be handle mouse down?
-        event.preventDefault(); 
+        // event.preventDefault(); 
         const canvas = canvasRef.current
         const context = canvas.getContext('2d')
         if (tool === 'point') {
@@ -795,12 +790,13 @@ function Canvas({dimensions, isDevMode}) {
                 // setComment(closestElement["type"]) 
                 // add to current - directly render from useLayout effect
                 // let elType = closestElement["type"]
-
-
+                
+                
             } else {
                 setSelectedElement(null)
                 // setComment(null)
             }
+            event.preventDefault();
             }
 
 
@@ -859,7 +855,7 @@ function Canvas({dimensions, isDevMode}) {
         return [rectPoints[0], rectPoints[2]]
     }
     function handlePointerUp(event){
-        event.preventDefault(); 
+        // event.preventDefault(); 
         console.log("pointerUP")
         let pointer = {x: event.pageX, y: event.pageY}
         if (selectedElement) {
@@ -927,7 +923,8 @@ function Canvas({dimensions, isDevMode}) {
       ref={canvasRef}
       width={canvasWidth} // pass in width and height as props
       height={canvasHeight}
-      className='border border-black rounded-md bg-transparent inset-0 absolute z-10'
+      className={`border border-black rounded-md bg-transparent inset-0 absolute z-10 ${selectedElement ? 'select-none' : ''}`}
+    //   className='border border-black rounded-md bg-transparent inset-0 absolute z-10'
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       />
