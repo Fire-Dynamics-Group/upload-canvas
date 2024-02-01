@@ -213,15 +213,6 @@ function Canvas({dimensions, isDevMode}) {
         
         context.clearRect(0, 0, canvas.width, canvas.height)
 
-        function rectLinesAlign(line1Start, line1End, line2Start, line2End) {
-            // Check if lines are parallel (in this case, either horizontally or vertically aligned)
-            if ((line1Start.x === line1End.x && line2Start.x === line2End.x) || // Vertical lines
-                (line1Start.y === line1End.y && line2Start.y === line2End.y)) { // Horizontal lines
-                // Check if they align
-                return (line1Start.x === line2Start.x || line1Start.y === line2Start.y);
-            }
-            return false;
-        }
         function linesSharePoint(line1Start, line1End, line2Start, line2End) {
 
             let line1minX = Math.round(Math.min(line1Start.x, line1End.x))
@@ -352,23 +343,27 @@ function Canvas({dimensions, isDevMode}) {
                 let startingPointPosition = selectedElement["pointerDown"]
                 if (guideLine != null) {
                     let current = guideLine
-                    for (let i = 0; i < points.length; i++) {
-                        let point = points[i]
-                        if (point == startingPointPosition) {
-                            points[i].x = current.x
-                            points[i].y = current.y 
-                        }
-                    }
+                    // bug: top right and bottom left corners change whilst mouse is close to corner but not after that??
+                    // below get 4 corners of rect
+                    // then offset corners accordingly to mouse movement
+                    // before sending back top left and bottom right corners to be drawn
+                    let rectPoints = getRectCorners(points)
+                    let offsetPoints = addOffsetToRectPoints(rectPoints, current.x - startingPointPosition.x, current.y - startingPointPosition.y, startingPointPosition.x, startingPointPosition.y)
+                    points = offsetPoints
                 }
                 drawRect(points, context, comments, dotted)
 
             } else {
+                // unclear when guidline would not be null and not selectedElement - when drawing and not in state yet
+                let rectPoints = getRectCorners(points)
+                points = [rectPoints[0], rectPoints[2]]
                 drawRect(points, context, comments, dotted)
 
                 if (guideLine != null) {
-                    // line from last polypoint to guideline
+                    // line from last rect point to guideline
                     let prev = points[points.length-1]
                     let current = guideLine
+                    // check if current is maxX, minX, maxY, minY
                     if (isCtrlPressed){
                         current = snapVertexOrtho(current, prev)
                     }
@@ -463,12 +458,13 @@ function Canvas({dimensions, isDevMode}) {
             let minY = null
 
             if (selectedType === 'rect') {
-                let p1 = rectOutlinePoints[0]
-                let p3 = rectOutlinePoints[1]
-                let p2 = {"x":p1.x, "y": p3.y}
-                let p4 = {"x":p3.x, "y": p1.y}
+                rectOutlinePoints = getRectCorners(rectOutlinePoints)
+                // let p1 = rectOutlinePoints[0]
+                // let p3 = rectOutlinePoints[1]
+                // let p2 = {"x":p1.x, "y": p3.y}
+                // let p4 = {"x":p3.x, "y": p1.y}
                 
-                rectOutlinePoints = [p1, p2, p3, p4]
+                // rectOutlinePoints = [p1, p2, p3, p4]
             }
             // find bottom left, right, top left and right
             for (let i = 0; i < rectOutlinePoints.length; i++) {
@@ -546,6 +542,8 @@ function Canvas({dimensions, isDevMode}) {
                         if (guideLine != null) {
 
                             // have guide point for rect -> send to draw rect
+                            // likely need to add offset to rect points
+                            // get rect corners first etc
                             let rectPoints = [currentRect[0], guideLine]
                             drawRect(rectPoints, context, comment)
                         }
@@ -663,6 +661,7 @@ function Canvas({dimensions, isDevMode}) {
     }
     //   TODO: polyline and mark point tools
     function handlePointerDown(event) { // should this be handle mouse down?
+        event.preventDefault(); 
         const canvas = canvasRef.current
         const context = canvas.getContext('2d')
         if (tool === 'point') {
@@ -738,6 +737,7 @@ function Canvas({dimensions, isDevMode}) {
             // newP = snapVertexOrtho(newP, currentRect[0])
                 // snap to grid
                 newP = snapVertexToGrid(newP)
+
                 let pointsArray = [currentRect[0], newP]
                 // add to elements state
                 let currentEl = returnElementObject(tool, pointsArray, comment) // comment from props
@@ -839,10 +839,29 @@ function Canvas({dimensions, isDevMode}) {
         }
         return false
     }
+    function addOffsetToRectPoints(rectPoints, offsetX, offsetY, startingX, startingY) {
+        for (let i = 0; i < rectPoints.length; i++) {
+            let point = rectPoints[i]
+            if (point.x == startingX && point.y == startingY) {
+                // if bottom left -> change top left in x and bottom right in y
+                // if top right -> change bottom right in x and top left in y
+                // if top left or bottom right; change only that point
+                // works when first point is top left
+                let pointX = point.x + offsetX
+                let pointY = point.y + offsetY
+                rectPoints[i].x = pointX
+                rectPoints[i].y = pointY
+                rectPoints[((i-1)+4)%4].x += offsetX
+                rectPoints[((i+1)+4)%4].y += offsetY
+            }
+
+        }
+        return [rectPoints[0], rectPoints[2]]
+    }
     function handlePointerUp(event){
+        event.preventDefault(); 
         console.log("pointerUP")
         let pointer = {x: event.pageX, y: event.pageY}
-        // setSelectedElement({"element": closestElement, "pointerDown": pointer})
         if (selectedElement) {
             let el = selectedElement["element"] // needs id added to state
             let elementId = el["id"]
@@ -850,13 +869,10 @@ function Canvas({dimensions, isDevMode}) {
             let offsetX = pointer.x - startingPointPosition.x
             let offsetY = pointer.y - startingPointPosition.y
             // if rect need to include corners too!
-            console.log("el is rect?: ", el)
             if (isRect(el)) {
-                let rectPoints = getRectCorners(el.points)
-                console.log("rectPoints: ", rectPoints)
+                let rectPoints = getRectCorners(el.points) // returns points in order of top left, bottom left, bottom right, top right
                 for (let i = 0; i < rectPoints.length; i++) {
                     let point = rectPoints[i]
-                    console.log("point: ", point, startingPointPosition)
                     if (point.x == startingPointPosition.x && point.y == startingPointPosition.y) {
                         // if bottom left -> change top left in x and bottom right in y
                         // if top right -> change bottom right in x and top left in y
@@ -868,23 +884,10 @@ function Canvas({dimensions, isDevMode}) {
                         rectPoints[i].y = pointY
                         rectPoints[((i-1)+4)%4].x += offsetX
                         rectPoints[((i+1)+4)%4].y += offsetY
-                        console.log("rectPoints after offset starting pos: ", rectPoints, offsetX, offsetY)
-                        // Update adjacent points
-                        // if (i % 2 === 0) { // For points 0 and 2
-                        //     rectPoints[(i + 1) % 4].x = rectPoints[(i + 2) % 4].x;
-                        //     rectPoints[(i + 3) % 4].y = rectPoints[(i + 2) % 4].y;
-                        // } else { // For points 1 and 3
-                        //     rectPoints[(i + 1) % 4].y = rectPoints[(i + 2) % 4].y;
-                        //     rectPoints[(i + 3) % 4].x = rectPoints[(i + 2) % 4].x;
-                        // }
-                        // need to save offset and which point; then apply to applicable points 
                     }
 
                 }
-                console.log("rectPoints after offset: ", rectPoints, offsetX, offsetY)
-                // find top left and bottom right points for rect
                 el.points = [rectPoints[0], rectPoints[2]]
-                console.log("el after offset: ", el)
             } else {
 
                 for (let i = 0; i < el.points.length; i++) {
@@ -895,7 +898,6 @@ function Canvas({dimensions, isDevMode}) {
                     }
                 }
             }
-            console.log("el offset", offsetX, offsetY)
             changeElement(el)
             setSelectedElement(null)
         } 
