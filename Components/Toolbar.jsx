@@ -11,6 +11,7 @@ import ErrorPopup from './ErrorPopup';
 import { testElements } from '@/utils/mockData';
 
 // TODO: if fds mode, don't show run calc; show create fds button
+// TODO: allow wasd to move selected element's closest point to the pointer one cell: point
 // send further elements in api call in fdsmode
 const Toolbar = ({setShowModePopup}) => {
     // bring below into home i.e. index.jsx

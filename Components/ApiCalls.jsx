@@ -2,6 +2,74 @@ const server_urls = {
     "localhost": 'http://127.0.0.1:8000',
     // "server": 'https://fdsbackend-1-r7337380.deta.app'
     "server": 'https://backendfornextapp-production.up.railway.app'
+    
+    // "server": 'https://fastapi-production-e615.up.railway.app'
+    // fastapi-production-e615.up.railway.app
+  }
+
+console.log("server_urls: ", server_urls)  
+export const sendRadiationData = async (
+    timeArray, 
+    accumulatedDistanceList, 
+    hobDistanceList, 
+    qList,
+    timestepFEDList,
+    accumulatedFEDList,
+    totalHeatFlux,
+    walkingSpeed,
+    doorOpeningDuration,   
+    docName="Oil Pan Fire Appendix.docx"
+  ) => {
+    
+    console.log(
+      timeArray, 
+      accumulatedDistanceList, 
+      hobDistanceList, 
+      qList,
+      timestepFEDList,
+      accumulatedFEDList,
+      totalHeatFlux,
+      walkingSpeed,
+      doorOpeningDuration,
+      docName
+    )
+    // receive 
+    let bodyContent = JSON.stringify( {
+      timeArray, 
+      accumulatedDistanceList, 
+      hobDistanceList, 
+      qList,
+      timestepFEDList,
+      accumulatedFEDList,
+      totalHeatFlux,
+      walkingSpeed,
+      doorOpeningDuration, // need to send null if not applicable!!
+      docName
+    } )   
+
+    console.log("fetch local", server_urls.localhost)
+    try{
+      const response = await fetch(`${server_urls.localhost}/radiation`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: bodyContent,
+      });
+      try{
+        const blob = await response.blob(); // get the image as a blob
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = docName;
+        link.click();    
+  
+      } catch (err) { 
+        console.error("Error: ", err);
+      }
+
+    } catch (err) { 
+      console.error("Error: ", err);
+    }
   }
 
   // TODO: make typesafe
@@ -24,6 +92,8 @@ export const sendFdsData = async (
     console.log("elementList at api call: ", elementList)
     let bodyContent = JSON.stringify( {
       elementList,
+      
+
       z,
       wall_height,
       wall_thickness,
@@ -99,7 +169,7 @@ export const sendTimeEqData = async (
         fireResistancePeriod
     } )
     console.log("body: ", bodyContent)
-    const response = await fetch(`${server_urls.server}/timeEq`, {
+    const response = await fetch(`${server_urls.localhost}/timeEq`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -118,65 +188,67 @@ export const sendTimeEqData = async (
   
   }
 
-  export const sendRadiationData = async (
-    timeArray, 
-    accumulatedDistanceList, 
-    hobDistanceList, 
-    qList,
-    timestepFEDList,
-    accumulatedFEDList,
-    totalHeatFlux,
-    walkingSpeed,
-    doorOpeningDuration,   
-    docName="Oil Pan Fire Appendix.docx"
-  ) => {
+  // export const sendRadiationData = async (
+  //   timeArray, 
+  //   accumulatedDistanceList, 
+  //   hobDistanceList, 
+  //   qList,
+  //   timestepFEDList,
+  //   accumulatedFEDList,
+  //   totalHeatFlux,
+  //   walkingSpeed,
+  //   doorOpeningDuration,   
+  //   docName="Oil Pan Fire Appendix.docx"
+  // ) => {
     
-    console.log(
-      timeArray, 
-      accumulatedDistanceList, 
-      hobDistanceList, 
-      qList,
-      timestepFEDList,
-      accumulatedFEDList,
-      totalHeatFlux,
-      walkingSpeed,
-      doorOpeningDuration,
-      docName
-    )
-    // receive 
-    let bodyContent = JSON.stringify( {
-      timeArray, 
-      accumulatedDistanceList, 
-      hobDistanceList, 
-      qList,
-      timestepFEDList,
-      accumulatedFEDList,
-      totalHeatFlux,
-      walkingSpeed,
-      doorOpeningDuration, // need to send null if not applicable!!
-      docName
-    } )   
+  //   console.log(
+  //     timeArray, 
+  //     accumulatedDistanceList, 
+  //     hobDistanceList, 
+  //     qList,
+  //     timestepFEDList,
+  //     accumulatedFEDList,
+  //     totalHeatFlux,
+  //     walkingSpeed,
+  //     doorOpeningDuration,
+  //     docName
+  //   )
+  //   // receive 
+  //   let bodyContent = JSON.stringify( {
+  //     timeArray, 
+  //     accumulatedDistanceList, 
+  //     hobDistanceList, 
+  //     qList,
+  //     timestepFEDList,
+  //     accumulatedFEDList,
+  //     totalHeatFlux,
+  //     walkingSpeed,
+  //     doorOpeningDuration, // need to send null if not applicable!!
+  //     docName
+  //   } )   
 
-    try{
-      const response = await fetch(`${server_urls.server}/radiation`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: bodyContent,
-      });
-      try{
-        const blob = await response.blob(); // get the image as a blob
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = docName;
-        link.click();    
+  //   try{
+  //     console.log("fetch local", server_urls.localhost)
+  //     const response = await fetch(`${server_urls.localhost}/radiation`, {
+  //       method: 'POST',
+  //       headers: {
+  //         'Content-Type': 'application/json'
+  //       },
+  //       body: bodyContent,
+  //     });
+  //     try{
+  //       const blob = await response.blob(); // get the image as a blob
+  //       const link = document.createElement('a');
+  //       link.href = URL.createObjectURL(blob);
+  //       link.download = docName;
+  //       link.click();    
   
-      } catch (err) { 
-        showMessage("Error: ",err)
-      }
+  //     } catch (err) { 
+  //       showMessage("Error: ",err)
+  //       console.log("host", server_urls.localhost)
+  //     }
 
-    } catch (err) { 
-      showMessage("Error: ",err)
-    }
-  }
+  //   } catch (err) { 
+  //     showMessage("Error: ",err)
+  //   }
+  // }

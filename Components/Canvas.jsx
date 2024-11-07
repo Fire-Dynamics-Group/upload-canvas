@@ -47,6 +47,8 @@ function Canvas({dimensions, isDevMode}) {
     const [isDrawing, setIsDrawing] = useState(false)
     
     // TODO: have a keyPressed useState -> with which key
+    const [isUpPressed, setIsUpPressed] = useState(false)
+
     const [isCtrlPressed, setIsCtrlPressed] = useState(false)
     const [isEscapePressed, setIsEscapePressed] = useState(false)
     // on enter -> isDrawing = false
@@ -67,6 +69,8 @@ function Canvas({dimensions, isDevMode}) {
     // have state that is true when drawing is true and mouse moving -> store mouse
     const [guideLine, setGuideLine] = useState(null)
     const [currentId, setCurrentId] = useState(0)
+    const [xCounter, setXCounter] = useState(0)
+    const [yCounter, setYCounter] = useState(0)
 
     // below logic for popup
     const [showPopup, setShowPopup] = useState(false)
@@ -104,6 +108,11 @@ function Canvas({dimensions, isDevMode}) {
 
 
         const handleKeyPress = ({key}) => {
+            // have arrow keys for controlling element location
+            if (key == 'ArrowUp') {
+                event.preventDefault();
+                setIsUpPressed(true)
+            }        
             if (key == 'Control') {
                 setIsCtrlPressed(true)
             }
@@ -340,7 +349,9 @@ function Canvas({dimensions, isDevMode}) {
                 // change polypoints before drawing
                 // if beingEdited
                 // use guideLine for selectedPoint
-                // 
+                
+                
+                // TODO: overule mouse move if one of wasd are pressed 
                 let startingPointPosition = selectedElement["pointerDown"]
                 if (guideLine != null) {
                     let current = guideLine
@@ -349,7 +360,18 @@ function Canvas({dimensions, isDevMode}) {
                     // then offset corners accordingly to mouse movement
                     // before sending back top left and bottom right corners to be drawn
                     let rectPoints = getRectCorners(points)
-                    let offsetPoints = addOffsetToRectPoints(rectPoints, current.x - startingPointPosition.x, current.y - startingPointPosition.y, startingPointPosition.x, startingPointPosition.y)
+                    // if wasd pressed: offset by one cell in appropriate direction
+                    let isWasdPressed = true
+                    let offsetPoints
+                    if (isWasdPressed) {
+                        // how much is one cell: test up
+                        setXCounter(prev => prev + 1)
+                        offsetPoints = addOffsetToRectPoints(rectPoints, 0, 100, startingPointPosition.x, startingPointPosition.y)
+
+                    } else {
+
+                        offsetPoints = addOffsetToRectPoints(rectPoints, current.x - startingPointPosition.x, current.y - startingPointPosition.y, startingPointPosition.x, startingPointPosition.y)
+                    }
                     points = offsetPoints
                 }
                 drawRect(points, context, comments, dotted)
@@ -862,8 +884,15 @@ function Canvas({dimensions, isDevMode}) {
             let el = selectedElement["element"] // needs id added to state
             let elementId = el["id"]
             let startingPointPosition = selectedElement["pointerDown"]
-            let offsetX = pointer.x - startingPointPosition.x
-            let offsetY = pointer.y - startingPointPosition.y
+            // should be amount of times wasd clicked if this had been the case
+            // let yCounter = 1
+            // let xCounter = 0
+
+            // TODO: use one cells distance
+            let offsetY = 10*yCounter 
+            let offsetX = 10*xCounter
+            // let offsetX = pointer.x - startingPointPosition.x
+            // let offsetY = pointer.y - startingPointPosition.y
             // if rect need to include corners too!
             if (isRect(el)) {
                 let rectPoints = getRectCorners(el.points) // returns points in order of top left, bottom left, bottom right, top right
@@ -896,6 +925,8 @@ function Canvas({dimensions, isDevMode}) {
             }
             changeElement(el)
             setSelectedElement(null)
+            setXCounter(0)
+            setYCounter(0)
         } 
         // if element selected -> move from previous to new position
         // need previous pointer down point
