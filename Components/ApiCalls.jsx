@@ -47,9 +47,9 @@ export const sendRadiationData = async (
       docName
     } )   
 
-    console.log("fetch local", server_urls.localhost)
+    console.log("fetch local", server_urls.server)
     try{
-      const response = await fetch(`${server_urls.localhost}/radiation`, {
+      const response = await fetch(`${server_urls.server}/radiation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -92,7 +92,7 @@ export const sendFdsData = async (
     console.log("elementList at api call: ", elementList)
     let bodyContent = JSON.stringify( {
       elementList,
-      
+
 
       z,
       wall_height,
@@ -104,7 +104,7 @@ export const sendFdsData = async (
       stair_enclosure_roof_z      
     } )
     console.log("bodyContent: ", bodyContent)
-    const response = await fetch(`${server_urls.localhost}/fds`, {
+    const response = await fetch(`${server_urls.server}/fds`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -169,7 +169,7 @@ export const sendTimeEqData = async (
         fireResistancePeriod
     } )
     console.log("body: ", bodyContent)
-    const response = await fetch(`${server_urls.localhost}/timeEq`, {
+    const response = await fetch(`${server_urls.server}/timeEq`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

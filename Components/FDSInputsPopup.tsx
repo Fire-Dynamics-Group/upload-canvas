@@ -35,6 +35,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
     const elements = useStore((state) => state.elements)
     console.log(elements)
     // Filter only door elements
+    // @ts-ignore
     const doorElements = elements.filter(element => element.comments === 'door')
 
     // Handle door opening time change
@@ -112,6 +113,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                 <>
                     <h2 className="text-lg font-bold mb-2">Door Opening Times</h2>
                     <div className="mb-4">
+                      {/* @ts-ignore */}
                         {doorElements.map((door) => (
                             <div key={door.id} className="flex items-center gap-2 mb-2">
                                 <label className="min-w-[100px]">{`Door ${door.id}:`}</label>
