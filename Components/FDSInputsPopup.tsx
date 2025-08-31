@@ -139,8 +139,10 @@ const FDSInputsPopup = ({handleUserInput}) => {
             fireFloorZ: fireFloorZ,
             fireFloorNumber: fireFloorNumber,
             stairsObject: stairsObject,
-            doorOpenings: doorOpenings  // Add door openings to the object
+            doorOpenings: doorOpenings
         }
+        console.log('Elements before API call:', elements)
+        console.log('Door openings object:', doorOpenings)
         handleUserInput(object)
     }
 

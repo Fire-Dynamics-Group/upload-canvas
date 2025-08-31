@@ -230,6 +230,40 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                 <label htmlFor="line">Escape Route</label>
         </>
     )
+
+
+    const shedTools = (
+      <>
+      {/*  boundary */}
+      <input type="radio" 
+      id="line" 
+      checked={tool === "polyline" && comment == 'boundary'} 
+      onChange={() => {
+      setTool("polyline")
+      setComment("boundary")
+      }} />
+      <label htmlFor="line">Boundary</label>
+      {/*  elevations */}
+      <input type="radio" 
+      id="line" 
+      checked={tool === "polyline" && comment == 'elevation'} 
+      onChange={() => {
+      setTool("polyline")
+      setComment("elevation")
+      }} />
+      <label htmlFor="line">Elevations</label>
+      {/*  columns */}
+      <input type="radio" 
+      id="line" 
+      checked={tool === "point" && comment == 'column'} 
+      onChange={() => {
+      setTool("point")
+      setComment("column")
+      }} />
+      <label htmlFor="line">Column</label>
+</>     
+    )
+    
     return (
     <>
       {/* perhaps popup can't be located in menu bar? */}
@@ -268,7 +302,8 @@ const [errorList, setErrorList] = useState(defaultErrorList)
             }}
           />
           <label htmlFor="selection">Selection</label>
-          {/* non stair obstructions */}
+          {/* non stair obstructions... not needed for warehouse */}
+          { currentMode !== 'warehouse' && <>
           <input type="radio" id="line" 
           checked={tool === "polyline" && comment == 'obstruction'} 
           onChange={() => {
@@ -276,13 +311,19 @@ const [errorList, setErrorList] = useState(defaultErrorList)
             setComment("obstruction")
             }} />
           <label htmlFor="line">Obstruction</label>
+          </>
+          }
 
           { currentMode === 'fdsGen' ?
             fdsGenTools
 
             : currentMode === 'radiation' ?
                 radiationTools
-                : <>
+                // what mode is opening for? probably ext fire spread?
+                : currentMode === 'warehouse' ?
+                shedTools
+                :  
+                <>
                 <input type="radio" id="opening" 
                 checked={tool === "opening" && comment == 'opening'} 
                 onChange={() => {

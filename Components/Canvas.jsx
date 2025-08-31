@@ -712,6 +712,7 @@ function Canvas({dimensions, isDevMode}) {
                         // add element 
                         // reset currentPoly
                         let current_el = returnElementObject(tool, [currentPoly[0], newP], comment)
+                        console.log('Adding door element:', current_el)
                         addElement(current_el)
                         setIsDrawing(false)
                         setCurrentPoly([])

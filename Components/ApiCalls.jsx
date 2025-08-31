@@ -7,7 +7,8 @@ const server_urls = {
     // fastapi-production-e615.up.railway.app
   }
 
-console.log("server_urls: ", server_urls)  
+// console.log("server_urls: ", server_urls)  
+const current_server_url = server_urls.server
 export const sendRadiationData = async (
     timeArray, 
     accumulatedDistanceList, 
@@ -47,9 +48,9 @@ export const sendRadiationData = async (
       docName
     } )   
 
-    console.log("fetch local", server_urls.server)
+    // console.log("fetch local", server_urls.server)
     try{
-      const response = await fetch(`${server_urls.server}/radiation`, {
+      const response = await fetch(`${current_server_url}/radiation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -89,7 +90,9 @@ export const sendFdsData = async (
   px_per_m=33.6,
   // TODO: have z, wall height, wall_thickness, stair_height (if any), px_per_m
 ) => {
-    console.log("elementList at api call: ", elementList)
+    console.log('Element list at API call:', elementList)
+    console.log('Door openings at API call:', elementList.filter(el => el.comments === 'door'))
+    
     let bodyContent = JSON.stringify( {
       elementList,
 
@@ -104,7 +107,7 @@ export const sendFdsData = async (
       stair_enclosure_roof_z      
     } )
     console.log("bodyContent: ", bodyContent)
-    const response = await fetch(`${server_urls.server}/fds`, {
+    const response = await fetch(`${current_server_url}/fds`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -169,7 +172,7 @@ export const sendTimeEqData = async (
         fireResistancePeriod
     } )
     console.log("body: ", bodyContent)
-    const response = await fetch(`${server_urls.server}/timeEq`, {
+    const response = await fetch(`${current_server_url}/timeEq`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
