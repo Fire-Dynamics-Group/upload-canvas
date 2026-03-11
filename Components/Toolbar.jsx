@@ -4,7 +4,8 @@ import WalkingSpeedPopup from './WalkingSpeedPopup'
 import FireInputsPopup from './FireInputsPopup'
 import FDSInputsPopup from './FDSInputsPopup.tsx'
 import TimeEquivalenceInputPopup from './TimeEquivalenceInputPopup'
-import {sendFdsData} from './ApiCalls'
+import {sendFdsData, sendWallDetectionRequest} from './ApiCalls'
+import WallDetectionPopup from './WallDetectionPopup'
 
 import { useState } from 'react';
 import ErrorPopup from './ErrorPopup';
@@ -38,13 +39,25 @@ const Toolbar = ({setShowModePopup}) => {
     const [showWalkingPopup, setShowWalkingPopup] = useState(false)
     // const [hasDoor, setHasDoor] = useState(false)
     const setHasDoor = useStore((state) => state.setHasDoor)
+    const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
     const pdfCanvasRef = useStore((state) => state.pdfCanvasRef)
     const pdfIsGreyscale = useStore((state) => state.pdfIsGreyscale)
     const pdfData = useStore((state) => state.pdfData)
     const toggleIsPdfGreyscale = useStore((state) => state.toggleIsPdfGreyscale)
 
-    const [showFireInputsPopup, setShowFireInputsPopup] = useState(false) 
-    const [showFDSInputsPopup, setShowFDSInputsPopup] = useState(false) 
+    const [showFireInputsPopup, setShowFireInputsPopup] = useState(false)
+    const [showFDSInputsPopup, setShowFDSInputsPopup] = useState(false)
+    const [showWallDetectionPopup, setShowWallDetectionPopup] = useState(false)
+
+    const isDetectingWalls = useStore((state) => state.isDetectingWalls)
+    const setIsDetectingWalls = useStore((state) => state.setIsDetectingWalls)
+    const wallDetectionError = useStore((state) => state.wallDetectionError)
+    const setWallDetectionError = useStore((state) => state.setWallDetectionError)
+    const addElements = useStore((state) => state.addElements)
+    const getNextId = useStore((state) => state.getNextId)
+    const detectedWallIds = useStore((state) => state.detectedWallIds)
+    const setDetectedWallIds = useStore((state) => state.setDetectedWallIds)
+    const removeDetectedWalls = useStore((state) => state.removeDetectedWalls)
 
     const totalHeatFlux = useStore((state) => state.totalHeatFlux)
     const heatEndPoint = useStore((state) => state.heatEndPoint)
@@ -151,6 +164,48 @@ const [errorList, setErrorList] = useState(defaultErrorList)
         setShowFDSInputsPopup(true) 
       }
 
+      async function handleDetectWalls({minWallThickness, minWallLength, simplifyTolerance}) {
+        if (!pdfCanvasRef || !pdfCanvasRef.current) return
+        setIsDetectingWalls(true)
+        setWallDetectionError(null)
+        try {
+          // Remove previous detected walls before re-detecting
+          removeDetectedWalls()
+          const dataUrl = pdfCanvasRef.current.toDataURL('image/png')
+          const imageBase64 = dataUrl.split(',')[1]
+          const walls = await sendWallDetectionRequest(imageBase64, minWallThickness, minWallLength, simplifyTolerance)
+          console.log("walls response:", walls)
+          // Convert detected wall contours to polyline obstruction elements
+          // getBoundingClientRect is viewport-relative; elements use pageX/pageY (page-absolute)
+          const canvasRect = pdfCanvasRef.current.getBoundingClientRect()
+          const offsetX = canvasRect.left + window.scrollX
+          const offsetY = canvasRect.top + window.scrollY
+          const newIds = []
+          const newElements = walls.map((wall) => {
+            const id = getNextId()
+            newIds.push(id)
+            const points = wall.points.map(p => ({
+              x: p.x + offsetX,
+              y: p.y + offsetY
+            }))
+            return {
+              type: "polyline",
+              points: points,
+              comments: "obstruction",
+              id: id
+            }
+          })
+          addElements(newElements)
+          setDetectedWallIds(newIds)
+          setShowWallDetectionPopup(false)
+        } catch (err) {
+          console.error("Wall detection error:", err)
+          setWallDetectionError(err.message)
+        } finally {
+          setIsDetectingWalls(false)
+        }
+      }
+
       function handleGreyscaleButtonClick() {
         if (pdfCanvasRef.current) {
           const canvas = pdfCanvasRef.current;
@@ -237,6 +292,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
       {showErrorPopup && <ErrorPopup setShowPopup={setShowErrorPopup} errorList={errorList}/>}
       {showTimeEqPopup && <TimeEquivalenceInputPopup mockData={null}/>}
       {showFireInputsPopup && <FireInputsPopup handleUserInput={handleFireInput}/>}
+      {showWallDetectionPopup && <WallDetectionPopup onDetect={handleDetectWalls} onClose={() => { setShowWallDetectionPopup(false); setWallDetectionError(null); }} isLoading={isDetectingWalls} error={wallDetectionError} pixelsPerMetre={pixelsPerMesh * 10}/>}
       {showWalkingPopup && <WalkingSpeedPopup handleUserInput={handleWalkingInput}/>}
         <div className="text-center">
           <button 
@@ -351,13 +407,33 @@ const [errorList, setErrorList] = useState(defaultErrorList)
             >
             Inputs
           </button>
-          <button 
+          <button
             onClick={handleFDSClick}
-            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
+            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
             type="button"
             >
             Generate FDS code
           </button>
+          {pdfData && (
+            <>
+            <button
+              onClick={() => setShowWallDetectionPopup(true)}
+              className="text-white bg-green-700 hover:bg-green-800 focus:ring-4 focus:ring-green-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-green-600 dark:hover:bg-green-700 focus:outline-none dark:focus:ring-green-800"
+              type="button"
+              >
+              Detect Walls
+            </button>
+            {detectedWallIds.length > 0 && (
+              <button
+                onClick={removeDetectedWalls}
+                className="text-white bg-red-700 hover:bg-red-800 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-red-600 dark:hover:bg-red-700 focus:outline-none dark:focus:ring-red-800"
+                type="button"
+                >
+                Clear Detected Walls
+              </button>
+            )}
+            </>
+          )}
             </>
             }
 

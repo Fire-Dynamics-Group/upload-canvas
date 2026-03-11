@@ -7,7 +7,9 @@ const server_urls = {
     // fastapi-production-e615.up.railway.app
   }
 
-console.log("server_urls: ", server_urls)  
+const activeUrl = server_urls.localhost
+
+console.log("server_urls: ", server_urls)
 export const sendRadiationData = async (
     timeArray, 
     accumulatedDistanceList, 
@@ -49,7 +51,7 @@ export const sendRadiationData = async (
 
     console.log("fetch local", server_urls.server)
     try{
-      const response = await fetch(`${server_urls.server}/radiation`, {
+      const response = await fetch(`${activeUrl}/radiation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -104,7 +106,7 @@ export const sendFdsData = async (
       stair_enclosure_roof_z      
     } )
     console.log("bodyContent: ", bodyContent)
-    const response = await fetch(`${server_urls.server}/fds`, {
+    const response = await fetch(`${activeUrl}/fds`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -169,7 +171,7 @@ export const sendTimeEqData = async (
         fireResistancePeriod
     } )
     console.log("body: ", bodyContent)
-    const response = await fetch(`${server_urls.server}/timeEq`, {
+    const response = await fetch(`${activeUrl}/timeEq`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -186,6 +188,30 @@ export const sendTimeEqData = async (
 
     return true;
   
+  }
+
+export const sendWallDetectionRequest = async (imageBase64, minWallThickness = 4, minWallLength = 50, simplifyTolerance = 2.0) => {
+    const bodyContent = JSON.stringify({
+      image_base64: imageBase64,
+      min_wall_thickness: minWallThickness,
+      min_wall_length: minWallLength,
+      simplify_tolerance: simplifyTolerance,
+    })
+
+    const response = await fetch(`${activeUrl}/detect-walls`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: bodyContent,
+    })
+
+    if (!response.ok) {
+      throw new Error(`Wall detection failed: ${response.status}`)
+    }
+
+    const data = await response.json()
+    return data.walls
   }
 
   // export const sendRadiationData = async (
@@ -229,7 +255,7 @@ export const sendTimeEqData = async (
 
   //   try{
   //     console.log("fetch local", server_urls.localhost)
-  //     const response = await fetch(`${server_urls.localhost}/radiation`, {
+  //     const response = await fetch(`${activeUrl}/radiation`, {
   //       method: 'POST',
   //       headers: {
   //         'Content-Type': 'application/json'

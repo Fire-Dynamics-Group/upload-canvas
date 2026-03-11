@@ -68,7 +68,7 @@ function Canvas({dimensions, isDevMode}) {
     // TODO: if drawing have line between penultimate point and cursor
     // have state that is true when drawing is true and mouse moving -> store mouse
     const [guideLine, setGuideLine] = useState(null)
-    const [currentId, setCurrentId] = useState(0)
+    const getNextId = useStore((state) => state.getNextId)
     const [xCounter, setXCounter] = useState(0)
     const [yCounter, setYCounter] = useState(0)
 
@@ -91,16 +91,14 @@ function Canvas({dimensions, isDevMode}) {
     // useCallback return memoized version of function -> only changes if dep val changes
     // therefore, not re-ran each re-render of useEffect
     const returnElementObject = useCallback((type, pointsArray, comments) => {
-        let id = currentId 
-        setCurrentId(prev => prev + 1)
+        let id = getNextId()
         return {
             "type": type,
             "points": pointsArray,
             "comments": comments,
             "id": id,
-            // "beingEdited": false // not rendered from elements if true -> editedElement in current logic e.g. currentPoly etc
-        }          
-    }, [currentId])
+        }
+    }, [getNextId])
     // event listener for ctrl button
     // lines to be ortho -> check if closer to x or y ortho
     // LATER: move keypress to own component -> send back keys pressed or keyup
@@ -174,7 +172,7 @@ function Canvas({dimensions, isDevMode}) {
             window.removeEventListener("keydown", handleKeyPress)
             window.removeEventListener("keyup", handleCtrlRelease)
         }
-    }, [elements, currentPoly, tool, setTool, comment, addElement, selectedElement, currentId, removeElement, returnElementObject, setSelectedElement])
+    }, [elements, currentPoly, tool, setTool, comment, addElement, selectedElement, removeElement, returnElementObject, setSelectedElement])
 
     // LATER: move to own component -> sends back null or position object
     useEffect(() => {
@@ -328,7 +326,7 @@ function Canvas({dimensions, isDevMode}) {
             let p2 = points[1]
             let deltaX = p2.x - p1.x
             let deltaY = p2.y - p1.y
-            context.strokeStyle = elementConfig[comments] 
+            context.strokeStyle = elementConfig[comments]
             context.lineWidth = 1.5;
             if (dotted) {
                 context.setLineDash([5, 15])

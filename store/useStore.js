@@ -6,10 +6,14 @@ const useStore = create((set) => {
     return {
 
         elements: [],
+        currentId: 0,
         tool: "scale",
         selectedElement: null,
         currentMode: "fdsGen",
         comment: "",
+        isDetectingWalls: false,
+        wallDetectionError: null,
+        detectedWallIds: [],
         canvasDimensions: {},
         pixelsPerMesh: 1,
         originPixels: null,
@@ -43,8 +47,32 @@ const useStore = create((set) => {
             stairObject: newStairObject
         })),
         
+        getNextId: () => {
+            let id
+            set((state) => {
+                id = state.currentId
+                return { currentId: state.currentId + 1 }
+            })
+            return id
+        },
         addElement: (newEl) => set((state) => ({
             elements: [...state.elements, newEl]
+        })),
+        addElements: (newEls) => set((state) => ({
+            elements: [...state.elements, ...newEls]
+        })),
+        setIsDetectingWalls: (val) => set(() => ({
+            isDetectingWalls: val
+        })),
+        setWallDetectionError: (val) => set(() => ({
+            wallDetectionError: val
+        })),
+        setDetectedWallIds: (ids) => set(() => ({
+            detectedWallIds: ids
+        })),
+        removeDetectedWalls: () => set((state) => ({
+            elements: state.elements.filter(el => !state.detectedWallIds.includes(el.id)),
+            detectedWallIds: []
         })),
         changeElement: (changedEl) =>  set((state) => ({
             elements: 
