@@ -25,7 +25,10 @@ const elementConfig = {
     "scale": "green",
     "selection": "orange",
     "escapeRoute": "blue",
-    "opening": "blue"
+    "opening": "blue",
+    "inlet": "purple",
+    "extract": "cyan",
+    "landing": "blue"
 }
 
 // eslint-disable-next-line react/prop-types
@@ -42,6 +45,8 @@ function Canvas({dimensions, isDevMode}) {
     const comment = useStore((state) => state.comment)
     const setComment = useStore((state) => state.setComment)
     const currentMode = useStore((state) => state.currentMode)
+    const highlightedDoorId = useStore((state) => state.highlightedDoorId)
+    const doorRoles = useStore((state) => state.doorRoles)
 
 
     const [isDrawing, setIsDrawing] = useState(false)
@@ -68,7 +73,10 @@ function Canvas({dimensions, isDevMode}) {
     // TODO: if drawing have line between penultimate point and cursor
     // have state that is true when drawing is true and mouse moving -> store mouse
     const [guideLine, setGuideLine] = useState(null)
-    const [currentId, setCurrentId] = useState(0)
+    const [currentId, setCurrentId] = useState(() => {
+        if (elements.length === 0) return 0
+        return Math.max(...elements.map(el => el.id)) + 1
+    })
     const [xCounter, setXCounter] = useState(0)
     const [yCounter, setYCounter] = useState(0)
 
@@ -101,6 +109,19 @@ function Canvas({dimensions, isDevMode}) {
             // "beingEdited": false // not rendered from elements if true -> editedElement in current logic e.g. currentPoly etc
         }          
     }, [currentId])
+
+    // Sync hasScale with persisted pixelsPerMesh (rehydration + reset)
+    useEffect(() => {
+        setHasScale(pixelsPerMesh !== 1)
+    }, [pixelsPerMesh])
+
+    useEffect(() => {
+        if (elements.length > 0) {
+            const maxId = Math.max(...elements.map(el => el.id))
+            setCurrentId(prev => Math.max(prev, maxId + 1))
+        }
+    }, [elements])
+
     // event listener for ctrl button
     // lines to be ortho -> check if closer to x or y ortho
     // LATER: move keypress to own component -> send back keys pressed or keyup
@@ -606,10 +627,39 @@ function Canvas({dimensions, isDevMode}) {
                 } else if (element.type == 'point') {
                     drawPolyline(element.points, context, element.comments)
                 }
+
+                // Draw highlight ring + role label for highlighted or role-assigned doors
+                if (element.comments === 'door') {
+                    const isHighlighted = highlightedDoorId === element.id
+                    const role = doorRoles[element.id]
+                    if (isHighlighted || role) {
+                        const pts = element.points
+                        const cx = (pts[0].x + pts[1].x) / 2
+                        const cy = (pts[0].y + pts[1].y) / 2
+                        if (isHighlighted) {
+                            context.beginPath()
+                            context.arc(cx, cy, 20, 0, Math.PI * 2)
+                            context.strokeStyle = 'yellow'
+                            context.lineWidth = 3
+                            context.stroke()
+                            context.lineWidth = 1
+                        }
+                        if (role) {
+                            const label = role.charAt(0).toUpperCase() + role.slice(1)
+                            context.font = '11px sans-serif'
+                            context.fillStyle = isHighlighted ? 'yellow' : 'white'
+                            context.strokeStyle = 'black'
+                            context.lineWidth = 3
+                            context.strokeText(label, cx + 12, cy - 12)
+                            context.fillText(label, cx + 12, cy - 12)
+                            context.lineWidth = 1
+                        }
+                    }
+                }
             }
         })
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles])
 
     function isMesh(currentEl) {
         if (currentEl["comments"].toLowerCase().includes("mesh")) {                       
@@ -694,12 +744,12 @@ function Canvas({dimensions, isDevMode}) {
             context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)        
         }
         else if (tool === 'polyline') {
-            if (comment === 'door') {
+            if (comment === 'door' || comment === 'inlet' || comment === 'extract') {
                 if (currentPoly.length < 2) {
                     let prevIndex = currentPoly.length
                     setIsDrawing(true) 
                     let dimension = 10
-                    context.fillStyle = elementConfig["door"]
+                    context.fillStyle = elementConfig[comment] || elementConfig["door"]
                     // // draw vertex
                     let newP = {x: event.pageX, y: event.pageY}
                     // if ctrl pressed -> next point ortho

@@ -47,9 +47,9 @@ export const sendRadiationData = async (
       docName
     } )   
 
-    console.log("fetch local", server_urls.server)
+    console.log("fetch local", server_urls.localhost)
     try{
-      const response = await fetch(`${server_urls.server}/radiation`, {
+      const response = await fetch(`${server_urls.localhost}/radiation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -87,13 +87,20 @@ export const sendFdsData = async (
   stair_enclosure_roof_z=35,
   wall_thickness=0.2,
   px_per_m=33.6,
-  // TODO: have z, wall height, wall_thickness, stair_height (if any), px_per_m
+  scenario_type="MOE",
+  sim_end_time=300,
+  include_sensors=true,
+  corridor_sensor_heights=[2.0],
+  stair_sensor_heights=[0.5, 1.0, 1.5, 2.0],
+  is_sprinklered=true,
+  door_leakages_enabled=true,
+  door_leakage_config={},
+  door_openings={},
+  door_roles={}
 ) => {
     console.log("elementList at api call: ", elementList)
     let bodyContent = JSON.stringify( {
       elementList,
-
-
       z,
       wall_height,
       wall_thickness,
@@ -101,10 +108,20 @@ export const sendFdsData = async (
       px_per_m,
       fire_floor,
       total_floors,
-      stair_enclosure_roof_z      
+      stair_enclosure_roof_z,
+      scenario_type,
+      sim_end_time,
+      include_sensors,
+      corridor_sensor_heights,
+      stair_sensor_heights,
+      is_sprinklered,
+      door_leakages_enabled,
+      door_leakage_config,
+      door_openings,
+      door_roles
     } )
     console.log("bodyContent: ", bodyContent)
-    const response = await fetch(`${server_urls.server}/fds`, {
+    const response = await fetch(`${server_urls.localhost}/fds`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -169,7 +186,7 @@ export const sendTimeEqData = async (
         fireResistancePeriod
     } )
     console.log("body: ", bodyContent)
-    const response = await fetch(`${server_urls.server}/timeEq`, {
+    const response = await fetch(`${server_urls.localhost}/timeEq`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

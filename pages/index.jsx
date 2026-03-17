@@ -130,6 +130,7 @@ export default function Home() {
   const [uploading, setUploading] = useState(false)
   const [selectedImage, setSelectedImage] = useState("")
   const [selectedFile, setSelectedFile] = useState()
+  const [isContinuing, setIsContinuing] = useState(false) // true when resuming a saved project
   // const [ canvasDimensions, setCanvasDimensions ] = useState({})
   const canvasDimensions = useStore((state) => state.canvasDimensions)
   const setCanvasDimensions = useStore((state) => state.setCanvasDimensions)  
@@ -148,9 +149,17 @@ export default function Home() {
   const setTool = useStore((state) => state.setTool)
 
   const elements = useStore((state) => state.elements)
+  const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
   const setPdfData = useStore((state) => state.setPdfData)
   const pdfData = useStore((state) => state.pdfData)
   const toggleIsPdfGreyscale = useStore((state) => state.toggleIsPdfGreyscale)
+  const resetProject = useStore((state) => state.resetProject)
+
+  // Check if there's a saved project (persisted state has been rehydrated)
+  const [hasSavedProject, setHasSavedProject] = useState(false)
+  useEffect(() => {
+    setHasSavedProject(pixelsPerMesh !== 1 || elements.length > 0)
+  }, [pixelsPerMesh, elements])
 
   console.log("elements log: ", elements)
   // const setElements = useStore((state) => state.setElements)
@@ -215,7 +224,12 @@ export default function Home() {
               }
               context.putImageData(greyScaledImageData, 0, 0);
               toggleIsPdfGreyscale(true)
-              setSelectedFile(true);
+              setSelectedFile(true)
+              // If continuing a saved project, skip scale and go straight to drawing
+              if (isContinuing) {
+                setTool("selection")
+                setComment("obstruction")
+              }
               setPdfData({
                 "coloured": colouredImageData,
                 "greyscaled": greyScaledImageData
@@ -322,33 +336,72 @@ export default function Home() {
 )
 
 
+  const handleNewProject = () => {
+    if (selectedFile) {
+      if (!window.confirm('Start a new project? All current progress will be cleared.')) return
+    }
+    resetProject()
+    setSelectedFile(undefined)
+    setIsContinuing(false)
+  }
+
+  const handleContinueProject = () => {
+    setIsContinuing(true)
+  }
+
+  // Landing screen: show when no PDF loaded and not yet chosen a path
+  const showLanding = !selectedFile && !isContinuing && hasSavedProject
+
   return (
     <>
-      {/* TODO: have label disappear when file uploaded */}
+      {/* New Project button - always visible when working */}
+      {selectedFile && (
+        <button
+          onClick={handleNewProject}
+          className="fixed top-2 right-2 z-50 text-white bg-red-700 hover:bg-red-800 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-sm px-4 py-2"
+          type="button"
+        >
+          New Project
+        </button>
+      )}
       {tool != "scale" ? (<>
-      {/* import Toolbar component */}
-      {menuOverlay} 
+      {menuOverlay}
       </>
       )
       :null}
-      {/* TODO: move bottom menu and mode popup to toolbar */}
       {showModePopup && <ModePopup setToggleShowPopup={setShowModePopup}/>}
       <div>
-        { selectedFile ? (<>
-          <Canvas 
-            // tool={tool} 
-            // setTool={setTool} 
-            dimensions={canvasDimensions} 
-            isDevMode={dev_mode} 
-            // comment={comment} 
-            // setComment={setComment}
+        { showLanding ? (
+          <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+            <FDRobot hintText={'Welcome back'} />
+            <div className="flex gap-4">
+              <button
+                onClick={handleContinueProject}
+                className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-lg px-8 py-3"
+                type="button"
+              >
+                Continue Project
+              </button>
+              <button
+                onClick={handleNewProject}
+                className="text-white bg-red-700 hover:bg-red-800 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-lg px-8 py-3"
+                type="button"
+              >
+                New Project
+              </button>
+            </div>
+          </div>
+        ) : selectedFile ? (<>
+          <Canvas
+            dimensions={canvasDimensions}
+            isDevMode={dev_mode}
             />
         </>
-        ) : 
+        ) :
             <>
       <div>
         <label>
-          <input 
+          <input
             id="image"
             name="image"
             type="file"
@@ -356,20 +409,14 @@ export default function Home() {
             onChange={handleFileChange}
           />
         </label>
-        {/* TODO: move test buttons to own component & only show if localhost? */}
-        <button 
-
-        onClick={sendElementData}
-        >Test API</button>
-        
+        <button onClick={sendElementData}>Test API</button>
           <TestButtons />
-
       </div>
-              <FDRobot hintText={'Please upload PDF'} />
+              <FDRobot hintText={isContinuing ? 'Upload the same PDF to continue' : 'Please upload PDF'} />
             </>
-              
+
               }
-        <canvas 
+        <canvas
         ref={pdfCanvasRef}
         className='z-1'
         />

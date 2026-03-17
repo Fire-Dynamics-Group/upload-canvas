@@ -60,7 +60,8 @@ const useStore = create(persist((set) => {
 
         // Device settings
         includeSensors: true,
-        sensorHeights: { moe: [2.0], pressure: [0.5, 1.0, 1.5, 2.0] },
+        corridorSensorHeights: [2.0], // above fire floor, all types (temp, pressure, vis, velocity)
+        stairSensorHeights: [0.5, 1.0, 1.5, 2.0], // above fire floor, tree of sensors at each stair position
         isSprinklered: true,
 
         // Door role assignment: { [doorId]: "apartment" | "stair" | "lobby" | "other" }
@@ -219,8 +220,11 @@ const useStore = create(persist((set) => {
         setIncludeSensors: (newVal) => set(() => ({
             includeSensors: newVal
         })),
-        setSensorHeights: (newVal) => set(() => ({
-            sensorHeights: newVal
+        setCorridorSensorHeights: (newVal) => set(() => ({
+            corridorSensorHeights: newVal
+        })),
+        setStairSensorHeights: (newVal) => set(() => ({
+            stairSensorHeights: newVal
         })),
         setIsSprinklered: (newVal) => set(() => ({
             isSprinklered: newVal
@@ -246,12 +250,55 @@ const useStore = create(persist((set) => {
         setDoorOpenings: (newVal) => set(() => ({
             doorOpenings: newVal
         })),
+
+        // Reset all persisted state for a new project
+        resetProject: () => {
+            localStorage.removeItem('upload-canvas-fds')
+            set(() => ({
+                elements: [],
+                tool: "scale",
+                selectedElement: null,
+                comment: "",
+                canvasDimensions: {},
+                pixelsPerMesh: 1,
+                originPixels: null,
+                convertedPoints: [],
+                hasDoor: false,
+                pdfData: null,
+                pdfIsGreyscale: false,
+                pdfCanvasRef: null,
+                totalHeatFlux: 476,
+                heatEndpoint: 1.3333,
+                fireFloorZ: 0,
+                fireFloorNumber: 0,
+                numberOfStairs: 0,
+                totalFloors: 8,
+                stairRoofZ: 25,
+                wallHeight: 3,
+                topStoreyHeight: 20,
+                commonCorridorMode: false,
+                scenarioType: "MOE",
+                simEndTime: 300,
+                includeSensors: true,
+                corridorSensorHeights: [2.0],
+                stairSensorHeights: [0.5, 1.0, 1.5, 2.0],
+                isSprinklered: true,
+                doorRoles: {},
+                highlightedDoorId: null,
+                doorLeakagesEnabled: true,
+                doorLeakageConfig: {},
+                doorOpenings: { ...defaultDoorTimings.MOE },
+                stairObject: [],
+            }))
+        },
 }
 }, {
     name: 'upload-canvas-fds',
     partialize: (state) => ({
         elements: state.elements,
+        canvasDimensions: state.canvasDimensions,
         pixelsPerMesh: state.pixelsPerMesh,
+        comment: state.comment,
         convertedPoints: state.convertedPoints,
         originPixels: state.originPixels,
         hasDoor: state.hasDoor,
@@ -269,7 +316,8 @@ const useStore = create(persist((set) => {
         scenarioType: state.scenarioType,
         simEndTime: state.simEndTime,
         includeSensors: state.includeSensors,
-        sensorHeights: state.sensorHeights,
+        corridorSensorHeights: state.corridorSensorHeights,
+        stairSensorHeights: state.stairSensorHeights,
         isSprinklered: state.isSprinklered,
         doorRoles: state.doorRoles,
         doorLeakagesEnabled: state.doorLeakagesEnabled,

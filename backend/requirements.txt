@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+numpy
+pandas
+matplotlib
+docxtpl
+docx-mailmerge2
+python-docx

@@ -33,6 +33,17 @@ const Toolbar = ({setShowModePopup}) => {
     const topStoreyHeight = useStore((state) => state.topStoreyHeight)
     // add in above
     const stairRoofZ = useStore((state) => state.stairRoofZ)
+    const commonCorridorMode = useStore((state) => state.commonCorridorMode)
+    const scenarioType = useStore((state) => state.scenarioType)
+    const simEndTime = useStore((state) => state.simEndTime)
+    const includeSensors = useStore((state) => state.includeSensors)
+    const corridorSensorHeights = useStore((state) => state.corridorSensorHeights)
+    const stairSensorHeights = useStore((state) => state.stairSensorHeights)
+    const isSprinklered = useStore((state) => state.isSprinklered)
+    const doorLeakagesEnabled = useStore((state) => state.doorLeakagesEnabled)
+    const doorLeakageConfig = useStore((state) => state.doorLeakageConfig)
+    const doorOpenings = useStore((state) => state.doorOpenings)
+    const doorRoles = useStore((state) => state.doorRoles)
     // const handleWalkingInput = useStore((state) => state.handleWalkingInput)
     // const [walkingInput, setWalkingInput] = useState(null)
     const [showWalkingPopup, setShowWalkingPopup] = useState(false)
@@ -43,8 +54,8 @@ const Toolbar = ({setShowModePopup}) => {
     const pdfData = useStore((state) => state.pdfData)
     const toggleIsPdfGreyscale = useStore((state) => state.toggleIsPdfGreyscale)
 
-    const [showFireInputsPopup, setShowFireInputsPopup] = useState(false) 
-    const [showFDSInputsPopup, setShowFDSInputsPopup] = useState(false) 
+    const [showFireInputsPopup, setShowFireInputsPopup] = useState(false)
+    const [showFDSInputsPopup, setShowFDSInputsPopup] = useState(false)
 
     const totalHeatFlux = useStore((state) => state.totalHeatFlux)
     const heatEndPoint = useStore((state) => state.heatEndPoint)
@@ -131,15 +142,26 @@ const [errorList, setErrorList] = useState(defaultErrorList)
       function handleFDSClick() {
         console.log("handleFDSClick elements: ", elements)
         sendFdsData(
-                    elements, 
-                    fireFloorZ, 
+                    elements,
+                    fireFloorZ,
                     wallHeight,
-                    topStoreyHeight, // stairheight
+                    topStoreyHeight,
                     fireFloorNumber,
-                    totalFloors, 
-                    stairRoofZ
+                    totalFloors,
+                    stairRoofZ,
+                    0.2, // wall_thickness
+                    33.6, // px_per_m
+                    commonCorridorMode ? scenarioType : null,
+                    simEndTime,
+                    includeSensors,
+                    corridorSensorHeights,
+                    stairSensorHeights,
+                    isSprinklered,
+                    doorLeakagesEnabled,
+                    doorLeakageConfig,
+                    doorOpenings,
+                    doorRoles
                     )
-        // send api call -> with all elements
       }
 
       function handleFDSInput() {
@@ -212,7 +234,25 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                     setComment("landing")
                 }}
                 />
-                <label htmlFor="rectangle">Stair Landing</label> 
+                <label htmlFor="rectangle">Stair Landing</label>
+                {/* Inlet */}
+                <input type="radio"
+                id="inlet"
+                checked={tool === "polyline" && comment == 'inlet'}
+                onChange={() => {
+                setTool("polyline")
+                setComment("inlet")
+                }} />
+                <label htmlFor="inlet">Inlet</label>
+                {/* Extract */}
+                <input type="radio"
+                id="extract"
+                checked={tool === "polyline" && comment == 'extract'}
+                onChange={() => {
+                setTool("polyline")
+                setComment("extract")
+                }} />
+                <label htmlFor="extract">Extract</label>
 
         </>
     )
@@ -239,9 +279,9 @@ const [errorList, setErrorList] = useState(defaultErrorList)
       {showFireInputsPopup && <FireInputsPopup handleUserInput={handleFireInput}/>}
       {showWalkingPopup && <WalkingSpeedPopup handleUserInput={handleWalkingInput}/>}
         <div className="text-center">
-          <button 
+          <button
             onClick={handleModeButtonClick}
-            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
+            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
             type="button"
             >
             Change Mode
