@@ -26,7 +26,9 @@ yarn-error.log*
 
 # local env files
 .env*.local
-backend/.env
+
+# backend lives in its own repo (backendForNextApp on Railway)
+backend/
 
 # vercel
 .vercel
