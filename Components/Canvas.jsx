@@ -47,6 +47,8 @@ function Canvas({dimensions, isDevMode}) {
     const currentMode = useStore((state) => state.currentMode)
     const highlightedDoorId = useStore((state) => state.highlightedDoorId)
     const doorRoles = useStore((state) => state.doorRoles)
+    const highlightedLandingId = useStore((state) => state.highlightedLandingId)
+    const landingRoles = useStore((state) => state.landingRoles)
 
 
     const [isDrawing, setIsDrawing] = useState(false)
@@ -656,10 +658,39 @@ function Canvas({dimensions, isDevMode}) {
                         }
                     }
                 }
+
+                // Draw highlight ring + role label for highlighted or role-assigned landings
+                if (element.comments === 'landing') {
+                    const isHighlighted = highlightedLandingId === element.id
+                    const role = landingRoles[element.id]
+                    if (isHighlighted || role) {
+                        const pts = element.points
+                        const cx = (pts[0].x + pts[1].x) / 2
+                        const cy = (pts[0].y + pts[1].y) / 2
+                        if (isHighlighted) {
+                            context.beginPath()
+                            context.arc(cx, cy, 20, 0, Math.PI * 2)
+                            context.strokeStyle = 'yellow'
+                            context.lineWidth = 3
+                            context.stroke()
+                            context.lineWidth = 1
+                        }
+                        if (role) {
+                            const label = role === 'floor' ? 'Floor Landing' : 'Half Landing'
+                            context.font = '11px sans-serif'
+                            context.fillStyle = isHighlighted ? 'yellow' : 'white'
+                            context.strokeStyle = 'black'
+                            context.lineWidth = 3
+                            context.strokeText(label, cx + 12, cy - 12)
+                            context.fillText(label, cx + 12, cy - 12)
+                            context.lineWidth = 1
+                        }
+                    }
+                }
             }
         })
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles])
 
     function isMesh(currentEl) {
         if (currentEl["comments"].toLowerCase().includes("mesh")) {                       

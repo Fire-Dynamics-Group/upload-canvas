@@ -44,6 +44,11 @@ const Toolbar = ({setShowModePopup}) => {
     const doorLeakageConfig = useStore((state) => state.doorLeakageConfig)
     const doorOpenings = useStore((state) => state.doorOpenings)
     const doorRoles = useStore((state) => state.doorRoles)
+    const landingRoles = useStore((state) => state.landingRoles)
+    const landingUpSide = useStore((state) => state.landingUpSide)
+    const aovMode = useStore((state) => state.aovMode)
+    const aovActivationTime = useStore((state) => state.aovActivationTime)
+    const obstructionTransparency = useStore((state) => state.obstructionTransparency)
     // const handleWalkingInput = useStore((state) => state.handleWalkingInput)
     // const [walkingInput, setWalkingInput] = useState(null)
     const [showWalkingPopup, setShowWalkingPopup] = useState(false)
@@ -160,7 +165,12 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                     doorLeakagesEnabled,
                     doorLeakageConfig,
                     doorOpenings,
-                    doorRoles
+                    doorRoles,
+                    landingRoles,
+                    landingUpSide,
+                    obstructionTransparency,
+                    aovMode,
+                    aovActivationTime
                     )
       }
 

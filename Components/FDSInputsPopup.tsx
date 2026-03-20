@@ -18,6 +18,12 @@ const FDSInputsPopup = ({handleUserInput}) => {
     const topStoreyHeight = useStore((state) => state.topStoreyHeight)
     const setTopStoreyHeight = useStore((state) => state.setTopStoreyHeight)
 
+    // AOV settings
+    const aovMode = useStore((state) => state.aovMode)
+    const setAovMode = useStore((state) => state.setAovMode)
+    const aovActivationTime = useStore((state) => state.aovActivationTime)
+    const setAovActivationTime = useStore((state) => state.setAovActivationTime)
+
     // Common corridor mode
     const commonCorridorMode = useStore((state) => state.commonCorridorMode)
     const setCommonCorridorMode = useStore((state) => state.setCommonCorridorMode)
@@ -53,9 +59,22 @@ const FDSInputsPopup = ({handleUserInput}) => {
     const setDoorRoles = useStore((state) => state.setDoorRoles)
     const setHighlightedDoorId = useStore((state) => state.setHighlightedDoorId)
 
+    // Landing roles & highlighting
+    const landingRoles = useStore((state) => state.landingRoles)
+    const setLandingRoles = useStore((state) => state.setLandingRoles)
+    const setHighlightedLandingId = useStore((state) => state.setHighlightedLandingId)
+    const landingUpSide = useStore((state) => state.landingUpSide)
+    const setLandingUpSide = useStore((state) => state.setLandingUpSide)
+
+    // Obstruction transparency
+    const obstructionTransparency = useStore((state) => state.obstructionTransparency)
+    const setObstructionTransparency = useStore((state) => state.setObstructionTransparency)
+
     const elements = useStore((state) => state.elements)
     // @ts-ignore
     const doorElements = elements.filter(element => element.comments === 'door')
+    // @ts-ignore
+    const landingElements = elements.filter(element => element.comments === 'landing')
 
     const handleLeakageConfigChange = (doorId: string, field: string, value: any) => {
         setDoorLeakageConfig({
@@ -67,7 +86,12 @@ const FDSInputsPopup = ({handleUserInput}) => {
         })
     }
 
-    type TabType = 'general' | 'scenario' | 'doors' | 'devices'
+    const handleTransparencyChange = (key: string, value: string) => {
+        const numVal = Math.min(1, Math.max(0, parseFloat(value) || 0))
+        setObstructionTransparency({ ...obstructionTransparency, [key]: numVal })
+    }
+
+    type TabType = 'general' | 'scenario' | 'doors' | 'devices' | 'stairs' | 'display'
     const [activeTab, setActiveTab] = useState<TabType>('general')
 
     const TabButton = ({ tab, label }: { tab: TabType, label: string }) => (
@@ -129,6 +153,38 @@ const FDSInputsPopup = ({handleUserInput}) => {
                 value={stairRoofZ}
                 onChange={(e) => setStairRoofZ(e.target.value)}
             />
+
+            <h2 className="text-lg font-bold mb-2">AOV Activation</h2>
+            <div className="flex flex-col gap-2 mb-4">
+                {[
+                    { value: "always_open", label: "Always Open" },
+                    { value: "timed", label: "Timed" },
+                    { value: "sprinkler", label: "Sprinkler Detection" },
+                ].map((option) => (
+                    <label key={option.value} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="aovMode"
+                            value={option.value}
+                            checked={aovMode === option.value}
+                            onChange={(e) => setAovMode(e.target.value)}
+                        />
+                        <span>{option.label}</span>
+                    </label>
+                ))}
+            </div>
+            {aovMode === "timed" && (
+                <>
+                    <h2 className="text-lg font-bold mb-2">AOV Activation Time (s):</h2>
+                    <input
+                        type="number"
+                        className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                        value={aovActivationTime ?? ""}
+                        placeholder="e.g. 40"
+                        onChange={(e) => setAovActivationTime(e.target.value ? parseFloat(e.target.value) : null)}
+                    />
+                </>
+            )}
         </>
     )
 
@@ -361,6 +417,255 @@ const FDSInputsPopup = ({handleUserInput}) => {
         </>
     )
 
+    const StairInputs = () => {
+        // Compute orientation from landing centers
+        const floorLanding = landingElements.find((el: any) => landingRoles[el.id] === 'floor')
+        const halfLanding = landingElements.find((el: any) => landingRoles[el.id] === 'half')
+
+        let orientation: 'horizontal' | 'vertical' | null = null
+        if (floorLanding && halfLanding) {
+            const floorCx = (floorLanding.points[0].x + floorLanding.points[1].x) / 2
+            const floorCy = (floorLanding.points[0].y + floorLanding.points[1].y) / 2
+            const halfCx = (halfLanding.points[0].x + halfLanding.points[1].x) / 2
+            const halfCy = (halfLanding.points[0].y + halfLanding.points[1].y) / 2
+            const dx = Math.abs(floorCx - halfCx)
+            const dy = Math.abs(floorCy - halfCy)
+            orientation = dx > dy ? 'horizontal' : 'vertical'
+        }
+
+        const bothAssigned = floorLanding && halfLanding
+
+        // SVG schematic
+        const svgWidth = 280
+        const svgHeight = 200
+        const pad = 20
+
+        // For vertical: floor at bottom, half at top, split left/right
+        // For horizontal: floor on left, half on right, split top/bottom
+        const renderSchematic = () => {
+            if (!orientation) return null
+
+            const landingW = orientation === 'vertical' ? svgWidth - pad * 2 : (svgWidth - pad * 3) / 2
+            const landingH = orientation === 'vertical' ? (svgHeight - pad * 3) / 2 : svgHeight - pad * 2
+
+            let floorX: number, floorY: number, halfX: number, halfY: number
+
+            if (orientation === 'vertical') {
+                floorX = pad
+                floorY = svgHeight - pad - landingH
+                halfX = pad
+                halfY = pad
+            } else {
+                floorX = pad
+                floorY = pad
+                halfX = svgWidth - pad - landingW
+                halfY = pad
+            }
+
+            // Split labels for floor landing halves
+            const halves: { key: string; x: number; y: number; w: number; h: number }[] = []
+            if (orientation === 'vertical') {
+                // Split left/right
+                halves.push({ key: 'left', x: floorX, y: floorY, w: landingW / 2, h: landingH })
+                halves.push({ key: 'right', x: floorX + landingW / 2, y: floorY, w: landingW / 2, h: landingH })
+            } else {
+                // Split top/bottom
+                halves.push({ key: 'top', x: floorX, y: floorY, w: landingW, h: landingH / 2 })
+                halves.push({ key: 'bottom', x: floorX, y: floorY + landingH / 2, w: landingW, h: landingH / 2 })
+            }
+
+            // Arrow pointing from selected half toward half landing
+            const renderArrow = (half: typeof halves[0]) => {
+                const cx = half.x + half.w / 2
+                const cy = half.y + half.h / 2
+                let dx = 0, dy = 0
+                const arrowLen = 15
+                if (orientation === 'vertical') {
+                    dy = -arrowLen // point up toward half landing
+                } else {
+                    dx = arrowLen // point right toward half landing
+                }
+                return (
+                    <g key="arrow">
+                        <line x1={cx} y1={cy + 8} x2={cx + dx} y2={cy + 8 + dy}
+                            stroke="white" strokeWidth={2} markerEnd="url(#arrowhead)" />
+                    </g>
+                )
+            }
+
+            return (
+                <svg width={svgWidth} height={svgHeight} className="border rounded bg-gray-100 mt-2">
+                    <defs>
+                        <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                            <polygon points="0 0, 8 3, 0 6" fill="white" />
+                        </marker>
+                    </defs>
+
+                    {/* Half landing */}
+                    <rect x={halfX} y={halfY} width={landingW} height={landingH}
+                        fill="#6b7280" stroke="#374151" strokeWidth={2} rx={2} />
+                    <text x={halfX + landingW / 2} y={halfY + landingH / 2} textAnchor="middle"
+                        dominantBaseline="middle" fontSize={11} fill="white" fontWeight="bold">
+                        Half Landing
+                    </text>
+
+                    {/* Floor landing halves */}
+                    {halves.map(half => {
+                        const isSelected = landingUpSide === half.key
+                        return (
+                            <g key={half.key}>
+                                <rect x={half.x} y={half.y} width={half.w} height={half.h}
+                                    fill={isSelected ? '#22c55e' : '#9ca3af'}
+                                    stroke="#374151" strokeWidth={2} rx={2}
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={() => setLandingUpSide(half.key)}
+                                />
+                                <text x={half.x + half.w / 2} y={half.y + half.h / 2 - 6}
+                                    textAnchor="middle" dominantBaseline="middle"
+                                    fontSize={11} fill="white" fontWeight="bold">
+                                    {isSelected ? 'UP' : 'DOWN'}
+                                </text>
+                                <text x={half.x + half.w / 2} y={half.y + half.h / 2 + 8}
+                                    textAnchor="middle" dominantBaseline="middle"
+                                    fontSize={9} fill="white">
+                                    ({half.key})
+                                </text>
+                                {isSelected && renderArrow(half)}
+                            </g>
+                        )
+                    })}
+
+                    {/* Dashed divider on floor landing */}
+                    {orientation === 'vertical' ? (
+                        <line x1={floorX + landingW / 2} y1={floorY}
+                            x2={floorX + landingW / 2} y2={floorY + landingH}
+                            stroke="#374151" strokeWidth={1} strokeDasharray="4,3" />
+                    ) : (
+                        <line x1={floorX} y1={floorY + landingH / 2}
+                            x2={floorX + landingW} y2={floorY + landingH / 2}
+                            stroke="#374151" strokeWidth={1} strokeDasharray="4,3" />
+                    )}
+
+                    {/* Floor landing label */}
+                    <text x={floorX + landingW / 2} y={orientation === 'vertical' ? floorY - 5 : svgHeight - 5}
+                        textAnchor="middle" fontSize={10} fill="#374151" fontWeight="bold">
+                        Floor Landing
+                    </text>
+                </svg>
+            )
+        }
+
+        return (
+            <>
+                <h2 className="text-lg font-bold mb-2">Stair Landing Assignment</h2>
+                {landingElements.length < 2 ? (
+                    <p className="text-sm text-amber-600 mb-3">
+                        Draw at least 2 landing rectangles on the canvas using the &quot;Stair Landing&quot; tool.
+                    </p>
+                ) : (
+                    <>
+                        <p className="text-sm text-gray-500 mb-3">Hover to highlight on canvas. Assign each landing a role.</p>
+                        <div className="mb-4">
+                            {/* @ts-ignore */}
+                            {landingElements.map((landing, idx) => (
+                                <div
+                                    key={landing.id}
+                                    className="mb-3 border-l-4 pl-3 py-1 cursor-pointer transition-colors"
+                                    style={{ borderColor: landingRoles[landing.id] ? '#3b82f6' : '#d1d5db' }}
+                                    onMouseEnter={() => setHighlightedLandingId(landing.id)}
+                                    onMouseLeave={() => setHighlightedLandingId(null)}
+                                >
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <span className="font-bold text-sm min-w-[80px]">Landing {idx + 1}</span>
+                                        <select
+                                            className="border border-gray-300 px-2 py-1 rounded-md text-sm flex-1"
+                                            value={landingRoles[landing.id] || ''}
+                                            onChange={(e) => {
+                                                const newRoles = { ...landingRoles }
+                                                if (e.target.value) {
+                                                    newRoles[landing.id] = e.target.value
+                                                } else {
+                                                    delete newRoles[landing.id]
+                                                }
+                                                setLandingRoles(newRoles)
+                                            }}
+                                        >
+                                            <option value="">-- Assign role --</option>
+                                            <option value="floor">Floor Landing</option>
+                                            <option value="half">Half Landing</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {bothAssigned && (
+                            <>
+                                <h2 className="text-lg font-bold mb-2">Stair Direction</h2>
+                                <p className="text-sm text-gray-500 mb-2">
+                                    Click the half of the floor landing where stairs go <strong>up</strong>.
+                                    Orientation: <strong>{orientation}</strong>
+                                </p>
+                                {renderSchematic()}
+                                {landingUpSide && (
+                                    <p className="text-sm text-green-600 mt-2">
+                                        Stairs go up from the <strong>{landingUpSide}</strong> half of the floor landing.
+                                    </p>
+                                )}
+                            </>
+                        )}
+                    </>
+                )}
+            </>
+        )
+    }
+
+    const DisplayInputs = () => (
+        <>
+            <h2 className="text-lg font-bold mb-2">Obstruction Transparency</h2>
+            <p className="text-sm text-gray-500 mb-4">0 = opaque, 1 = fully transparent</p>
+
+            <div className="flex items-center gap-2 mb-3">
+                <label className="min-w-[150px] text-sm font-medium">Stair Walls:</label>
+                <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    max="1"
+                    className="w-24 border border-gray-300 px-3 py-2 rounded-md"
+                    value={obstructionTransparency?.stairWalls ?? 0.25}
+                    onChange={(e) => handleTransparencyChange('stairWalls', e.target.value)}
+                />
+            </div>
+
+            <div className="flex items-center gap-2 mb-3">
+                <label className="min-w-[150px] text-sm font-medium">Stair Roof:</label>
+                <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    max="1"
+                    className="w-24 border border-gray-300 px-3 py-2 rounded-md"
+                    value={obstructionTransparency?.stairRoof ?? 0.25}
+                    onChange={(e) => handleTransparencyChange('stairRoof', e.target.value)}
+                />
+            </div>
+
+            <div className="flex items-center gap-2 mb-3">
+                <label className="min-w-[150px] text-sm font-medium">Fire Floor Walls:</label>
+                <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    max="1"
+                    className="w-24 border border-gray-300 px-3 py-2 rounded-md"
+                    value={obstructionTransparency?.fireFloorWalls ?? 0.0}
+                    onChange={(e) => handleTransparencyChange('fireFloorWalls', e.target.value)}
+                />
+            </div>
+        </>
+    )
+
     function handleClick() {
         let object = {
             fireFloorZ: fireFloorZ,
@@ -379,6 +684,8 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     <TabButton tab="scenario" label="Scenario" />
                     <TabButton tab="doors" label="Doors" />
                     <TabButton tab="devices" label="Devices" />
+                    <TabButton tab="stairs" label="Stairs" />
+                    <TabButton tab="display" label="Display" />
                 </div>
 
                 <div className="mt-4">
@@ -386,6 +693,8 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     {activeTab === 'scenario' && <ScenarioInputs />}
                     {activeTab === 'doors' && <DoorInputs />}
                     {activeTab === 'devices' && <DeviceInputs />}
+                    {activeTab === 'stairs' && <StairInputs />}
+                    {activeTab === 'display' && <DisplayInputs />}
                 </div>
 
                 <button className="px-4 py-2 bg-blue-500 text-white rounded-lg mt-4" onClick={handleClick}>

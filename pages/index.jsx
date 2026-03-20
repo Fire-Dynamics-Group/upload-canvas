@@ -1,6 +1,6 @@
 import Image from 'next/image';
 import Canvas from '../Components/Canvas'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import FDRobot from '../Components/FDRobot'
 import useStore from '../store/useStore'
 import { saveAs } from 'file-saver';
@@ -9,105 +9,52 @@ import Toolbar from '../Components/Toolbar'
 import ErrorPopup from '../Components/ErrorPopup'
 
 import TestButtons from '../Components/TestButtons'
+import { savePdfToIndexedDB, loadPdfFromIndexedDB } from '../utils/pdfStorage'
+import {
+  createProject,
+  saveProjectToServer,
+  loadProject,
+  loadFloorDetail,
+  uploadFloorPdf,
+  getFloorPdfUrl,
+} from '../Components/ApiCalls'
 
 
-  /**Features:
-   * user selects pdf image  
-   * pdf added to background
-   * user can draw polyline
-   * gridlines arbitrary 
-   * allow user to configure scale -> distance between two points
-   * gridlines to be calculated from scale
-   * allow mesh rectangles to be drawn
-   * ctrl for ortho lines
-   * points can be drawn
-   * test download of data as .fds file from frontend
-   * send elements as param to fastapi
-   * allow naming of elements from list or similar to differentiate
-   * 
-   * TODO: 
-   * allow edit/undo of polylines and edit size of rects etc
-   * generate stairs from mock data
-   * componentise areas of app for fds generation -> allow points to be located on x and y using scale for other use cases
-   * 
-   * FUTURE: 
-   * migrate state to zustand
-   * perhaps allow rotation of pdf?
-   * 
-   * 
-   */
 const server_urls = {
   "localhost": 'http://127.0.0.1:8000',
   "server": 'https://fdsbackend-1-r7337380.deta.app'
 }
-// need scale also
 const testElements = [
   {
     "type": "polyline",
     "points": [
-        {
-            "x": 234.58699702156903,
-            "y": 1418.6927915113936
-        },
-        {
-            "x": 497.1010174980868,
-            "y": 1418.6927915113936
-        },
-        {
-            "x": 497.1010174980868,
-            "y": 1329.3263164555578
-        },
-        {
-            "x": 234.58699702156903,
-            "y": 1329.3263164555578
-        },
-        {
-            "x": 234.58699702156903,
-            "y": 1418.6927915113936
-        }
+        { "x": 234.58699702156903, "y": 1418.6927915113936 },
+        { "x": 497.1010174980868, "y": 1418.6927915113936 },
+        { "x": 497.1010174980868, "y": 1329.3263164555578 },
+        { "x": 234.58699702156903, "y": 1329.3263164555578 },
+        { "x": 234.58699702156903, "y": 1418.6927915113936 }
     ],
     "comments": "obstruction"
-},
-{
-  "type": "rect",
-  "points": [
-      {
-          "x": 184.3183548026614,
-          "y": 1156.178771034876
-      },
-      {
-          "x": 441.24697058818936,
-          "y": 1301.399293000609
-      }
-  ],
-  "comments": "mesh"
-},
-{
-  "type": "polyline",
-  "points": [
-      {
-          "x": 201.0745688756306,
-          "y": 932.7625833952864
-      },
-      {
-          "x": 385.392923678292,
-          "y": 932.7625833952864
-      },
-      {
-          "x": 385.392923678292,
-          "y": 1061.2268912880504
-      },
-      {
-          "x": 201.0745688756306,
-          "y": 1061.2268912880504
-      },
-      {
-          "x": 201.0745688756306,
-          "y": 932.7625833952864
-      }
-  ],
-  "comments": "stairObstruction"
-}
+  },
+  {
+    "type": "rect",
+    "points": [
+        { "x": 184.3183548026614, "y": 1156.178771034876 },
+        { "x": 441.24697058818936, "y": 1301.399293000609 }
+    ],
+    "comments": "mesh"
+  },
+  {
+    "type": "polyline",
+    "points": [
+        { "x": 201.0745688756306, "y": 932.7625833952864 },
+        { "x": 385.392923678292, "y": 932.7625833952864 },
+        { "x": 385.392923678292, "y": 1061.2268912880504 },
+        { "x": 201.0745688756306, "y": 1061.2268912880504 },
+        { "x": 201.0745688756306, "y": 932.7625833952864 }
+    ],
+    "comments": "stairObstruction"
+  }
 ]
 
 // Check if we're in the browser environment
@@ -116,24 +63,21 @@ const isBrowser = typeof window !== "undefined";
 // Only import pdfjs if we're in the browser
 let pdfjs;
 if (isBrowser) {
-  // pdfjs = require('pdfjs-dist/build/pdf');
   pdfjs = require('pdfjs-dist/webpack');
-
-  // Set the workerSrc
   pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.js';
 }
 
 export default function Home() {
-  // console.log("process.env.DEV_MODE: ", process.env.DEV_MODE)
   let dev_mode = true
-  // states for uploading file
+  const [hasMounted, setHasMounted] = useState(false)
+  useEffect(() => { setHasMounted(true) }, [])
   const [uploading, setUploading] = useState(false)
   const [selectedImage, setSelectedImage] = useState("")
   const [selectedFile, setSelectedFile] = useState()
-  const [isContinuing, setIsContinuing] = useState(false) // true when resuming a saved project
-  // const [ canvasDimensions, setCanvasDimensions ] = useState({})
+  const [isContinuing, setIsContinuing] = useState(false)
+  const [isLoadingFromServer, setIsLoadingFromServer] = useState(false)
   const canvasDimensions = useStore((state) => state.canvasDimensions)
-  const setCanvasDimensions = useStore((state) => state.setCanvasDimensions)  
+  const setCanvasDimensions = useStore((state) => state.setCanvasDimensions)
   const comment = useStore((state) => state.comment)
   const setComment = useStore((state) => state.setComment)
 
@@ -144,7 +88,6 @@ export default function Home() {
 
   const pdfCanvasRef = useStore((state) => state.pdfCanvasRef)
 
-  // const [tool, setTool] = useState("scale")
   const tool = useStore((state) => state.tool)
   const setTool = useStore((state) => state.setTool)
 
@@ -155,109 +98,238 @@ export default function Home() {
   const toggleIsPdfGreyscale = useStore((state) => state.toggleIsPdfGreyscale)
   const resetProject = useStore((state) => state.resetProject)
 
+  // Project persistence state
+  const projectId = useStore((state) => state.projectId)
+  const floorId = useStore((state) => state.floorId)
+  const projectName = useStore((state) => state.projectName)
+  const saveStatus = useStore((state) => state.saveStatus)
+  const setProjectId = useStore((state) => state.setProjectId)
+  const setFloorId = useStore((state) => state.setFloorId)
+  const setProjectName = useStore((state) => state.setProjectName)
+  const setSaveStatus = useStore((state) => state.setSaveStatus)
+  const buildSavePayload = useStore((state) => state.buildSavePayload)
+  const hydrateFromServer = useStore((state) => state.hydrateFromServer)
+
   // Check if there's a saved project (persisted state has been rehydrated)
   const [hasSavedProject, setHasSavedProject] = useState(false)
   useEffect(() => {
-    setHasSavedProject(pixelsPerMesh !== 1 || elements.length > 0)
-  }, [pixelsPerMesh, elements])
+    setHasSavedProject(projectId != null || pixelsPerMesh !== 1 || elements.length > 0)
+  }, [pixelsPerMesh, elements, projectId])
+
+  // --- Clear stale legacy localStorage (elements exist but no projectId) ---
+  const hasCheckedLegacy = useRef(false)
+  useEffect(() => {
+    if (hasCheckedLegacy.current) return
+    hasCheckedLegacy.current = true
+    if (!projectId && elements.length > 0) {
+      console.log('Clearing stale legacy localStorage (no projectId but elements exist)')
+      resetProject()
+    }
+  }, [projectId, elements, resetProject])
+
+  // --- Auto-load from server on mount ---
+  const hasAttemptedServerLoad = useRef(false)
+  useEffect(() => {
+    if (hasAttemptedServerLoad.current) return
+    if (!projectId || !floorId) return
+    hasAttemptedServerLoad.current = true
+
+    setIsLoadingFromServer(true)
+    ;(async () => {
+      try {
+        // Load project + floor from backend
+        const project = await loadProject(projectId)
+        const floor = project.floors?.find(f => f.id === floorId) || project.floors?.[0]
+        if (!floor) throw new Error("No floor found")
+
+        const floorDetail = await loadFloorDetail(projectId, floor.id)
+        hydrateFromServer(project, floorDetail)
+
+        // Load PDF from S3
+        if (floor.pdf_s3_key) {
+          try {
+            const { url } = await getFloorPdfUrl(projectId, floor.id)
+            await renderPdf(url, true)
+            setIsLoadingFromServer(false)
+            return
+          } catch (pdfErr) {
+            console.warn('Failed to load PDF from S3, trying IndexedDB:', pdfErr)
+          }
+        }
+
+        // Fallback: try IndexedDB
+        const storedPdf = await loadPdfFromIndexedDB()
+        if (storedPdf) {
+          await renderPdf(storedPdf, true)
+        }
+        setIsLoadingFromServer(false)
+      } catch (err) {
+        console.warn('Failed to load from server, falling back to local state:', err)
+        setIsLoadingFromServer(false)
+      }
+    })()
+  }, [projectId, floorId])
+
+  // --- Debounced auto-save ---
+  const saveTimerRef = useRef(null)
+  const lastSavedRef = useRef(null)
+
+  // Memoize the auto-save function
+  const triggerAutoSave = useCallback(() => {
+    const currentProjectId = useStore.getState().projectId
+    if (!currentProjectId) return
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(async () => {
+      const payload = useStore.getState().buildSavePayload()
+      const payloadStr = JSON.stringify(payload)
+
+      // Skip if nothing changed
+      if (payloadStr === lastSavedRef.current) return
+
+      useStore.getState().setSaveStatus("saving")
+      try {
+        await saveProjectToServer(currentProjectId, payload)
+        lastSavedRef.current = payloadStr
+        useStore.getState().setSaveStatus("saved")
+        // Clear "saved" indicator after 2s
+        setTimeout(() => useStore.getState().setSaveStatus(null), 2000)
+      } catch (err) {
+        console.error('Auto-save failed:', err)
+        useStore.getState().setSaveStatus("error")
+      }
+    }, 2000)
+  }, [])
+
+  // Subscribe to state changes for auto-save (debounced)
+  useEffect(() => {
+    let prevSnapshot = null
+    const unsub = useStore.subscribe((state) => {
+      if (!state.projectId) return
+      const snapshot = JSON.stringify({
+        elements: state.elements,
+        pixelsPerMesh: state.pixelsPerMesh,
+        canvasDimensions: state.canvasDimensions,
+        scenarioType: state.scenarioType,
+        simEndTime: state.simEndTime,
+        totalFloors: state.totalFloors,
+        wallHeight: state.wallHeight,
+        doorRoles: state.doorRoles,
+        doorOpenings: state.doorOpenings,
+        landingRoles: state.landingRoles,
+        aovMode: state.aovMode,
+      })
+      if (snapshot !== prevSnapshot) {
+        prevSnapshot = snapshot
+        triggerAutoSave()
+      }
+    })
+    return () => unsub()
+  }, [triggerAutoSave])
 
   console.log("elements log: ", elements)
-  // const setElements = useStore((state) => state.setElements)
 
-  // useEffect(() => {
-  //   const sendElementData = async () => {
-  //     // console.log("body: ", JSON.stringify({ elements }))
-  //     const response = await fetch('http://127.0.0.1:8000/test', {
-  //       method: 'POST',
-  //       headers: {
-  //         'Content-Type': 'application/json'
-  //       },
-  //       body: JSON.stringify({ testElements }),
-  //     });
-    
-  //     const data = await response.json();
-  //     console.log("data received: ", data)
-    
-  //     return data;
-    
-  //   }
-  //   sendElementData()
-  // }, [])
-  const handleFileChange = (event) => {
-    const file = event.target.files[0];
+  // Shared function to render a PDF onto the canvas from any source
+  const renderPdf = async (pdfSource, skipScale = false) => {
+    if (!pdfCanvasRef.current) return
+    const pdfjs = await import('pdfjs-dist/build/pdf')
 
-    if (file && pdfCanvasRef.current) {
-      const loadPdf = async () => {
-        const pdfjs = await import('pdfjs-dist/build/pdf');
+    // pdfjs accepts a URL string or {data: ArrayBuffer}
+    const source = typeof pdfSource === 'string' ? pdfSource : { data: pdfSource }
+    const loadingTask = pdfjs.getDocument(source)
+    const pdf = await loadingTask.promise
+    const page = await pdf.getPage(1)
 
-        const loadingTask = pdfjs.getDocument(URL.createObjectURL(file));
-        loadingTask.promise.then((pdf) => {
-          const pageNumber = 1;
-          pdf.getPage(pageNumber).then((page) => {
-            const canvas = pdfCanvasRef.current;
-            const context = canvas.getContext('2d');
+    const canvas = pdfCanvasRef.current
+    const context = canvas.getContext('2d')
+    const scale = 1.5
+    const viewport = page.getViewport({ scale })
 
-            const scale = 1.5; //1.5
-            const viewport = page.getViewport({ scale });
-            
+    canvas.height = viewport.height
+    canvas.width = viewport.width
+    setCanvasDimensions({ width: canvas.width, height: canvas.height })
 
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
-            setCanvasDimensions({ width: canvas.width, height: canvas.height }); // needs to be page
+    await page.render({ canvasContext: context, viewport }).promise
+    console.log('Page rendered')
 
-            const renderContext = {
-              canvasContext: context,
-              viewport: viewport,
-            };
-            // save renderContext
-            const renderTask = page.render(renderContext);
-            renderTask.promise.then(() => {
-              console.log('Page rendered');
-              const colouredImageData = context.getImageData(0, 0, canvas.width, canvas.height);
-              const greyScaledImageData = context.getImageData(0, 0, canvas.width, canvas.height);
-              const data = greyScaledImageData.data;
-              for(let i = 0; i < data.length; i += 4) {
-                const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-                data[i]     = avg; // red
-                data[i + 1] = avg; // green
-                data[i + 2] = avg; // blue
-              }
-              context.putImageData(greyScaledImageData, 0, 0);
-              toggleIsPdfGreyscale(true)
-              setSelectedFile(true)
-              // If continuing a saved project, skip scale and go straight to drawing
-              if (isContinuing) {
-                setTool("selection")
-                setComment("obstruction")
-              }
-              setPdfData({
-                "coloured": colouredImageData,
-                "greyscaled": greyScaledImageData
-              })
-            });
-          });
-        });
-      };
-
-      loadPdf();
+    const colouredImageData = context.getImageData(0, 0, canvas.width, canvas.height)
+    const greyScaledImageData = context.getImageData(0, 0, canvas.width, canvas.height)
+    const data = greyScaledImageData.data
+    for (let i = 0; i < data.length; i += 4) {
+      const avg = (data[i] + data[i + 1] + data[i + 2]) / 3
+      data[i] = avg
+      data[i + 1] = avg
+      data[i + 2] = avg
     }
-  };
+    context.putImageData(greyScaledImageData, 0, 0)
+    toggleIsPdfGreyscale(true)
+    setSelectedFile(true)
+    setPdfData({ coloured: colouredImageData, greyscaled: greyScaledImageData })
+
+    if (skipScale) {
+      setTool("selection")
+      setComment("obstruction")
+    }
+  }
+
+  const handleFileChange = async (event) => {
+    const file = event.target.files[0]
+    if (!file) return
+
+    // Save raw PDF bytes to IndexedDB for later restore
+    const arrayBuffer = await file.arrayBuffer()
+    savePdfToIndexedDB(arrayBuffer)
+
+    // Render using a URL (pdfjs prefers this for File objects)
+    await renderPdf(URL.createObjectURL(file), isContinuing)
+
+    // Upload PDF to S3 if we have a project
+    let currentProjectId = useStore.getState().projectId
+    let currentFloorId = useStore.getState().floorId
+
+    // If no project yet, create one + initial floor via bulk save
+    if (!currentProjectId) {
+      try {
+        const project = await createProject("Untitled Project")
+        currentProjectId = project.id
+        // Do an initial save to create floor 0
+        const saved = await saveProjectToServer(currentProjectId, {
+          name: "Untitled Project",
+          settings: {},
+          floors: [{ floor_number: 0, name: "Fire Floor", elements: [] }],
+        })
+        currentFloorId = saved.floors[0]?.id
+        setProjectId(currentProjectId)
+        setFloorId(currentFloorId)
+        setProjectName("Untitled Project")
+      } catch (err) {
+        console.error('Failed to create project:', err)
+        return
+      }
+    }
+
+    // Upload to S3
+    if (currentProjectId && currentFloorId) {
+      try {
+        const pdfFile = new File([arrayBuffer], 'plan.pdf', { type: 'application/pdf' })
+        await uploadFloorPdf(currentProjectId, currentFloorId, pdfFile)
+        console.log('PDF uploaded to S3')
+      } catch (err) {
+        console.error('Failed to upload PDF to S3:', err)
+      }
+    }
+  }
 
   const handleButtonClick = (e) => {
     e.stopPropagation();
   };
 
   const handleDownload = () => {
-    // need data as state
-    // const fdsData = dummy_fds
     if (fdsData) {
-
       const blob = new Blob([fdsData], { type: "text/plain;charset=utf-8" });
       saveAs(blob, "test.fds");
     }
   }
-
-
 
   const sendElementData = async () => {
     let elements = testElements
@@ -270,47 +342,17 @@ export default function Home() {
       },
       body: bodyContent,
     });
-  
+
     const data = await response.json();
     console.log("data received: ", data)
     setFdsData(data)
     const blob = new Blob([data], { type: "text/plain;charset=utf-8" });
     saveAs(blob, "test.fds");
     return data;
-  
   }
-  // const sendElementData = () => {
-  //   const options = {
-  //     method: 'POST',
-  //     url: 'http://127.0.0.1:8000/test',
-  //     headers: {
-  //       'Content-Type': 'application/json',
-  //     },
-  //     body: JSON.stringify({ elements }),
-  //   };
-  
-  //   return fetch(options).then((response) => {
-  //     if (response.status === 200) {
-  //       return response.json();
-  //     } else {
-  //       throw new Error(`API returned an error with status code ${response.status}`);
-  //     }
-  //   });
-  // };
-
-  //             {/* TODO: make overlay content dynamic depending on what mode selected  */}
-  //   {/* 
-  //    * obstruction, mesh, 
-  //     * if stair -> landing, half landing, 
-  //     * if point & stair-> point for stair climb
-  //     * if point & not stair -> fire (can be centre of box), inlet (can be polyline with two points)  
-  //     * doors to be lines
-  //   */}  
-   
-
 
   const menuOverlay = (<>
-  
+
 <div className="fixed bottom-0 left-0 right-0 bg-gray-800 text-white z-30 h-5vh" onClick={handleButtonClick}>
   <svg
     className="w-full h-1"
@@ -345,15 +387,56 @@ export default function Home() {
     setIsContinuing(false)
   }
 
-  const handleContinueProject = () => {
-    setIsContinuing(true)
+  const handleContinueProject = async () => {
+    // If we have a projectId, try loading from server first
+    if (projectId && floorId) {
+      setIsLoadingFromServer(true)
+      try {
+        const project = await loadProject(projectId)
+        const floor = project.floors?.find(f => f.id === floorId) || project.floors?.[0]
+        if (floor) {
+          const floorDetail = await loadFloorDetail(projectId, floor.id)
+          hydrateFromServer(project, floorDetail)
+
+          if (floor.pdf_s3_key) {
+            const { url } = await getFloorPdfUrl(projectId, floor.id)
+            await renderPdf(url, true)
+            setIsLoadingFromServer(false)
+            return
+          }
+        }
+      } catch (err) {
+        console.warn('Server load failed during continue, trying IndexedDB:', err)
+      }
+      setIsLoadingFromServer(false)
+    }
+
+    // Fallback: try IndexedDB
+    const storedPdf = await loadPdfFromIndexedDB()
+    if (storedPdf) {
+      await renderPdf(storedPdf, true)
+    } else {
+      setIsContinuing(true)
+    }
   }
 
   // Landing screen: show when no PDF loaded and not yet chosen a path
-  const showLanding = !selectedFile && !isContinuing && hasSavedProject
+  const showLanding = !selectedFile && !isContinuing && !isLoadingFromServer && hasSavedProject
+
+  if (!hasMounted) return null
 
   return (
     <>
+      {/* Save status indicator */}
+      {saveStatus && (
+        <div className={`fixed top-2 left-1/2 -translate-x-1/2 z-50 text-xs px-3 py-1 rounded-full ${
+          saveStatus === "saving" ? "bg-yellow-600 text-white" :
+          saveStatus === "saved" ? "bg-green-600 text-white" :
+          "bg-red-600 text-white"
+        }`}>
+          {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved" : "Save failed"}
+        </div>
+      )}
       {/* New Project button - always visible when working */}
       {selectedFile && (
         <button
@@ -371,7 +454,11 @@ export default function Home() {
       :null}
       {showModePopup && <ModePopup setToggleShowPopup={setShowModePopup}/>}
       <div>
-        { showLanding ? (
+        { isLoadingFromServer ? (
+          <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+            <FDRobot hintText={'Loading project...'} />
+          </div>
+        ) : showLanding ? (
           <div className="flex flex-col items-center justify-center min-h-screen gap-4">
             <FDRobot hintText={'Welcome back'} />
             <div className="flex gap-4">
@@ -424,5 +511,3 @@ export default function Home() {
     </>
 )
 }
-
-

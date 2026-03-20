@@ -2,12 +2,71 @@ const server_urls = {
     "localhost": 'http://127.0.0.1:8000',
     // "server": 'https://fdsbackend-1-r7337380.deta.app'
     "server": 'https://backendfornextapp-production.up.railway.app'
-    
+
     // "server": 'https://fastapi-production-e615.up.railway.app'
     // fastapi-production-e615.up.railway.app
   }
 
-console.log("server_urls: ", server_urls)  
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || server_urls.server
+
+console.log("server_urls: ", server_urls)
+
+// --- Project persistence API ---
+
+export const createProject = async (name = "Untitled Project") => {
+    const resp = await fetch(`${API_BASE}/projects`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, settings: {} }),
+    })
+    if (!resp.ok) throw new Error(`Failed to create project: ${resp.status}`)
+    return resp.json()
+}
+
+export const listProjects = async () => {
+    const resp = await fetch(`${API_BASE}/projects`)
+    if (!resp.ok) throw new Error(`Failed to list projects: ${resp.status}`)
+    return resp.json()
+}
+
+export const loadProject = async (projectId) => {
+    const resp = await fetch(`${API_BASE}/projects/${projectId}`)
+    if (!resp.ok) throw new Error(`Failed to load project: ${resp.status}`)
+    return resp.json()
+}
+
+export const saveProjectToServer = async (projectId, payload) => {
+    const resp = await fetch(`${API_BASE}/projects/${projectId}/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    })
+    if (!resp.ok) throw new Error(`Failed to save project: ${resp.status}`)
+    return resp.json()
+}
+
+export const loadFloorDetail = async (projectId, floorId) => {
+    const resp = await fetch(`${API_BASE}/projects/${projectId}/floors/${floorId}`)
+    if (!resp.ok) throw new Error(`Failed to load floor: ${resp.status}`)
+    return resp.json()
+}
+
+export const uploadFloorPdf = async (projectId, floorId, file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const resp = await fetch(`${API_BASE}/projects/${projectId}/floors/${floorId}/pdf`, {
+        method: 'POST',
+        body: formData,
+    })
+    if (!resp.ok) throw new Error(`Failed to upload PDF: ${resp.status}`)
+    return resp.json()
+}
+
+export const getFloorPdfUrl = async (projectId, floorId) => {
+    const resp = await fetch(`${API_BASE}/projects/${projectId}/floors/${floorId}/pdf`)
+    if (!resp.ok) throw new Error(`Failed to get PDF URL: ${resp.status}`)
+    return resp.json()
+}
 export const sendRadiationData = async (
     timeArray, 
     accumulatedDistanceList, 
@@ -47,9 +106,9 @@ export const sendRadiationData = async (
       docName
     } )   
 
-    console.log("fetch local", server_urls.localhost)
+    console.log("fetch local", API_BASE)
     try{
-      const response = await fetch(`${server_urls.localhost}/radiation`, {
+      const response = await fetch(`${API_BASE}/radiation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -96,7 +155,12 @@ export const sendFdsData = async (
   door_leakages_enabled=true,
   door_leakage_config={},
   door_openings={},
-  door_roles={}
+  door_roles={},
+  landing_roles={},
+  landing_up_side=null,
+  obstruction_transparency={},
+  aov_mode="always_open",
+  aov_activation_time=null
 ) => {
     console.log("elementList at api call: ", elementList)
     let bodyContent = JSON.stringify( {
@@ -118,10 +182,15 @@ export const sendFdsData = async (
       door_leakages_enabled,
       door_leakage_config,
       door_openings,
-      door_roles
+      door_roles,
+      landing_roles,
+      landing_up_side,
+      obstruction_transparency,
+      aov_mode,
+      aov_activation_time
     } )
     console.log("bodyContent: ", bodyContent)
-    const response = await fetch(`${server_urls.localhost}/fds`, {
+    const response = await fetch(`${API_BASE}/fds`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -186,7 +255,7 @@ export const sendTimeEqData = async (
         fireResistancePeriod
     } )
     console.log("body: ", bodyContent)
-    const response = await fetch(`${server_urls.localhost}/timeEq`, {
+    const response = await fetch(`${API_BASE}/timeEq`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

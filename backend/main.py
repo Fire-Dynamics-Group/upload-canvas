@@ -17,6 +17,14 @@ try:
 except (ImportError, ValueError) as e:
     print(f"Warning: Some routers not loaded (missing dependency): {e}")
 
+try:
+    from routers.projects import router as projects_router
+    from routers.floors import router as floors_router
+    app.include_router(projects_router, prefix="/projects", tags=["Projects"])
+    app.include_router(floors_router, prefix="/projects", tags=["Floors"])
+except (ImportError, ValueError) as e:
+    print(f"Warning: Project/floor routers not loaded: {e}")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allows all origins
@@ -60,6 +68,11 @@ class ElementsData(BaseModel):
     door_leakage_config: Dict[str, Any] = {}
     door_openings: Dict[str, Any] = {}
     door_roles: Dict[str, str] = {}  # { doorId: "apartment" | "stair" | "lobby" | "other" }
+    landing_roles: Dict[str, str] = {}  # { landingId: "floor" | "half" }
+    landing_up_side: Optional[str] = None  # "left" | "right" | "top" | "bottom"
+    obstruction_transparency: Dict[str, float] = {}  # { stairWalls, stairRoof, fireFloorWalls }
+    aov_mode: str = "always_open"  # "always_open" | "timed" | "sprinkler"
+    aov_activation_time: Optional[float] = None  # seconds, used when aov_mode is "timed"
 
 class ConvertedElement(BaseModel):
     id: int
@@ -110,6 +123,11 @@ async def read_elements(body: ElementsData):
     door_leakage_config = body.door_leakage_config
     door_openings = body.door_openings
     door_roles = body.door_roles
+    landing_roles = body.landing_roles
+    landing_up_side = body.landing_up_side
+    obstruction_transparency = body.obstruction_transparency
+    aov_mode = body.aov_mode
+    aov_activation_time = body.aov_activation_time
 
     output = testFunction(
                             elements,
@@ -127,6 +145,11 @@ async def read_elements(body: ElementsData):
                             door_leakages_enabled=door_leakages_enabled,
                             door_leakage_config=door_leakage_config,
                             door_roles=door_roles,
+                            landing_roles=landing_roles,
+                            landing_up_side=landing_up_side,
+                            obstruction_transparency=obstruction_transparency,
+                            aov_mode=aov_mode,
+                            aov_activation_time=aov_activation_time,
                             )
     print("output: ", output)
     return output

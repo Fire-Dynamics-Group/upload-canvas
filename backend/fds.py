@@ -1,7 +1,7 @@
 import numpy as np
 
 from stairs_fds import setup_landings
-from controls import generate_door_controls, Control_ID_Apartment, Control_ID_Stair
+from controls import generate_door_controls, extract_controls_fds, Control_ID_Apartment, Control_ID_Stair, Control_ID_Extract
 
 '''
     fds walls - done?
@@ -47,13 +47,16 @@ header = "\n".join([
         "      DENSITY=1440.0/"
       ])
 
-def points_to_fds_wall_lines(points, wall_thickness, px_per_m, comments, z, wall_height,is_stair=False):
+def points_to_fds_wall_lines(points, wall_thickness, px_per_m, comments, z, wall_height,is_stair=False, transparency=None):
     array = []
     walls_list = points_to_fds_wall_points(points, wall_thickness, px_per_m, comments, z, wall_height=wall_height,is_stair=False)
 
     for i in np.round(walls_list,2):
         x1,x2,y1,y2,z1,z2 = i
-        array.append(f"&OBST ID='{obstruction_name_obj[comments]}' XB = {x1},{x2},{y1},{y2},{z1},{z2}, SURF_ID='Plasterboard'/")
+        transparency_str = ""
+        if transparency is not None and transparency > 0:
+            transparency_str = f", RGB=255,255,255, TRANSPARENCY={round(transparency, 6)}"
+        array.append(f"&OBST ID='{obstruction_name_obj[comments]}', XB={x1},{x2},{y1},{y2},{z1},{z2}, SURF_ID='Plasterboard'{transparency_str}/")
     return array
 
 def convert_points_to_dict(points):
@@ -138,16 +141,15 @@ def create_fds_mesh_lines(points, cell_size, z1, z2, px_per_m, comments, idx, fd
     fifth = f"{round((y1),1)},"
     sixth = f"{round((y2),1)},{z1},{z2}/"
     line = first + second + third + fourth + fifth + sixth
-    fds_array.append(line)
-    return fds_array
+    return line
 
 
 def create_mesh(comments, elements, cell_size, px_per_m, z, fds_array, wall_height=3.5):
     meshes = [ f for f in elements if f["comments"] == comments]
     for idx, mesh in enumerate(meshes):
         points = mesh["points"]
-        # pass index?
-        fds_array.append('/n'.join(create_fds_mesh_lines(points, cell_size, z, z + wall_height, px_per_m, comments, idx, fds_array, is_stair=False)))
+        line = create_fds_mesh_lines(points, cell_size, z, z + wall_height, px_per_m, comments, idx, fds_array, is_stair=False)
+        fds_array.append(line)
     return fds_array
 
 def add_rows_to_fds_array(fds_array, *args):
@@ -208,7 +210,7 @@ def add_door_holes_to_fds(elements, z, wall_height, wall_thickness, fds_array, d
     # 
 
 
-def add_obstruction_to_fds(comments, elements, z, wall_height, wall_thickness, stair_enclosure_roof_z, px_per_m, fds_array):
+def add_obstruction_to_fds(comments, elements, z, wall_height, wall_thickness, stair_enclosure_roof_z, px_per_m, fds_array, transparency=None):
     # print("elements: ", elements)
     try:
         output = [ f for f in elements if f.comments == comments]
@@ -242,7 +244,7 @@ def add_obstruction_to_fds(comments, elements, z, wall_height, wall_thickness, s
             points = f.points
         else:
             points = f["points"]
-        obstruction_list = points_to_fds_wall_lines(points=points, wall_thickness=wall_thickness, px_per_m=px_per_m, comments=comments, z=z,wall_height=wall_height,is_stair=False)
+        obstruction_list = points_to_fds_wall_lines(points=points, wall_thickness=wall_thickness, px_per_m=px_per_m, comments=comments, z=z,wall_height=wall_height,is_stair=False, transparency=transparency)
         add_array_to_fds_array(obstruction_list, fds_array)
     return fds_array
 
@@ -343,14 +345,114 @@ def Fire_Obstruction(Fire_D, Fire_H, Fire_B, fire_x, fire_y, z):## Create a Func
     fire_z2 = round(z+Fire_H, 2)
     return [f"&OBST ID='Fire', XB = {fire_x1},{fire_x2},{fire_y1},{fire_y2},{fire_z1},{fire_z2}, SURF_IDS='Fire','Plasterboard','Plasterboard'/"]
 
+def create_stair_roof(elements, stair_enclosure_roof_z, transparency=None):
+    """Create a roof slab over the stair enclosure bounding box."""
+    stair_obs = [f for f in elements if f["comments"] == "stairObstruction"]
+    if not stair_obs:
+        return []
+
+    all_x = []
+    all_y = []
+    for obs in stair_obs:
+        for p in obs["points"]:
+            all_x.append(p["x"])
+            all_y.append(p["y"])
+
+    x_min = round(min(all_x), 2)
+    x_max = round(max(all_x), 2)
+    y_min = round(min(all_y), 2)
+    y_max = round(max(all_y), 2)
+    z1 = round(stair_enclosure_roof_z - 0.2, 2)
+    z2 = round(stair_enclosure_roof_z, 2)
+
+    transparency_str = ""
+    if transparency is not None and transparency > 0:
+        transparency_str = f", RGB=255,255,255, TRANSPARENCY={round(transparency, 6)}"
+
+    return [f"&OBST ID='Stair Roof', XB={x_min},{x_max},{y_min},{y_max},{z1},{z2}, SURF_ID='Plasterboard'{transparency_str}/"]
+
+
+def create_stair_aov(elements, stair_enclosure_roof_z, aov_mode="always_open", cell_size=0.2):
+    """Create a 1m x 1m roof vent hole centred on the landing midpoint.
+
+    aov_mode: "always_open" (default, no CTRL_ID), "timed", or "sprinkler"
+    When mode is "timed" or "sprinkler", adds CTRL_ID to link to extract controls.
+    """
+    landings = [f for f in elements if f["comments"] == "landing"]
+    if not landings:
+        return []
+
+    # Calculate centre of each landing, then average them
+    centres_x = []
+    centres_y = []
+    for landing in landings:
+        xs = [p["x"] for p in landing["points"]]
+        ys = [p["y"] for p in landing["points"]]
+        centres_x.append((min(xs) + max(xs)) / 2)
+        centres_y.append((min(ys) + max(ys)) / 2)
+
+    mid_x = sum(centres_x) / len(centres_x)
+    mid_y = sum(centres_y) / len(centres_y)
+
+    # Snap centre to cell_size grid, then offset by 0.5m for 1m x 1m hole
+    def snap(val):
+        return round(round(val / cell_size) * cell_size, 2)
+
+    cx = snap(mid_x)
+    cy = snap(mid_y)
+    x1 = round(cx - 0.5, 2)
+    x2 = round(cx + 0.5, 2)
+    y1 = round(cy - 0.5, 2)
+    y2 = round(cy + 0.5, 2)
+    z1 = round(stair_enclosure_roof_z - 0.4, 2)
+    z2 = round(stair_enclosure_roof_z + 0.4, 2)
+
+    ctrl_suffix = ""
+    if aov_mode in ("timed", "sprinkler"):
+        ctrl_id = f'{Control_ID_Extract}1'
+        ctrl_suffix = f", CTRL_ID='{ctrl_id}'"
+
+    return [f"&HOLE ID='AOV', XB = {x1}, {x2}, {y1}, {y2}, {z1}, {z2}{ctrl_suffix}/"]
+
+
+def create_aov_sprinkler_devc(elements, stair_enclosure_roof_z):
+    """Create a sprinkler DEVC at the AOV location that triggers the AOV opening."""
+    landings = [f for f in elements if f["comments"] == "landing"]
+    if not landings:
+        return []
+
+    centres_x = []
+    centres_y = []
+    for landing in landings:
+        xs = [p["x"] for p in landing["points"]]
+        ys = [p["y"] for p in landing["points"]]
+        centres_x.append((min(xs) + max(xs)) / 2)
+        centres_y.append((min(ys) + max(ys)) / 2)
+
+    mid_x = round(sum(centres_x) / len(centres_x), 2)
+    mid_y = round(sum(centres_y) / len(centres_y), 2)
+    z = round(stair_enclosure_roof_z - 0.3, 2)
+
+    ctrl_id = f'{Control_ID_Extract}1'
+    return [
+        f"&DEVC ID='AOV Sprinkler', PROP_ID='AOV Link', XYZ={mid_x},{mid_y},{z}/",
+        f"&PROP ID='AOV Link', QUANTITY='LINK TEMPERATURE', RTI=50, ACTIVATION_TEMPERATURE=68.0/",
+        f"&CTRL ID='{ctrl_id}', INPUT_ID='AOV Sprinkler', FUNCTION_TYPE='ALL'/",
+    ]
+
+
 def testFunction(elements, z, wall_height, wall_thickness, stair_height, px_per_m, fire_floor, total_floors, stair_enclosure_roof_z,
-                 scenario_type="MOE", sim_end_time=300, door_openings=None, door_leakages_enabled=False, door_leakage_config=None, door_roles=None):
+                 scenario_type="MOE", sim_end_time=300, door_openings=None, door_leakages_enabled=False, door_leakage_config=None, door_roles=None,
+                 landing_roles=None, landing_up_side=None, obstruction_transparency=None,
+                 aov_mode="always_open", aov_activation_time=None):
     if door_openings is None:
         door_openings = {}
     if door_leakage_config is None:
         door_leakage_config = {}
     if door_roles is None:
         door_roles = {}
+    if obstruction_transparency is None:
+        obstruction_transparency = {}
 
     # 1. Simulation header
     header_lines = sim_header(chid='model', sim_end_time=sim_end_time)
@@ -370,8 +472,12 @@ def testFunction(elements, z, wall_height, wall_thickness, stair_height, px_per_
     fds_array = create_mesh(comments='stairMesh', elements=elements, cell_size=cell_size, px_per_m=px_per_m, z=z, fds_array=fds_array)
 
     # 4. Obstructions
-    fds_array = add_obstruction_to_fds(comments='obstruction', elements=elements, z=z, wall_height=wall_height, wall_thickness=wall_thickness, stair_enclosure_roof_z=stair_enclosure_roof_z, px_per_m=px_per_m, fds_array=fds_array)
-    fds_array = add_obstruction_to_fds(comments='stairObstruction', elements=elements, z=z, wall_height=wall_height, wall_thickness=wall_thickness, stair_enclosure_roof_z=stair_enclosure_roof_z, px_per_m=px_per_m, fds_array=fds_array)
+    fire_wall_transparency = obstruction_transparency.get("fireFloorWalls", 0.0)
+    stair_wall_transparency = obstruction_transparency.get("stairWalls", 0.25)
+    stair_roof_transparency = obstruction_transparency.get("stairRoof", 0.25)
+
+    fds_array = add_obstruction_to_fds(comments='obstruction', elements=elements, z=z, wall_height=wall_height, wall_thickness=wall_thickness, stair_enclosure_roof_z=stair_enclosure_roof_z, px_per_m=px_per_m, fds_array=fds_array, transparency=fire_wall_transparency)
+    fds_array = add_obstruction_to_fds(comments='stairObstruction', elements=elements, z=z, wall_height=wall_height, wall_thickness=wall_thickness, stair_enclosure_roof_z=stair_enclosure_roof_z, px_per_m=px_per_m, fds_array=fds_array, transparency=stair_wall_transparency)
 
     # 5. Door controls based on scenario_type (common corridor mode only)
     if scenario_type:
@@ -393,8 +499,25 @@ def testFunction(elements, z, wall_height, wall_thickness, stair_height, px_per_
     fds_array = add_array_to_fds_array(reaction_array, fds_array)
 
     # 9. Stair landings/steps
-    stair_list = setup_landings(comments="landing", fire_floor=fire_floor, total_floors=total_floors, elements=elements, px_per_m=px_per_m, z=z, stair_enclosure_roof_z=stair_enclosure_roof_z)
+    stair_list = setup_landings(comments="landing", fire_floor=fire_floor, total_floors=total_floors, elements=elements, px_per_m=px_per_m, z=z, stair_enclosure_roof_z=stair_enclosure_roof_z, landing_roles=landing_roles, landing_up_side=landing_up_side)
     fds_array = add_array_to_fds_array(stair_list, fds_array)
+
+    # 9a. Stair roof slab
+    roof_lines = create_stair_roof(elements, stair_enclosure_roof_z, transparency=stair_roof_transparency)
+    fds_array = add_array_to_fds_array(roof_lines, fds_array)
+
+    # 9b. AOV (roof vent hole)
+    aov_lines = create_stair_aov(elements, stair_enclosure_roof_z, aov_mode=aov_mode)
+    fds_array = add_array_to_fds_array(aov_lines, fds_array)
+
+    # 9c. AOV controls (only when mode is timed or sprinkler)
+    if aov_mode == "timed":
+        activation_time = float(aov_activation_time) if aov_activation_time is not None else float(door_openings.get("apartment_open", 30)) + 10
+        extract_lines = extract_controls_fds(activation_time, number=1)
+        fds_array = add_array_to_fds_array(extract_lines, fds_array)
+    elif aov_mode == "sprinkler":
+        sprinkler_lines = create_aov_sprinkler_devc(elements, stair_enclosure_roof_z)
+        fds_array = add_array_to_fds_array(sprinkler_lines, fds_array)
 
     # 10. TAIL
     fds_array.append("&TAIL/")
