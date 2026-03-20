@@ -87,6 +87,8 @@ const useStore = create(persist((set, get) => {
         highlightedLandingId: null,
         // Which half of the floor landing goes up: "left"|"right"|"top"|"bottom"
         landingUpSide: null,
+        // Stair step style: "overlapping" (full landing width shifted) | "individual" (single tread width)
+        stairStyle: "overlapping",
 
         // AOV settings
         aovMode: "always_open", // "always_open" | "timed" | "sprinkler"
@@ -288,6 +290,7 @@ const useStore = create(persist((set, get) => {
         setLandingRoles: (newVal) => set(() => ({ landingRoles: newVal })),
         setHighlightedLandingId: (newVal) => set(() => ({ highlightedLandingId: newVal })),
         setLandingUpSide: (newVal) => set(() => ({ landingUpSide: newVal })),
+        setStairStyle: (newVal) => set(() => ({ stairStyle: newVal })),
 
         // Obstruction transparency setter
         setObstructionTransparency: (newVal) => set(() => ({ obstructionTransparency: newVal })),
@@ -339,6 +342,7 @@ const useStore = create(persist((set, get) => {
                             doorLeakageConfig: s.doorLeakageConfig,
                             landingRoles: s.landingRoles,
                             landingUpSide: s.landingUpSide,
+                            stairStyle: s.stairStyle,
                         },
                         elements: s.elements.map((el, i) => ({
                             element_index: el.id ?? i,
@@ -390,6 +394,7 @@ const useStore = create(persist((set, get) => {
                 doorLeakageConfig: fs.doorLeakageConfig ?? {},
                 landingRoles: fs.landingRoles ?? {},
                 landingUpSide: fs.landingUpSide ?? null,
+                stairStyle: fs.stairStyle ?? "overlapping",
                 // Elements
                 elements: (floorDetail.elements || []).map(el => ({
                     id: el.element_index,
@@ -445,6 +450,7 @@ const useStore = create(persist((set, get) => {
                 landingRoles: {},
                 highlightedLandingId: null,
                 landingUpSide: null,
+                stairStyle: "overlapping",
                 aovMode: "always_open",
                 aovActivationTime: null,
                 obstructionTransparency: { stairWalls: 0.25, stairRoof: 0.25, fireFloorWalls: 0.0 },
@@ -489,6 +495,7 @@ const useStore = create(persist((set, get) => {
         doorOpenings: state.doorOpenings,
         landingRoles: state.landingRoles,
         landingUpSide: state.landingUpSide,
+        stairStyle: state.stairStyle,
         aovMode: state.aovMode,
         aovActivationTime: state.aovActivationTime,
         obstructionTransparency: state.obstructionTransparency,

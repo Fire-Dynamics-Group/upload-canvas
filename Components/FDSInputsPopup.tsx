@@ -65,6 +65,8 @@ const FDSInputsPopup = ({handleUserInput}) => {
     const setHighlightedLandingId = useStore((state) => state.setHighlightedLandingId)
     const landingUpSide = useStore((state) => state.landingUpSide)
     const setLandingUpSide = useStore((state) => state.setLandingUpSide)
+    const stairStyle = useStore((state) => state.stairStyle)
+    const setStairStyle = useStore((state) => state.setStairStyle)
 
     // Obstruction transparency
     const obstructionTransparency = useStore((state) => state.obstructionTransparency)
@@ -614,6 +616,16 @@ const FDSInputsPopup = ({handleUserInput}) => {
                                 )}
                             </>
                         )}
+
+                        <h2 className="text-lg font-bold mb-2 mt-4">Step Style</h2>
+                        <select
+                            className="border border-gray-300 px-3 py-2 rounded-md w-full"
+                            value={stairStyle}
+                            onChange={(e) => setStairStyle(e.target.value)}
+                        >
+                            <option value="overlapping">Overlapping (full landing width)</option>
+                            <option value="individual">Individual treads</option>
+                        </select>
                     </>
                 )}
             </>

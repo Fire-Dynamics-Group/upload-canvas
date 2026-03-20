@@ -46,6 +46,7 @@ const Toolbar = ({setShowModePopup}) => {
     const doorRoles = useStore((state) => state.doorRoles)
     const landingRoles = useStore((state) => state.landingRoles)
     const landingUpSide = useStore((state) => state.landingUpSide)
+    const stairStyle = useStore((state) => state.stairStyle)
     const aovMode = useStore((state) => state.aovMode)
     const aovActivationTime = useStore((state) => state.aovActivationTime)
     const obstructionTransparency = useStore((state) => state.obstructionTransparency)
@@ -168,6 +169,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                     doorRoles,
                     landingRoles,
                     landingUpSide,
+                    stairStyle,
                     obstructionTransparency,
                     aovMode,
                     aovActivationTime

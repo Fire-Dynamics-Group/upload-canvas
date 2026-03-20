@@ -158,6 +158,7 @@ export const sendFdsData = async (
   door_roles={},
   landing_roles={},
   landing_up_side=null,
+  stair_style="overlapping",
   obstruction_transparency={},
   aov_mode="always_open",
   aov_activation_time=null
@@ -185,6 +186,7 @@ export const sendFdsData = async (
       door_roles,
       landing_roles,
       landing_up_side,
+      stair_style,
       obstruction_transparency,
       aov_mode,
       aov_activation_time
