@@ -1,0 +1,183 @@
+import { useState, useEffect } from 'react'
+import { listProjects } from './ApiCalls'
+import FDRobot from './FDRobot'
+
+function timeAgo(dateStr) {
+  if (!dateStr) return ''
+  const date = new Date(dateStr)
+  const now = new Date()
+  const seconds = Math.floor((now - date) / 1000)
+  if (seconds < 60) return 'just now'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}d ago`
+  const months = Math.floor(days / 30)
+  return `${months}mo ago`
+}
+
+export default function ProjectDashboard({ onSelectProject, onNewProject, userName, onEditName }) {
+  const [projects, setProjects] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [filter, setFilter] = useState('all') // 'mine' | 'all'
+  const [showNewModal, setShowNewModal] = useState(false)
+  const [newName, setNewName] = useState('')
+
+  useEffect(() => {
+    loadProjects()
+  }, [])
+
+  const loadProjects = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await listProjects()
+      setProjects(data)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const filtered = filter === 'mine'
+    ? projects.filter(p => p.created_by === userName)
+    : projects
+
+  const handleCreate = () => {
+    const name = newName.trim() || 'Untitled Project'
+    setShowNewModal(false)
+    setNewName('')
+    onNewProject(name)
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-white">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+        <div className="flex items-center gap-4">
+          <FDRobot hintText={`Hi, ${userName}`} />
+          <button
+            onClick={onEditName}
+            className="text-gray-400 hover:text-white text-sm ml-2"
+            title="Change name"
+          >
+            ✏️
+          </button>
+        </div>
+        <button
+          onClick={() => setShowNewModal(true)}
+          className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5"
+        >
+          + New Project
+        </button>
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex gap-1 px-6 pt-4">
+        <button
+          onClick={() => setFilter('mine')}
+          className={`px-4 py-2 rounded-t-lg text-sm font-medium ${
+            filter === 'mine'
+              ? 'bg-gray-700 text-white'
+              : 'bg-gray-800 text-gray-400 hover:text-white'
+          }`}
+        >
+          My Projects
+        </button>
+        <button
+          onClick={() => setFilter('all')}
+          className={`px-4 py-2 rounded-t-lg text-sm font-medium ${
+            filter === 'all'
+              ? 'bg-gray-700 text-white'
+              : 'bg-gray-800 text-gray-400 hover:text-white'
+          }`}
+        >
+          All Projects
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="px-6 py-4">
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+          </div>
+        ) : error ? (
+          <div className="text-center py-20">
+            <p className="text-red-400 mb-4">Failed to load projects: {error}</p>
+            <button onClick={loadProjects} className="text-blue-400 hover:text-blue-300 underline">
+              Retry
+            </button>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-20 text-gray-400">
+            <p className="text-lg mb-2">
+              {filter === 'mine' ? 'You have no projects yet' : 'No projects found'}
+            </p>
+            <button
+              onClick={() => setShowNewModal(true)}
+              className="text-blue-400 hover:text-blue-300 underline"
+            >
+              Create your first project
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {filtered.map((project) => (
+              <button
+                key={project.id}
+                onClick={() => onSelectProject(project.id)}
+                className="bg-gray-800 hover:bg-gray-700 rounded-lg p-4 text-left transition-colors border border-gray-700 hover:border-gray-500"
+              >
+                <h3 className="font-medium text-white truncate">{project.name}</h3>
+                <p className="text-sm text-gray-400 mt-1">
+                  {project.created_by || 'Unknown'}
+                </p>
+                <div className="flex justify-between items-center mt-3 text-xs text-gray-500">
+                  <span>{project.floors?.length || 0} floor{(project.floors?.length || 0) !== 1 ? 's' : ''}</span>
+                  <span>{timeAgo(project.updated_at)}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* New Project Modal */}
+      {showNewModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4">
+            <h2 className="text-lg font-medium mb-4">New Project</h2>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Project name"
+              className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              autoFocus
+              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => { setShowNewModal(false); setNewName('') }}
+                className="px-4 py-2 text-gray-400 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreate}
+                className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg"
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

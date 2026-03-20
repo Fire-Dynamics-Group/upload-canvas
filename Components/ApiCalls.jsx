@@ -13,11 +13,11 @@ console.log("server_urls: ", server_urls)
 
 // --- Project persistence API ---
 
-export const createProject = async (name = "Untitled Project") => {
+export const createProject = async (name = "Untitled Project", createdBy = null) => {
     const resp = await fetch(`${API_BASE}/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, settings: {} }),
+        body: JSON.stringify({ name, settings: {}, created_by: createdBy }),
     })
     if (!resp.ok) throw new Error(`Failed to create project: ${resp.status}`)
     return resp.json()

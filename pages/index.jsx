@@ -9,6 +9,8 @@ import Toolbar from '../Components/Toolbar'
 import ErrorPopup from '../Components/ErrorPopup'
 
 import TestButtons from '../Components/TestButtons'
+import ProjectDashboard from '../Components/ProjectDashboard'
+import useUserName from '../hooks/useUserName'
 import { savePdfToIndexedDB, loadPdfFromIndexedDB } from '../utils/pdfStorage'
 import {
   createProject,
@@ -71,6 +73,8 @@ export default function Home() {
   let dev_mode = true
   const [hasMounted, setHasMounted] = useState(false)
   useEffect(() => { setHasMounted(true) }, [])
+  const { userName, setUserName, needsName, clearName } = useUserName()
+  const [nameInput, setNameInput] = useState('')
   const [uploading, setUploading] = useState(false)
   const [selectedImage, setSelectedImage] = useState("")
   const [selectedFile, setSelectedFile] = useState()
@@ -110,12 +114,6 @@ export default function Home() {
   const buildSavePayload = useStore((state) => state.buildSavePayload)
   const hydrateFromServer = useStore((state) => state.hydrateFromServer)
 
-  // Check if there's a saved project (persisted state has been rehydrated)
-  const [hasSavedProject, setHasSavedProject] = useState(false)
-  useEffect(() => {
-    setHasSavedProject(projectId != null || pixelsPerMesh !== 1 || elements.length > 0)
-  }, [pixelsPerMesh, elements, projectId])
-
   // --- Clear stale legacy localStorage (elements exist but no projectId) ---
   const hasCheckedLegacy = useRef(false)
   useEffect(() => {
@@ -127,48 +125,7 @@ export default function Home() {
     }
   }, [projectId, elements, resetProject])
 
-  // --- Auto-load from server on mount ---
-  const hasAttemptedServerLoad = useRef(false)
-  useEffect(() => {
-    if (hasAttemptedServerLoad.current) return
-    if (!projectId || !floorId) return
-    hasAttemptedServerLoad.current = true
-
-    setIsLoadingFromServer(true)
-    ;(async () => {
-      try {
-        // Load project + floor from backend
-        const project = await loadProject(projectId)
-        const floor = project.floors?.find(f => f.id === floorId) || project.floors?.[0]
-        if (!floor) throw new Error("No floor found")
-
-        const floorDetail = await loadFloorDetail(projectId, floor.id)
-        hydrateFromServer(project, floorDetail)
-
-        // Load PDF from S3
-        if (floor.pdf_s3_key) {
-          try {
-            const { url } = await getFloorPdfUrl(projectId, floor.id)
-            await renderPdf(url, true)
-            setIsLoadingFromServer(false)
-            return
-          } catch (pdfErr) {
-            console.warn('Failed to load PDF from S3, trying IndexedDB:', pdfErr)
-          }
-        }
-
-        // Fallback: try IndexedDB
-        const storedPdf = await loadPdfFromIndexedDB()
-        if (storedPdf) {
-          await renderPdf(storedPdf, true)
-        }
-        setIsLoadingFromServer(false)
-      } catch (err) {
-        console.warn('Failed to load from server, falling back to local state:', err)
-        setIsLoadingFromServer(false)
-      }
-    })()
-  }, [projectId, floorId])
+  // Auto-load removed — users now pick projects from the dashboard
 
   // --- Debounced auto-save ---
   const saveTimerRef = useRef(null)
@@ -290,18 +247,19 @@ export default function Home() {
     // If no project yet, create one + initial floor via bulk save
     if (!currentProjectId) {
       try {
-        const project = await createProject("Untitled Project")
+        const name = useStore.getState().projectName || "Untitled Project"
+        const project = await createProject(name, userName)
         currentProjectId = project.id
         // Do an initial save to create floor 0
         const saved = await saveProjectToServer(currentProjectId, {
-          name: "Untitled Project",
+          name,
           settings: {},
           floors: [{ floor_number: 0, name: "Fire Floor", elements: [] }],
         })
         currentFloorId = saved.floors[0]?.id
         setProjectId(currentProjectId)
         setFloorId(currentFloorId)
-        setProjectName("Untitled Project")
+        setProjectName(name)
       } catch (err) {
         console.error('Failed to create project:', err)
         return
@@ -378,13 +336,45 @@ export default function Home() {
 )
 
 
-  const handleNewProject = () => {
+  const handleBackToDashboard = () => {
+    // Go back to dashboard without destroying project data
+    setSelectedFile(undefined)
+    setIsContinuing(false)
+  }
+
+  const handleNewProject = (name) => {
     if (selectedFile) {
       if (!window.confirm('Start a new project? All current progress will be cleared.')) return
     }
     resetProject()
     setSelectedFile(undefined)
     setIsContinuing(false)
+    if (name) setProjectName(name)
+  }
+
+  const handleSelectProject = async (projectId) => {
+    setIsLoadingFromServer(true)
+    try {
+      const project = await loadProject(projectId)
+      const floor = project.floors?.[0]
+      if (!floor) throw new Error("No floors in project")
+
+      const floorDetail = await loadFloorDetail(projectId, floor.id)
+      hydrateFromServer(project, floorDetail)
+
+      if (floor.pdf_s3_key) {
+        const { url } = await getFloorPdfUrl(projectId, floor.id)
+        await renderPdf(url, true)
+      } else {
+        // No PDF yet - go to upload screen
+        setIsContinuing(true)
+      }
+    } catch (err) {
+      console.error('Failed to load project:', err)
+      alert('Failed to load project: ' + err.message)
+    } finally {
+      setIsLoadingFromServer(false)
+    }
   }
 
   const handleContinueProject = async () => {
@@ -420,13 +410,37 @@ export default function Home() {
     }
   }
 
-  // Landing screen: show when no PDF loaded and not yet chosen a path
-  const showLanding = !selectedFile && !isContinuing && !isLoadingFromServer && hasSavedProject
+  const showDashboard = !selectedFile && !isContinuing && !isLoadingFromServer
 
   if (!hasMounted) return null
 
   return (
     <>
+      {/* Name prompt overlay */}
+      {needsName && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]">
+          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-sm mx-4 text-white">
+            <h2 className="text-lg font-medium mb-2">Welcome!</h2>
+            <p className="text-sm text-gray-400 mb-4">Enter your name so your team knows who created each project.</p>
+            <input
+              type="text"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              placeholder="Your name"
+              className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter' && nameInput.trim()) setUserName(nameInput.trim()) }}
+            />
+            <button
+              onClick={() => { if (nameInput.trim()) setUserName(nameInput.trim()) }}
+              disabled={!nameInput.trim()}
+              className="w-full px-4 py-2 bg-blue-700 hover:bg-blue-800 disabled:bg-gray-600 text-white rounded-lg"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
       {/* Save status indicator */}
       {saveStatus && (
         <div className={`fixed top-2 left-1/2 -translate-x-1/2 z-50 text-xs px-3 py-1 rounded-full ${
@@ -437,15 +451,24 @@ export default function Home() {
           {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved" : "Save failed"}
         </div>
       )}
-      {/* New Project button - always visible when working */}
+      {/* Top bar - visible when working on a project */}
       {selectedFile && (
-        <button
-          onClick={handleNewProject}
-          className="fixed top-2 right-2 z-50 text-white bg-red-700 hover:bg-red-800 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-sm px-4 py-2"
-          type="button"
-        >
-          New Project
-        </button>
+        <div className="fixed top-2 right-2 z-50 flex gap-2">
+          <button
+            onClick={handleBackToDashboard}
+            className="text-white bg-gray-700 hover:bg-gray-600 font-medium rounded-lg text-sm px-4 py-2"
+            type="button"
+          >
+            All Projects
+          </button>
+          <button
+            onClick={() => handleNewProject()}
+            className="text-white bg-red-700 hover:bg-red-800 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-sm px-4 py-2"
+            type="button"
+          >
+            New Project
+          </button>
+        </div>
       )}
       {tool != "scale" ? (<>
       {menuOverlay}
@@ -458,26 +481,16 @@ export default function Home() {
           <div className="flex flex-col items-center justify-center min-h-screen gap-4">
             <FDRobot hintText={'Loading project...'} />
           </div>
-        ) : showLanding ? (
-          <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-            <FDRobot hintText={'Welcome back'} />
-            <div className="flex gap-4">
-              <button
-                onClick={handleContinueProject}
-                className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-lg px-8 py-3"
-                type="button"
-              >
-                Continue Project
-              </button>
-              <button
-                onClick={handleNewProject}
-                className="text-white bg-red-700 hover:bg-red-800 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-lg px-8 py-3"
-                type="button"
-              >
-                New Project
-              </button>
-            </div>
-          </div>
+        ) : showDashboard && !needsName ? (
+          <ProjectDashboard
+            userName={userName}
+            onSelectProject={handleSelectProject}
+            onNewProject={handleNewProject}
+            onEditName={() => {
+              setNameInput(userName || '')
+              clearName()
+            }}
+          />
         ) : selectedFile ? (<>
           <Canvas
             dimensions={canvasDimensions}
