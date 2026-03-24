@@ -43,3 +43,6 @@ __pycache__/
 
 # claude code local settings
 .claude/settings.local.json
+
+# FDS reference files
+*.fds

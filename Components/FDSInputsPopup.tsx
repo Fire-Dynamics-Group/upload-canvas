@@ -72,11 +72,28 @@ const FDSInputsPopup = ({handleUserInput}) => {
     const obstructionTransparency = useStore((state) => state.obstructionTransparency)
     const setObstructionTransparency = useStore((state) => state.setObstructionTransparency)
 
+    // Extract config
+    const extractConfig = useStore((state) => state.extractConfig)
+    const setExtractConfig = useStore((state) => state.setExtractConfig)
+    const setHighlightedExtractId = useStore((state) => state.setHighlightedExtractId)
+
     const elements = useStore((state) => state.elements)
     // @ts-ignore
     const doorElements = elements.filter(element => element.comments === 'door')
     // @ts-ignore
     const landingElements = elements.filter(element => element.comments === 'landing')
+    // @ts-ignore
+    const extractElements = elements.filter(element => element.comments === 'extract')
+
+    const handleExtractConfigChange = (extractId: string, field: string, value: any) => {
+        setExtractConfig({
+            ...extractConfig,
+            [extractId]: {
+                ...(extractConfig[extractId] || { type: "natural", flowRate: 3.0, shaftWidth: 0.9, shaftDepth: 0.9, activation: "always_open", activationTime: null }),
+                [field]: value
+            }
+        })
+    }
 
     const handleLeakageConfigChange = (doorId: string, field: string, value: any) => {
         setDoorLeakageConfig({
@@ -93,7 +110,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
         setObstructionTransparency({ ...obstructionTransparency, [key]: numVal })
     }
 
-    type TabType = 'general' | 'scenario' | 'doors' | 'devices' | 'stairs' | 'display'
+    type TabType = 'general' | 'scenario' | 'doors' | 'devices' | 'stairs' | 'extracts' | 'display'
     const [activeTab, setActiveTab] = useState<TabType>('general')
 
     const TabButton = ({ tab, label }: { tab: TabType, label: string }) => (
@@ -699,6 +716,94 @@ const FDSInputsPopup = ({handleUserInput}) => {
         </>
     )
 
+    const ExtractInputs = () => (
+        <>
+            {extractElements.length > 0 ? (
+                <>
+                    <h2 className="text-lg font-bold mb-2">Extract Configuration</h2>
+                    <p className="text-sm text-gray-500 mb-3">Hover to highlight on canvas. Configure each extract shaft.</p>
+                    <div className="mb-4">
+                        {/* @ts-ignore */}
+                        {extractElements.map((extract, idx) => {
+                            const config = extractConfig[extract.id] || { type: "natural", flowRate: 3.0, shaftWidth: 0.9, shaftDepth: 0.9, activation: "always_open", activationTime: null }
+                            return (
+                                <div
+                                    key={extract.id}
+                                    className="mb-4 border-l-4 pl-3 py-1 cursor-pointer transition-colors"
+                                    style={{ borderColor: '#06b6d4' }}
+                                    onMouseEnter={() => setHighlightedExtractId(extract.id)}
+                                    onMouseLeave={() => setHighlightedExtractId(null)}
+                                >
+                                    <span className="font-bold text-sm">Extract {idx + 1}</span>
+
+                                    <div className="mt-2 flex flex-col gap-2">
+                                        <label className="text-sm">Type:
+                                            <select
+                                                className="ml-2 border border-gray-300 px-2 py-1 rounded-md text-sm"
+                                                value={config.type}
+                                                onChange={(e) => handleExtractConfigChange(extract.id, 'type', e.target.value)}
+                                            >
+                                                <option value="natural">Natural</option>
+                                                <option value="mechanical">Mechanical</option>
+                                            </select>
+                                        </label>
+
+                                        {config.type === 'mechanical' && (
+                                            <label className="text-sm">Flow Rate (m³/s):
+                                                <input type="number" step="0.1" className="ml-2 border px-2 py-1 rounded-md w-24"
+                                                    value={config.flowRate ?? 3.0}
+                                                    onChange={(e) => handleExtractConfigChange(extract.id, 'flowRate', Number(e.target.value))}
+                                                />
+                                            </label>
+                                        )}
+
+                                        <label className="text-sm">Shaft Width (m):
+                                            <input type="number" step="0.1" className="ml-2 border px-2 py-1 rounded-md w-24"
+                                                value={config.shaftWidth ?? 0.9}
+                                                onChange={(e) => handleExtractConfigChange(extract.id, 'shaftWidth', Number(e.target.value))}
+                                            />
+                                        </label>
+
+                                        <label className="text-sm">Shaft Depth (m):
+                                            <input type="number" step="0.1" className="ml-2 border px-2 py-1 rounded-md w-24"
+                                                value={config.shaftDepth ?? 0.9}
+                                                onChange={(e) => handleExtractConfigChange(extract.id, 'shaftDepth', Number(e.target.value))}
+                                            />
+                                        </label>
+
+                                        <label className="text-sm">Activation:
+                                            <select
+                                                className="ml-2 border border-gray-300 px-2 py-1 rounded-md text-sm"
+                                                value={config.activation ?? 'always_open'}
+                                                onChange={(e) => handleExtractConfigChange(extract.id, 'activation', e.target.value)}
+                                            >
+                                                <option value="always_open">Always Open</option>
+                                                <option value="timed">Timed</option>
+                                                <option value="sprinkler">Sprinkler</option>
+                                            </select>
+                                        </label>
+
+                                        {config.activation === 'timed' && (
+                                            <label className="text-sm">Activation Time (s):
+                                                <input type="number" className="ml-2 border px-2 py-1 rounded-md w-24"
+                                                    value={config.activationTime ?? ''}
+                                                    placeholder="e.g. 60"
+                                                    onChange={(e) => handleExtractConfigChange(extract.id, 'activationTime', e.target.value ? Number(e.target.value) : null)}
+                                                />
+                                            </label>
+                                        )}
+                                    </div>
+                                </div>
+                            )
+                        })}
+                    </div>
+                </>
+            ) : (
+                <p className="text-sm text-gray-500">No extract openings drawn yet. Use the Extract tool to draw one.</p>
+            )}
+        </>
+    )
+
     function handleClick() {
         let object = {
             fireFloorZ: fireFloorZ,
@@ -718,6 +823,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     <TabButton tab="doors" label="Doors" />
                     <TabButton tab="devices" label="Devices" />
                     <TabButton tab="stairs" label="Stairs" />
+                    <TabButton tab="extracts" label="Extracts" />
                     <TabButton tab="display" label="Display" />
                 </div>
 
@@ -727,6 +833,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     {activeTab === 'doors' && <DoorInputs />}
                     {activeTab === 'devices' && <DeviceInputs />}
                     {activeTab === 'stairs' && <StairInputs />}
+                    {activeTab === 'extracts' && <ExtractInputs />}
                     {activeTab === 'display' && <DisplayInputs />}
                 </div>
 

@@ -49,6 +49,7 @@ const Toolbar = ({setShowModePopup}) => {
     const stairStyle = useStore((state) => state.stairStyle)
     const aovMode = useStore((state) => state.aovMode)
     const aovActivationTime = useStore((state) => state.aovActivationTime)
+    const extractConfig = useStore((state) => state.extractConfig)
     const obstructionTransparency = useStore((state) => state.obstructionTransparency)
     // const handleWalkingInput = useStore((state) => state.handleWalkingInput)
     // const [walkingInput, setWalkingInput] = useState(null)
@@ -172,7 +173,8 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                     stairStyle,
                     obstructionTransparency,
                     aovMode,
-                    aovActivationTime
+                    aovActivationTime,
+                    extractConfig
                     )
       }
 

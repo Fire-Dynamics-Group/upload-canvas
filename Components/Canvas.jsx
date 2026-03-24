@@ -5,6 +5,7 @@ import FDRobot from './FDRobot'
 import { CSVLink } from 'react-csv'
 import useStore from '../store/useStore'
 import { calcDistance } from '@/utils/helperFunctions'
+import { computeShaftRect } from '@/utils/shaftGeometry'
 import { get } from 'http'
 
 /**
@@ -49,6 +50,9 @@ function Canvas({dimensions, isDevMode}) {
     const doorRoles = useStore((state) => state.doorRoles)
     const highlightedLandingId = useStore((state) => state.highlightedLandingId)
     const landingRoles = useStore((state) => state.landingRoles)
+    const extractConfig = useStore((state) => state.extractConfig)
+    const highlightedExtractId = useStore((state) => state.highlightedExtractId)
+    const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
 
 
     const [isDrawing, setIsDrawing] = useState(false)
@@ -592,6 +596,10 @@ function Canvas({dimensions, isDevMode}) {
 
         }
 
+        // Pre-compute indices for numbered labels
+        const doorElements = elements.filter(el => el.comments === 'door')
+        const extractElements = elements.filter(el => el.comments === 'extract')
+
         // all historical elements
         // later have different logic for different line types
         elements.forEach(element => {
@@ -661,10 +669,11 @@ function Canvas({dimensions, isDevMode}) {
                         context.lineWidth = 1
                     }
 
-                    if (isHighlighted || role) {
+                    {
                         const pts = element.points
                         const cx = (pts[0].x + pts[1].x) / 2
                         const cy = (pts[0].y + pts[1].y) / 2
+                        const doorIdx = doorElements.indexOf(element) + 1
                         if (isHighlighted) {
                             context.beginPath()
                             context.arc(cx, cy, 20, 0, Math.PI * 2)
@@ -673,17 +682,80 @@ function Canvas({dimensions, isDevMode}) {
                             context.stroke()
                             context.lineWidth = 1
                         }
-                        if (role) {
-                            const label = role === 'leakage' ? 'Leakage' : role === 'always_open' ? 'Always Open' : role.charAt(0).toUpperCase() + role.slice(1)
-                            context.font = '11px sans-serif'
-                            context.fillStyle = isHighlighted ? 'yellow' : (role === 'leakage' ? 'orange' : role === 'always_open' ? 'green' : 'white')
-                            context.strokeStyle = 'black'
-                            context.lineWidth = 3
-                            context.strokeText(label, cx + 12, cy - 12)
-                            context.fillText(label, cx + 12, cy - 12)
-                            context.lineWidth = 1
-                        }
+                        // Always show numbered label; append role if assigned
+                        const roleText = role === 'leakage' ? 'Leakage' : role === 'always_open' ? 'Always Open' : role ? role.charAt(0).toUpperCase() + role.slice(1) : ''
+                        const label = `Door ${doorIdx}${roleText ? ' - ' + roleText : ''}`
+                        context.font = '11px sans-serif'
+                        context.fillStyle = isHighlighted ? 'yellow' : (role === 'leakage' ? 'orange' : role === 'always_open' ? 'green' : 'white')
+                        context.strokeStyle = 'black'
+                        context.lineWidth = 3
+                        context.strokeText(label, cx + 12, cy - 12)
+                        context.fillText(label, cx + 12, cy - 12)
+                        context.lineWidth = 1
                     }
+                }
+
+                // Draw extract label + shaft rectangle
+                if (element.comments === 'extract') {
+                    const pts = element.points
+                    const cx = (pts[0].x + pts[1].x) / 2
+                    const cy = (pts[0].y + pts[1].y) / 2
+                    const extractIdx = extractElements.indexOf(element) + 1
+                    const isExtHighlighted = highlightedExtractId === element.id
+                    const config = extractConfig[element.id] || {}
+                    const shaftDepthM = config.shaftDepth || 0.9
+                    // Convert metres to pixels: pixelsPerMesh * 10 gives px per metre
+                    const pxPerM = pixelsPerMesh * 10
+                    const shaftDepthPx = shaftDepthM * pxPerM
+
+                    // Compute corridor centroid for shaft direction
+                    const obstructions = elements.filter(el => el.comments === 'obstruction')
+                    let corridorCentroid = null
+                    if (obstructions.length > 0) {
+                        let sumX = 0, sumY = 0, count = 0
+                        obstructions.forEach(obs => {
+                            obs.points.forEach(p => { sumX += p.x; sumY += p.y; count++ })
+                        })
+                        corridorCentroid = { x: sumX / count, y: sumY / count }
+                    }
+
+                    // Draw shaft rectangle
+                    const shaftRect = computeShaftRect(pts, shaftDepthPx, corridorCentroid)
+                    if (shaftRect) {
+                        context.beginPath()
+                        context.moveTo(shaftRect[0].x, shaftRect[0].y)
+                        context.lineTo(shaftRect[1].x, shaftRect[1].y)
+                        context.lineTo(shaftRect[2].x, shaftRect[2].y)
+                        context.lineTo(shaftRect[3].x, shaftRect[3].y)
+                        context.closePath()
+                        context.fillStyle = 'rgba(6, 182, 212, 0.15)'
+                        context.fill()
+                        context.strokeStyle = isExtHighlighted ? 'yellow' : 'cyan'
+                        context.lineWidth = isExtHighlighted ? 3 : 1
+                        context.stroke()
+                        context.lineWidth = 1
+                    }
+
+                    // Highlight ring
+                    if (isExtHighlighted) {
+                        context.beginPath()
+                        context.arc(cx, cy, 20, 0, Math.PI * 2)
+                        context.strokeStyle = 'yellow'
+                        context.lineWidth = 3
+                        context.stroke()
+                        context.lineWidth = 1
+                    }
+
+                    // Label
+                    const typeLabel = config.type === 'mechanical' ? 'Mech' : 'Nat'
+                    const label = `Extract ${extractIdx} (${typeLabel})`
+                    context.font = '11px sans-serif'
+                    context.fillStyle = isExtHighlighted ? 'yellow' : 'cyan'
+                    context.strokeStyle = 'black'
+                    context.lineWidth = 3
+                    context.strokeText(label, cx + 12, cy - 12)
+                    context.fillText(label, cx + 12, cy - 12)
+                    context.lineWidth = 1
                 }
 
                 // Draw highlight ring + role label for highlighted or role-assigned landings
@@ -717,7 +789,7 @@ function Canvas({dimensions, isDevMode}) {
             }
         })
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, pixelsPerMesh])
 
     // Generate thumbnail by compositing PDF + drawing canvases
     const thumbnailTimerRef = useRef(null)

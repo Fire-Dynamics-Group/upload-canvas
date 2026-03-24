@@ -91,6 +91,10 @@ const useStore = create(persist((set, get) => {
         // Stair step style: "overlapping" (full landing width shifted) | "individual" (single tread width)
         stairStyle: "overlapping",
 
+        // Extract shaft settings
+        extractConfig: {}, // per-extract: { [extractId]: { type, flowRate, shaftWidth, shaftDepth, activation, activationTime } }
+        highlightedExtractId: null,
+
         // AOV settings
         aovMode: "always_open", // "always_open" | "timed" | "sprinkler"
         aovActivationTime: null, // seconds, used when aovMode is "timed"
@@ -290,6 +294,14 @@ const useStore = create(persist((set, get) => {
             doorOpenings: newVal
         })),
 
+        // Extract shaft setters
+        setExtractConfig: (newVal) => set(() => ({
+            extractConfig: newVal
+        })),
+        setHighlightedExtractId: (newVal) => set(() => ({
+            highlightedExtractId: newVal
+        })),
+
         // Landing role setters
         setLandingRoles: (newVal) => set(() => ({ landingRoles: newVal })),
         setHighlightedLandingId: (newVal) => set(() => ({ highlightedLandingId: newVal })),
@@ -348,6 +360,7 @@ const useStore = create(persist((set, get) => {
                             landingRoles: s.landingRoles,
                             landingUpSide: s.landingUpSide,
                             stairStyle: s.stairStyle,
+                            extractConfig: s.extractConfig,
                         },
                         elements: s.elements.map((el, i) => ({
                             element_index: el.id ?? i,
@@ -400,6 +413,7 @@ const useStore = create(persist((set, get) => {
                 landingRoles: fs.landingRoles ?? {},
                 landingUpSide: fs.landingUpSide ?? null,
                 stairStyle: fs.stairStyle ?? "overlapping",
+                extractConfig: fs.extractConfig ?? {},
                 // Elements
                 elements: (floorDetail.elements || []).map(el => ({
                     id: el.element_index,
@@ -455,6 +469,8 @@ const useStore = create(persist((set, get) => {
                 highlightedLandingId: null,
                 landingUpSide: null,
                 stairStyle: "overlapping",
+                extractConfig: {},
+                highlightedExtractId: null,
                 aovMode: "always_open",
                 aovActivationTime: null,
                 obstructionTransparency: { stairWalls: 0.25, stairRoof: 0.25, fireFloorWalls: 0.0 },
@@ -500,6 +516,7 @@ const useStore = create(persist((set, get) => {
         landingRoles: state.landingRoles,
         landingUpSide: state.landingUpSide,
         stairStyle: state.stairStyle,
+        extractConfig: state.extractConfig,
         aovMode: state.aovMode,
         aovActivationTime: state.aovActivationTime,
         obstructionTransparency: state.obstructionTransparency,
