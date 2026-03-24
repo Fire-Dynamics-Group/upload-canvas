@@ -634,6 +634,33 @@ function Canvas({dimensions, isDevMode}) {
                 if (element.comments === 'door') {
                     const isHighlighted = highlightedDoorId === element.id
                     const role = doorRoles[element.id]
+
+                    // Always-open doors: redraw with green solid line
+                    if (role === 'always_open') {
+                        const pts = element.points
+                        context.beginPath()
+                        context.strokeStyle = 'green'
+                        context.lineWidth = 3
+                        context.moveTo(pts[0].x, pts[0].y)
+                        context.lineTo(pts[1].x, pts[1].y)
+                        context.stroke()
+                        context.lineWidth = 1
+                    }
+
+                    // Leakage-only doors: redraw with orange dashed line
+                    if (role === 'leakage') {
+                        const pts = element.points
+                        context.beginPath()
+                        context.setLineDash([6, 4])
+                        context.strokeStyle = 'orange'
+                        context.lineWidth = 3
+                        context.moveTo(pts[0].x, pts[0].y)
+                        context.lineTo(pts[1].x, pts[1].y)
+                        context.stroke()
+                        context.setLineDash([])
+                        context.lineWidth = 1
+                    }
+
                     if (isHighlighted || role) {
                         const pts = element.points
                         const cx = (pts[0].x + pts[1].x) / 2
@@ -647,9 +674,9 @@ function Canvas({dimensions, isDevMode}) {
                             context.lineWidth = 1
                         }
                         if (role) {
-                            const label = role.charAt(0).toUpperCase() + role.slice(1)
+                            const label = role === 'leakage' ? 'Leakage' : role === 'always_open' ? 'Always Open' : role.charAt(0).toUpperCase() + role.slice(1)
                             context.font = '11px sans-serif'
-                            context.fillStyle = isHighlighted ? 'yellow' : 'white'
+                            context.fillStyle = isHighlighted ? 'yellow' : (role === 'leakage' ? 'orange' : role === 'always_open' ? 'green' : 'white')
                             context.strokeStyle = 'black'
                             context.lineWidth = 3
                             context.strokeText(label, cx + 12, cy - 12)
@@ -691,6 +718,39 @@ function Canvas({dimensions, isDevMode}) {
         })
 
     }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles])
+
+    // Generate thumbnail by compositing PDF + drawing canvases
+    const thumbnailTimerRef = useRef(null)
+    const pdfCanvasRef = useStore((state) => state.pdfCanvasRef)
+    const setThumbnail = useStore((state) => state.setThumbnail)
+
+    useEffect(() => {
+        if (!canvasRef.current || !pdfCanvasRef?.current) return
+        // Debounce thumbnail generation to avoid doing it on every frame
+        if (thumbnailTimerRef.current) clearTimeout(thumbnailTimerRef.current)
+        thumbnailTimerRef.current = setTimeout(() => {
+            try {
+                const pdfCanvas = pdfCanvasRef.current
+                const drawCanvas = canvasRef.current
+                const thumbWidth = 400
+                const aspect = pdfCanvas.height / pdfCanvas.width
+                const thumbHeight = Math.round(thumbWidth * aspect)
+
+                const offscreen = document.createElement('canvas')
+                offscreen.width = thumbWidth
+                offscreen.height = thumbHeight
+                const ctx = offscreen.getContext('2d')
+                ctx.drawImage(pdfCanvas, 0, 0, thumbWidth, thumbHeight)
+                ctx.drawImage(drawCanvas, 0, 0, thumbWidth, thumbHeight)
+
+                const dataUrl = offscreen.toDataURL('image/jpeg', 0.6)
+                setThumbnail(dataUrl)
+            } catch (e) {
+                // Silently fail — thumbnail is non-critical
+            }
+        }, 1000)
+        return () => { if (thumbnailTimerRef.current) clearTimeout(thumbnailTimerRef.current) }
+    }, [elements, pdfCanvasRef, setThumbnail])
 
     function isMesh(currentEl) {
         if (currentEl["comments"].toLowerCase().includes("mesh")) {                       

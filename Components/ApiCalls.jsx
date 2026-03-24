@@ -1,3 +1,5 @@
+import { saveAs } from 'file-saver'
+
 const server_urls = {
     "localhost": 'http://127.0.0.1:8000',
     // "server": 'https://fdsbackend-1-r7337380.deta.app'
@@ -206,10 +208,10 @@ export const sendFdsData = async (
       saveAs(blob, "test.fds");
       return data;
 
-    } catch (err) { 
-      showMessage("Error: ",err)
+    } catch (err) {
+      console.error("Error: ",err)
     }
- 
+
   }
 
 

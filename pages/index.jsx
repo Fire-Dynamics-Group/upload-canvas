@@ -3,12 +3,10 @@ import Canvas from '../Components/Canvas'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import FDRobot from '../Components/FDRobot'
 import useStore from '../store/useStore'
-import { saveAs } from 'file-saver';
 import ModePopup from '../Components/ModePopup'
 import Toolbar from '../Components/Toolbar'
 import ErrorPopup from '../Components/ErrorPopup'
 
-import TestButtons from '../Components/TestButtons'
 import ProjectDashboard from '../Components/ProjectDashboard'
 import useUserName from '../hooks/useUserName'
 import { savePdfToIndexedDB, loadPdfFromIndexedDB } from '../utils/pdfStorage'
@@ -22,42 +20,6 @@ import {
 } from '../Components/ApiCalls'
 
 
-const server_urls = {
-  "localhost": 'http://127.0.0.1:8000',
-  "server": 'https://fdsbackend-1-r7337380.deta.app'
-}
-const testElements = [
-  {
-    "type": "polyline",
-    "points": [
-        { "x": 234.58699702156903, "y": 1418.6927915113936 },
-        { "x": 497.1010174980868, "y": 1418.6927915113936 },
-        { "x": 497.1010174980868, "y": 1329.3263164555578 },
-        { "x": 234.58699702156903, "y": 1329.3263164555578 },
-        { "x": 234.58699702156903, "y": 1418.6927915113936 }
-    ],
-    "comments": "obstruction"
-  },
-  {
-    "type": "rect",
-    "points": [
-        { "x": 184.3183548026614, "y": 1156.178771034876 },
-        { "x": 441.24697058818936, "y": 1301.399293000609 }
-    ],
-    "comments": "mesh"
-  },
-  {
-    "type": "polyline",
-    "points": [
-        { "x": 201.0745688756306, "y": 932.7625833952864 },
-        { "x": 385.392923678292, "y": 932.7625833952864 },
-        { "x": 385.392923678292, "y": 1061.2268912880504 },
-        { "x": 201.0745688756306, "y": 1061.2268912880504 },
-        { "x": 201.0745688756306, "y": 932.7625833952864 }
-    ],
-    "comments": "stairObstruction"
-  }
-]
 
 // Check if we're in the browser environment
 const isBrowser = typeof window !== "undefined";
@@ -85,10 +47,11 @@ export default function Home() {
   const comment = useStore((state) => state.comment)
   const setComment = useStore((state) => state.setComment)
 
-  const [ fdsData, setFdsData] = useState("")
-  const [showModePopup, setShowModePopup] = useState(true)
+  const [showModePopup, setShowModePopup] = useState(false)
+  const currentMode = useStore((state) => state.currentMode)
   const setPdfCanvasRef = useStore((state) => state.setPdfCanvasRef)
-  setPdfCanvasRef(useRef())
+  const pdfCanvasRefLocal = useRef()
+  useEffect(() => { setPdfCanvasRef(pdfCanvasRefLocal) }, [setPdfCanvasRef])
 
   const pdfCanvasRef = useStore((state) => state.pdfCanvasRef)
 
@@ -221,6 +184,7 @@ export default function Home() {
     context.putImageData(greyScaledImageData, 0, 0)
     toggleIsPdfGreyscale(true)
     setSelectedFile(true)
+    setShowUploadScreen(false)
     setPdfData({ coloured: colouredImageData, greyscaled: greyScaledImageData })
 
     if (skipScale) {
@@ -240,40 +204,43 @@ export default function Home() {
     // Render using a URL (pdfjs prefers this for File objects)
     await renderPdf(URL.createObjectURL(file), isContinuing)
 
-    // Upload PDF to S3 if we have a project
-    let currentProjectId = useStore.getState().projectId
-    let currentFloorId = useStore.getState().floorId
+    // Only create project and upload to S3 in fdsGen mode
+    const mode = useStore.getState().currentMode
+    if (mode === 'fdsGen') {
+      let currentProjectId = useStore.getState().projectId
+      let currentFloorId = useStore.getState().floorId
 
-    // If no project yet, create one + initial floor via bulk save
-    if (!currentProjectId) {
-      try {
-        const name = useStore.getState().projectName || "Untitled Project"
-        const project = await createProject(name, userName)
-        currentProjectId = project.id
-        // Do an initial save to create floor 0
-        const saved = await saveProjectToServer(currentProjectId, {
-          name,
-          settings: {},
-          floors: [{ floor_number: 0, name: "Fire Floor", elements: [] }],
-        })
-        currentFloorId = saved.floors[0]?.id
-        setProjectId(currentProjectId)
-        setFloorId(currentFloorId)
-        setProjectName(name)
-      } catch (err) {
-        console.error('Failed to create project:', err)
-        return
+      // If no project yet, create one + initial floor via bulk save
+      if (!currentProjectId) {
+        try {
+          const name = useStore.getState().projectName || "Untitled Project"
+          const project = await createProject(name, userName)
+          currentProjectId = project.id
+          // Do an initial save to create floor 0
+          const saved = await saveProjectToServer(currentProjectId, {
+            name,
+            settings: {},
+            floors: [{ floor_number: 0, name: "Fire Floor", elements: [] }],
+          })
+          currentFloorId = saved.floors[0]?.id
+          setProjectId(currentProjectId)
+          setFloorId(currentFloorId)
+          setProjectName(name)
+        } catch (err) {
+          console.error('Failed to create project:', err)
+          return
+        }
       }
-    }
 
-    // Upload to S3
-    if (currentProjectId && currentFloorId) {
-      try {
-        const pdfFile = new File([arrayBuffer], 'plan.pdf', { type: 'application/pdf' })
-        await uploadFloorPdf(currentProjectId, currentFloorId, pdfFile)
-        console.log('PDF uploaded to S3')
-      } catch (err) {
-        console.error('Failed to upload PDF to S3:', err)
+      // Upload to S3
+      if (currentProjectId && currentFloorId) {
+        try {
+          const pdfFile = new File([arrayBuffer], 'plan.pdf', { type: 'application/pdf' })
+          await uploadFloorPdf(currentProjectId, currentFloorId, pdfFile)
+          console.log('PDF uploaded to S3')
+        } catch (err) {
+          console.error('Failed to upload PDF to S3:', err)
+        }
       }
     }
   }
@@ -282,32 +249,6 @@ export default function Home() {
     e.stopPropagation();
   };
 
-  const handleDownload = () => {
-    if (fdsData) {
-      const blob = new Blob([fdsData], { type: "text/plain;charset=utf-8" });
-      saveAs(blob, "test.fds");
-    }
-  }
-
-  const sendElementData = async () => {
-    let elements = testElements
-    let bodyContent = JSON.stringify( elements )
-    console.log("body: ", bodyContent)
-    const response = await fetch(`${server_urls.localhost}/fds`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: bodyContent,
-    });
-
-    const data = await response.json();
-    console.log("data received: ", data)
-    setFdsData(data)
-    const blob = new Blob([data], { type: "text/plain;charset=utf-8" });
-    saveAs(blob, "test.fds");
-    return data;
-  }
 
   const menuOverlay = (<>
 
@@ -336,11 +277,21 @@ export default function Home() {
 )
 
 
+  const handleModeSelected = (mode) => {
+    // Just navigate — never destroy project data when switching modes
+    setSelectedFile(undefined)
+    setIsContinuing(false)
+    setShowUploadScreen(mode !== 'fdsGen')
+  }
+
   const handleBackToDashboard = () => {
     // Go back to dashboard without destroying project data
     setSelectedFile(undefined)
     setIsContinuing(false)
+    setShowUploadScreen(false)
   }
+
+  const [showUploadScreen, setShowUploadScreen] = useState(false)
 
   const handleNewProject = (name) => {
     if (selectedFile) {
@@ -349,6 +300,7 @@ export default function Home() {
     resetProject()
     setSelectedFile(undefined)
     setIsContinuing(false)
+    setShowUploadScreen(true)
     if (name) setProjectName(name)
   }
 
@@ -377,40 +329,8 @@ export default function Home() {
     }
   }
 
-  const handleContinueProject = async () => {
-    // If we have a projectId, try loading from server first
-    if (projectId && floorId) {
-      setIsLoadingFromServer(true)
-      try {
-        const project = await loadProject(projectId)
-        const floor = project.floors?.find(f => f.id === floorId) || project.floors?.[0]
-        if (floor) {
-          const floorDetail = await loadFloorDetail(projectId, floor.id)
-          hydrateFromServer(project, floorDetail)
 
-          if (floor.pdf_s3_key) {
-            const { url } = await getFloorPdfUrl(projectId, floor.id)
-            await renderPdf(url, true)
-            setIsLoadingFromServer(false)
-            return
-          }
-        }
-      } catch (err) {
-        console.warn('Server load failed during continue, trying IndexedDB:', err)
-      }
-      setIsLoadingFromServer(false)
-    }
-
-    // Fallback: try IndexedDB
-    const storedPdf = await loadPdfFromIndexedDB()
-    if (storedPdf) {
-      await renderPdf(storedPdf, true)
-    } else {
-      setIsContinuing(true)
-    }
-  }
-
-  const showDashboard = !selectedFile && !isContinuing && !isLoadingFromServer
+  const showDashboard = currentMode === 'fdsGen' && !selectedFile && !isContinuing && !isLoadingFromServer && !showUploadScreen
 
   if (!hasMounted) return null
 
@@ -454,20 +374,24 @@ export default function Home() {
       {/* Top bar - visible when working on a project */}
       {selectedFile && (
         <div className="fixed top-2 right-2 z-50 flex gap-2">
-          <button
-            onClick={handleBackToDashboard}
-            className="text-white bg-gray-700 hover:bg-gray-600 font-medium rounded-lg text-sm px-4 py-2"
-            type="button"
-          >
-            All Projects
-          </button>
-          <button
-            onClick={() => handleNewProject()}
-            className="text-white bg-red-700 hover:bg-red-800 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-sm px-4 py-2"
-            type="button"
-          >
-            New Project
-          </button>
+          {currentMode === 'fdsGen' && (
+            <>
+              <button
+                onClick={handleBackToDashboard}
+                className="text-white bg-gray-700 hover:bg-gray-600 font-medium rounded-lg text-sm px-4 py-2"
+                type="button"
+              >
+                All Projects
+              </button>
+              <button
+                onClick={() => handleNewProject()}
+                className="text-white bg-red-700 hover:bg-red-800 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-sm px-4 py-2"
+                type="button"
+              >
+                New Project
+              </button>
+            </>
+          )}
         </div>
       )}
       {tool != "scale" ? (<>
@@ -475,7 +399,7 @@ export default function Home() {
       </>
       )
       :null}
-      {showModePopup && <ModePopup setToggleShowPopup={setShowModePopup}/>}
+      {showModePopup && <ModePopup setToggleShowPopup={setShowModePopup} onModeSelected={handleModeSelected}/>}
       <div>
         { isLoadingFromServer ? (
           <div className="flex flex-col items-center justify-center min-h-screen gap-4">
@@ -490,6 +414,7 @@ export default function Home() {
               setNameInput(userName || '')
               clearName()
             }}
+            onModeSwitch={handleModeSelected}
           />
         ) : selectedFile ? (<>
           <Canvas
@@ -509,8 +434,6 @@ export default function Home() {
             onChange={handleFileChange}
           />
         </label>
-        <button onClick={sendElementData}>Test API</button>
-          <TestButtons />
       </div>
               <FDRobot hintText={isContinuing ? 'Upload the same PDF to continue' : 'Please upload PDF'} />
             </>

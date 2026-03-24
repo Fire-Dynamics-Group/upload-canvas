@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { listProjects } from './ApiCalls'
 import FDRobot from './FDRobot'
+import useStore from '../store/useStore'
 
 function timeAgo(dateStr) {
   if (!dateStr) return ''
@@ -18,7 +19,7 @@ function timeAgo(dateStr) {
   return `${months}mo ago`
 }
 
-export default function ProjectDashboard({ onSelectProject, onNewProject, userName, onEditName }) {
+export default function ProjectDashboard({ onSelectProject, onNewProject, userName, onEditName, onModeSwitch }) {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -54,8 +55,42 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
     onNewProject(name)
   }
 
+  const currentMode = useStore((state) => state.currentMode)
+  const setCurrentMode = useStore((state) => state.setCurrentMode)
+
+  const modeOptions = [
+    { key: 'fdsGen', label: 'FDS Generation' },
+    { key: 'radiation', label: 'Radiation' },
+    { key: 'timeEq', label: 'Time Equivalence' },
+  ]
+
+  const handleModeClick = (mode) => {
+    setCurrentMode(mode)
+    if (mode !== 'fdsGen' && onModeSwitch) {
+      onModeSwitch(mode)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-900 text-white">
+      {/* Mode switcher */}
+      <div className="flex items-center gap-2 px-6 pt-4 pb-2">
+        <span className="text-sm text-gray-400 mr-2">Mode:</span>
+        {modeOptions.map((m) => (
+          <button
+            key={m.key}
+            onClick={() => handleModeClick(m.key)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              currentMode === m.key
+                ? 'bg-blue-700 text-white'
+                : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 border border-gray-700'
+            }`}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
         <div className="flex items-center gap-4">
@@ -131,15 +166,28 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
               <button
                 key={project.id}
                 onClick={() => onSelectProject(project.id)}
-                className="bg-gray-800 hover:bg-gray-700 rounded-lg p-4 text-left transition-colors border border-gray-700 hover:border-gray-500"
+                className="bg-gray-800 hover:bg-gray-700 rounded-lg overflow-hidden text-left transition-colors border border-gray-700 hover:border-gray-500"
               >
-                <h3 className="font-medium text-white truncate">{project.name}</h3>
-                <p className="text-sm text-gray-400 mt-1">
-                  {project.created_by || 'Unknown'}
-                </p>
-                <div className="flex justify-between items-center mt-3 text-xs text-gray-500">
-                  <span>{project.floors?.length || 0} floor{(project.floors?.length || 0) !== 1 ? 's' : ''}</span>
-                  <span>{timeAgo(project.updated_at)}</span>
+                {project.settings?.thumbnail ? (
+                  <img
+                    src={project.settings.thumbnail}
+                    alt={project.name}
+                    className="w-full h-40 object-cover bg-gray-900"
+                  />
+                ) : (
+                  <div className="w-full h-40 bg-gray-900 flex items-center justify-center text-gray-600 text-sm">
+                    No preview
+                  </div>
+                )}
+                <div className="p-4">
+                  <h3 className="font-medium text-white truncate">{project.name}</h3>
+                  <p className="text-sm text-gray-400 mt-1">
+                    {project.created_by || 'Unknown'}
+                  </p>
+                  <div className="flex justify-between items-center mt-3 text-xs text-gray-500">
+                    <span>{project.floors?.length || 0} floor{(project.floors?.length || 0) !== 1 ? 's' : ''}</span>
+                    <span>{timeAgo(project.updated_at)}</span>
+                  </div>
                 </div>
               </button>
             ))}

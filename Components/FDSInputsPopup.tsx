@@ -309,32 +309,52 @@ const FDSInputsPopup = ({handleUserInput}) => {
                                         <option value="apartment">Apartment Door</option>
                                         <option value="stair">Stair Door</option>
                                         <option value="lobby">Lobby Door</option>
+                                        <option value="always_open">Always Open (permanent hole)</option>
+                                        <option value="leakage">Leakage Only (no hole)</option>
                                         <option value="other">Other</option>
                                     </select>
                                 </div>
 
-                                {/* Leakage settings per door */}
+                                {/* Leakage settings per door (hidden for always_open) */}
+                                {doorRoles[door.id] !== 'always_open' && (
                                 <div className="ml-2 mt-1">
-                                    <label className="flex items-center gap-2 mb-1">
-                                        <input
-                                            type="checkbox"
-                                            checked={doorLeakageConfig[door.id]?.enabled !== false}
-                                            onChange={(e) => handleLeakageConfigChange(door.id, 'enabled', e.target.checked)}
-                                        />
-                                        <span className="text-sm">Include leakage</span>
-                                    </label>
-                                    {doorLeakageConfig[door.id]?.enabled !== false && (
-                                        <select
-                                            className="border border-gray-300 px-2 py-1 rounded-md text-sm"
-                                            value={doorLeakageConfig[door.id]?.sealType || 'non-smoke-sealed'}
-                                            onChange={(e) => handleLeakageConfigChange(door.id, 'sealType', e.target.value)}
-                                        >
-                                            <option value="smoke-sealed">Smoke Sealed</option>
-                                            <option value="non-smoke-sealed">Non-Smoke Sealed</option>
-                                            <option value="custom">Custom</option>
-                                        </select>
+                                    {doorRoles[door.id] === 'leakage' ? (
+                                        <>
+                                            <p className="text-xs text-gray-500 mb-1">Leakage-only: wall stays solid, HVAC leak vents generated.</p>
+                                            <select
+                                                className="border border-gray-300 px-2 py-1 rounded-md text-sm"
+                                                value={doorLeakageConfig[door.id]?.sealType || 'non-smoke-sealed'}
+                                                onChange={(e) => handleLeakageConfigChange(door.id, 'sealType', e.target.value)}
+                                            >
+                                                <option value="smoke-sealed">Smoke Sealed</option>
+                                                <option value="non-smoke-sealed">Non-Smoke Sealed</option>
+                                                <option value="custom">Custom</option>
+                                            </select>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <label className="flex items-center gap-2 mb-1">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={doorLeakageConfig[door.id]?.enabled !== false}
+                                                    onChange={(e) => handleLeakageConfigChange(door.id, 'enabled', e.target.checked)}
+                                                />
+                                                <span className="text-sm">Include leakage</span>
+                                            </label>
+                                            {doorLeakageConfig[door.id]?.enabled !== false && (
+                                                <select
+                                                    className="border border-gray-300 px-2 py-1 rounded-md text-sm"
+                                                    value={doorLeakageConfig[door.id]?.sealType || 'non-smoke-sealed'}
+                                                    onChange={(e) => handleLeakageConfigChange(door.id, 'sealType', e.target.value)}
+                                                >
+                                                    <option value="smoke-sealed">Smoke Sealed</option>
+                                                    <option value="non-smoke-sealed">Non-Smoke Sealed</option>
+                                                    <option value="custom">Custom</option>
+                                                </select>
+                                            )}
+                                        </>
                                     )}
-                                    {doorLeakageConfig[door.id]?.sealType === 'custom' && (
+                                    {(doorLeakageConfig[door.id]?.sealType === 'custom') && (doorRoles[door.id] === 'leakage' || doorLeakageConfig[door.id]?.enabled !== false) && (
                                         <div className="mt-2 flex flex-col gap-1">
                                             <label className="text-sm">Bottom Gap (m):
                                                 <input type="number" step="0.001" className="ml-2 border px-2 py-1 rounded-md w-24"
@@ -351,6 +371,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                                         </div>
                                     )}
                                 </div>
+                                )}
                             </div>
                         ))}
                     </div>

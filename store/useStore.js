@@ -47,6 +47,7 @@ const useStore = create(persist((set, get) => {
         pdfData: null,
         pdfIsGreyscale: false,
         pdfCanvasRef: null,
+        thumbnail: null,
         totalHeatFlux: 476,
         heatEndpoint: 1.3333,
         fireFloorZ: 0,
@@ -188,6 +189,9 @@ const useStore = create(persist((set, get) => {
         setPdfCanvasRef: (newRef) => set(() => ({
             pdfCanvasRef: newRef
         })),
+        setThumbnail: (dataUrl) => set(() => ({
+            thumbnail: dataUrl
+        })),
         setTotalHeatFlux: (newVal) => set(() => ({
             totalHeatFlux: newVal
         })),
@@ -328,6 +332,7 @@ const useStore = create(persist((set, get) => {
                     heatEndpoint: s.heatEndpoint,
                     numberOfStairs: s.numberOfStairs,
                     stairObject: s.stairObject,
+                    thumbnail: s.thumbnail,
                 },
                 floors: [
                     {
@@ -425,7 +430,6 @@ const useStore = create(persist((set, get) => {
                 hasDoor: false,
                 pdfData: null,
                 pdfIsGreyscale: false,
-                pdfCanvasRef: null,
                 totalHeatFlux: 476,
                 heatEndpoint: 1.3333,
                 fireFloorZ: 0,
