@@ -887,7 +887,25 @@ function Canvas({dimensions, isDevMode}) {
                     }
                 }
 
-                // 4 candidates, filter by polygon, take first 2
+                // Min distance from point to polygon edges
+                const minDistToPoly = (px, py, poly) => {
+                    let minDist = Infinity
+                    for (let i = 0; i < poly.length; i++) {
+                        const p1 = poly[i], p2 = poly[(i + 1) % poly.length]
+                        const dx = p2.x - p1.x, dy = p2.y - p1.y
+                        const segLenSq = dx * dx + dy * dy
+                        if (segLenSq === 0) {
+                            minDist = Math.min(minDist, Math.hypot(px - p1.x, py - p1.y))
+                        } else {
+                            const t = Math.max(0, Math.min(1, ((px - p1.x) * dx + (py - p1.y) * dy) / segLenSq))
+                            minDist = Math.min(minDist, Math.hypot(px - (p1.x + t * dx), py - (p1.y + t * dy)))
+                        }
+                    }
+                    return minDist
+                }
+
+                // 4 candidates, filter by polygon + 1m wall clearance, take first 2
+                const minClearancePx = 1.0 * pxPerM  // BS 9251: 1m from walls
                 const allCandidates = [
                     { x: firePt.x + offsetPx, y: firePt.y + offsetPx },
                     { x: firePt.x - offsetPx, y: firePt.y - offsetPx },
@@ -896,7 +914,13 @@ function Canvas({dimensions, isDevMode}) {
                 ]
                 let sprinklerPositions
                 if (enclosingPoly) {
-                    sprinklerPositions = allCandidates.filter(c => pointInPoly(c.x, c.y, enclosingPoly)).slice(0, 2)
+                    sprinklerPositions = allCandidates.filter(c =>
+                        pointInPoly(c.x, c.y, enclosingPoly) &&
+                        minDistToPoly(c.x, c.y, enclosingPoly) >= minClearancePx
+                    ).slice(0, 2)
+                    if (sprinklerPositions.length < 2) {
+                        sprinklerPositions = allCandidates.filter(c => pointInPoly(c.x, c.y, enclosingPoly)).slice(0, 2)
+                    }
                     if (sprinklerPositions.length < 2) sprinklerPositions = allCandidates.slice(0, 2)
                 } else {
                     sprinklerPositions = allCandidates.slice(0, 2)
