@@ -99,6 +99,12 @@ const useStore = create(persist((set, get) => {
         inletConfig: {}, // per-inlet: { [inletId]: { openingHeight, openingBase } }
         highlightedInletId: null,
 
+        // Zone assignment: { [elementId]: { type: "corridor"|"lobby"|"other", name: "Lobby 1" } }
+        zoneConfig: {},
+
+        // Debug: decomposed rectangles for sensor visualization (pixel coords)
+        debugRects: [], // flat array [x1,y1,x2,y2, ...] of rect corners in pixels
+
         // AOV settings
         aovMode: "always_open", // "always_open" | "timed" | "sprinkler"
         aovActivationTime: null, // seconds, used when aovMode is "timed"
@@ -324,6 +330,9 @@ const useStore = create(persist((set, get) => {
         setInletConfig: (newVal) => set(() => ({ inletConfig: newVal })),
         setHighlightedInletId: (newVal) => set(() => ({ highlightedInletId: newVal })),
 
+        // Zone setters
+        setZoneConfig: (newVal) => set(() => ({ zoneConfig: newVal })),
+
         // Landing role setters
         setLandingRoles: (newVal) => set(() => ({ landingRoles: newVal })),
         setHighlightedLandingId: (newVal) => set(() => ({ highlightedLandingId: newVal })),
@@ -332,6 +341,7 @@ const useStore = create(persist((set, get) => {
 
         // Obstruction transparency setter
         setObstructionTransparency: (newVal) => set(() => ({ obstructionTransparency: newVal })),
+        setDebugRects: (newVal) => set(() => ({ debugRects: newVal })),
 
         // Project persistence setters
         setProjectId: (newVal) => set(() => ({ projectId: newVal })),
@@ -384,6 +394,7 @@ const useStore = create(persist((set, get) => {
                             stairStyle: s.stairStyle,
                             extractConfig: s.extractConfig,
                             inletConfig: s.inletConfig,
+                            zoneConfig: s.zoneConfig,
                         },
                         elements: s.elements.map((el, i) => ({
                             element_index: el.id ?? i,
@@ -438,6 +449,7 @@ const useStore = create(persist((set, get) => {
                 stairStyle: fs.stairStyle ?? "overlapping",
                 extractConfig: fs.extractConfig ?? {},
                 inletConfig: fs.inletConfig ?? {},
+                zoneConfig: fs.zoneConfig ?? {},
                 // Elements
                 elements: (floorDetail.elements || []).map(el => ({
                     id: el.element_index,
@@ -497,6 +509,7 @@ const useStore = create(persist((set, get) => {
                 highlightedExtractId: null,
                 inletConfig: {},
                 highlightedInletId: null,
+                zoneConfig: {},
                 aovMode: "always_open",
                 aovActivationTime: null,
                 obstructionTransparency: { stairWalls: 0.25, stairRoof: 0.25, fireFloorWalls: 0.0 },
@@ -544,6 +557,7 @@ const useStore = create(persist((set, get) => {
         stairStyle: state.stairStyle,
         extractConfig: state.extractConfig,
         inletConfig: state.inletConfig,
+        zoneConfig: state.zoneConfig,
         aovMode: state.aovMode,
         aovActivationTime: state.aovActivationTime,
         obstructionTransparency: state.obstructionTransparency,

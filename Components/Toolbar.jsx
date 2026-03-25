@@ -51,6 +51,7 @@ const Toolbar = ({setShowModePopup}) => {
     const aovActivationTime = useStore((state) => state.aovActivationTime)
     const extractConfig = useStore((state) => state.extractConfig)
     const inletConfig = useStore((state) => state.inletConfig)
+    const zoneConfig = useStore((state) => state.zoneConfig)
     const obstructionTransparency = useStore((state) => state.obstructionTransparency)
     // const handleWalkingInput = useStore((state) => state.handleWalkingInput)
     // const [walkingInput, setWalkingInput] = useState(null)
@@ -176,7 +177,8 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                     aovMode,
                     aovActivationTime,
                     extractConfig,
-                    inletConfig
+                    inletConfig,
+                    zoneConfig
                     )
       }
 

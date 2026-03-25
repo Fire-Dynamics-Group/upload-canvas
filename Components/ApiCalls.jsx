@@ -166,7 +166,8 @@ export const sendFdsData = async (
   aov_mode="always_open",
   aov_activation_time=null,
   extract_config={},
-  inlet_config={}
+  inlet_config={},
+  zone_config={}
 ) => {
     console.log("elementList at api call: ", elementList)
     let bodyContent = JSON.stringify( {
@@ -196,7 +197,8 @@ export const sendFdsData = async (
       aov_mode,
       aov_activation_time,
       extract_config,
-      inlet_config
+      inlet_config,
+      zone_config
     } )
     console.log("bodyContent: ", bodyContent)
     const response = await fetch(`${API_BASE}/fds`, {

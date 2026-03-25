@@ -1,7 +1,7 @@
 import useStore from '../store/useStore'
 import { defaultDoorTimings } from '../store/useStore'
 import { useState } from "react";
-import { computeCenterlinePoints, findCorridorObstruction } from '../utils/corridorCenterline'
+import { computeCenterlinePoints, findCorridorObstruction, computeStairSensorPositions } from '../utils/corridorCenterline'
 
 // @ts-ignore
 const FDSInputsPopup = ({handleUserInput}) => {
@@ -83,8 +83,13 @@ const FDSInputsPopup = ({handleUserInput}) => {
     const setInletConfig = useStore((state) => state.setInletConfig)
     const setHighlightedInletId = useStore((state) => state.setHighlightedInletId)
 
+    // Zone config
+    const zoneConfig = useStore((state) => state.zoneConfig)
+    const setZoneConfig = useStore((state) => state.setZoneConfig)
+
     const elements = useStore((state) => state.elements)
     const setSensorTreeElements = useStore((state) => state.setSensorTreeElements)
+    const setDebugRects = useStore((state) => state.setDebugRects)
     const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
     // @ts-ignore
     const doorElements = elements.filter(element => element.comments === 'door')
@@ -130,7 +135,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
         setObstructionTransparency({ ...obstructionTransparency, [key]: numVal })
     }
 
-    type TabType = 'general' | 'scenario' | 'doors' | 'devices' | 'stairs' | 'extracts' | 'display'
+    type TabType = 'general' | 'scenario' | 'doors' | 'devices' | 'stairs' | 'extracts' | 'zones' | 'display'
     const [activeTab, setActiveTab] = useState<TabType>('general')
 
     const TabButton = ({ tab, label }: { tab: TabType, label: string }) => (
@@ -474,21 +479,32 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     // Find the obstruction that interfaces with both corridor doors
                     const corridor = findCorridorObstruction(obstructions, doorElements, doorRoles)
                     if (!corridor) return
-                    console.log("Corridor obs id:", corridor.id, "points:", corridor.points.length, JSON.stringify(corridor.points))
-                    console.log("Corridor doors:", doorElements.filter(d => ['apartment','stair','lobby'].includes(doorRoles[d.id])).map(d => ({
-                        id: d.id, role: doorRoles[d.id],
-                        cx: (d.points[0].x + d.points[1].x) / 2,
-                        cy: (d.points[0].y + d.points[1].y) / 2,
-                    })))
-                    console.log("pxPerM:", pixelsPerMesh * 10)
+                    setDebugRects([]) // clear old debug rects
                     const points = computeCenterlinePoints(
                         corridor.points,
                         doorElements,
                         doorRoles,
                         pixelsPerMesh
                     )
-                    console.log("Sensor points:", points.length)
-                    setSensorTreeElements(points)
+
+                    // Also compute stair sensor positions
+                    const stairDoor = doorElements.find((d: any) => doorRoles[d.id] === 'stair')
+                    // @ts-ignore
+                    const stairObstructions = elements.filter(el => el.comments === 'stairObstruction')
+                    let stairPoints: Array<{x: number, y: number}> = []
+                    if (stairDoor && stairObstructions.length > 0 && landingElements.length > 0) {
+                        // Use the floor landing if available, otherwise first landing
+                        const floorLanding = landingElements.find((el: any) => landingRoles[el.id] === 'floor')
+                        const landing = floorLanding || landingElements[0]
+                        stairPoints = computeStairSensorPositions(
+                            stairDoor,
+                            stairObstructions[0].points,
+                            landing,
+                            pixelsPerMesh
+                        )
+                    }
+
+                    setSensorTreeElements([...points, ...stairPoints])
                 }}
             >
                 Compute Sensor Locations
@@ -497,7 +513,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
             {elements.filter(el => el.comments === 'sensorTree').length > 0 && (
                 <p className="text-sm text-green-400 mb-4">
                     {/* @ts-ignore */}
-                    {elements.filter(el => el.comments === 'sensorTree').length} sensors placed on corridor centerline
+                    {elements.filter(el => el.comments === 'sensorTree').length} sensors placed (corridor + stair)
                 </p>
             )}
 
@@ -920,6 +936,163 @@ const FDSInputsPopup = ({handleUserInput}) => {
         </>
     )
 
+    const ZoneInputs = () => {
+        const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
+        // @ts-ignore
+        const obstructions = elements.filter(el => el.comments === 'obstruction')
+
+        // Point-in-polygon (ray casting)
+        const pointInPoly = (px: number, py: number, poly: any[]) => {
+            let inside = false
+            for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                const xi = poly[i].x, yi = poly[i].y
+                const xj = poly[j].x, yj = poly[j].y
+                if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
+                    inside = !inside
+                }
+            }
+            return inside
+        }
+
+        // Compute bounding box of all elements for scaling
+        let allPts: any[] = []
+        elements.forEach((el: any) => el.points?.forEach((p: any) => allPts.push(p)))
+        const minX = Math.min(...allPts.map((p: any) => p.x))
+        const maxX = Math.max(...allPts.map((p: any) => p.x))
+        const minY = Math.min(...allPts.map((p: any) => p.y))
+        const maxY = Math.max(...allPts.map((p: any) => p.y))
+        const pad = 20
+        const mapW = 360
+        const rangeX = maxX - minX || 1
+        const rangeY = maxY - minY || 1
+        const scale = Math.min((mapW - pad * 2) / rangeX, (mapW - pad * 2) / rangeY)
+        const mapH = rangeY * scale + pad * 2
+
+        const toMapX = (x: number) => pad + (x - minX) * scale
+        const toMapY = (y: number) => pad + (y - minY) * scale
+
+        const handleMapClick = (e: React.MouseEvent<SVGSVGElement>) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            const mx = e.clientX - rect.left
+            const my = e.clientY - rect.top
+            // Convert back to element coords
+            const ex = (mx - pad) / scale + minX
+            const ey = (my - pad) / scale + minY
+
+            // Find which obstruction contains the click
+            for (const obs of obstructions) {
+                if (pointInPoly(ex, ey, obs.points)) {
+                    setSelectedZoneId(obs.id)
+                    // Auto-assign default if not yet configured
+                    if (!zoneConfig[obs.id]) {
+                        setZoneConfig({ ...zoneConfig, [obs.id]: { type: 'corridor', name: 'Corridor 1' } })
+                    }
+                    return
+                }
+            }
+        }
+
+        const handleZoneChange = (id: string, field: string, value: string) => {
+            setZoneConfig({
+                ...zoneConfig,
+                [id]: { ...(zoneConfig[id] || { type: 'corridor', name: 'Corridor 1' }), [field]: value }
+            })
+        }
+
+        const removeZone = (id: string) => {
+            const newConfig = { ...zoneConfig }
+            delete newConfig[id]
+            setZoneConfig(newConfig)
+            if (selectedZoneId === id) setSelectedZoneId(null)
+        }
+
+        // Zone type colors
+        const zoneColors: Record<string, string> = {
+            corridor: 'rgba(59, 130, 246, 0.3)',
+            lobby: 'rgba(168, 85, 247, 0.3)',
+            other: 'rgba(34, 197, 94, 0.3)',
+        }
+
+        return (
+            <>
+                <h2 className="text-lg font-bold mb-2">Zone Assignment</h2>
+                <p className="text-sm text-gray-500 mb-3">Click an area on the map to assign it as a sensor zone.</p>
+
+                {allPts.length > 0 ? (
+                    <svg width={mapW} height={mapH} className="border rounded bg-gray-100 cursor-pointer mb-4" onClick={handleMapClick}>
+                        {/* Draw all obstructions */}
+                        {obstructions.map((obs: any) => {
+                            const zone = zoneConfig[obs.id]
+                            const isSelected = selectedZoneId === obs.id
+                            const pts = obs.points.map((p: any) => `${toMapX(p.x)},${toMapY(p.y)}`).join(' ')
+                            return (
+                                <g key={obs.id}>
+                                    <polygon
+                                        points={pts}
+                                        fill={zone ? zoneColors[zone.type] || 'rgba(156,163,175,0.2)' : 'rgba(156,163,175,0.2)'}
+                                        stroke={isSelected ? '#f59e0b' : zone ? '#3b82f6' : '#6b7280'}
+                                        strokeWidth={isSelected ? 3 : 1}
+                                    />
+                                    {zone && (
+                                        <text
+                                            x={toMapX(obs.points.reduce((s: number, p: any) => s + p.x, 0) / obs.points.length)}
+                                            y={toMapY(obs.points.reduce((s: number, p: any) => s + p.y, 0) / obs.points.length)}
+                                            textAnchor="middle" dominantBaseline="middle"
+                                            fontSize={11} fontWeight="bold" fill="#1e3a5f"
+                                        >
+                                            {zone.name}
+                                        </text>
+                                    )}
+                                </g>
+                            )
+                        })}
+                        {/* Draw doors, extracts, inlets for reference */}
+                        {elements.filter((el: any) => ['door', 'extract', 'inlet'].includes(el.comments)).map((el: any) => (
+                            <line key={el.id}
+                                x1={toMapX(el.points[0].x)} y1={toMapY(el.points[0].y)}
+                                x2={toMapX(el.points[1]?.x ?? el.points[0].x)} y2={toMapY(el.points[1]?.y ?? el.points[0].y)}
+                                stroke={el.comments === 'door' ? 'red' : el.comments === 'extract' ? 'cyan' : 'purple'}
+                                strokeWidth={2}
+                            />
+                        ))}
+                    </svg>
+                ) : (
+                    <p className="text-sm text-amber-600 mb-3">Draw obstructions on the canvas first.</p>
+                )}
+
+                {/* Zone config for selected/assigned zones */}
+                {Object.keys(zoneConfig).length > 0 && (
+                    <div className="mb-4">
+                        <h3 className="font-bold text-sm mb-2">Assigned Zones</h3>
+                        {Object.entries(zoneConfig).map(([id, zone]: [string, any]) => (
+                            <div key={id}
+                                className={`mb-3 border-l-4 pl-3 py-1 cursor-pointer ${selectedZoneId === id ? 'border-yellow-400' : 'border-blue-400'}`}
+                                onClick={() => setSelectedZoneId(id)}
+                            >
+                                <div className="flex items-center gap-2 mb-1">
+                                    <select className="border border-gray-300 px-2 py-1 rounded-md text-sm"
+                                        value={zone.type}
+                                        onChange={(e) => handleZoneChange(id, 'type', e.target.value)}
+                                    >
+                                        <option value="corridor">Corridor</option>
+                                        <option value="lobby">Lobby</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                    <input type="text" className="border border-gray-300 px-2 py-1 rounded-md text-sm flex-1"
+                                        value={zone.name}
+                                        onChange={(e) => handleZoneChange(id, 'name', e.target.value)}
+                                        placeholder="Zone name"
+                                    />
+                                    <button className="text-red-500 text-sm px-2" onClick={() => removeZone(id)}>Remove</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </>
+        )
+    }
+
     function handleClick() {
         let object = {
             fireFloorZ: fireFloorZ,
@@ -940,6 +1113,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     <TabButton tab="devices" label="Devices" />
                     <TabButton tab="stairs" label="Stairs" />
                     <TabButton tab="extracts" label="Extracts" />
+                    <TabButton tab="zones" label="Zones" />
                     <TabButton tab="display" label="Display" />
                 </div>
 
@@ -950,6 +1124,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     {activeTab === 'devices' && <DeviceInputs />}
                     {activeTab === 'stairs' && <StairInputs />}
                     {activeTab === 'extracts' && <><ExtractInputs /><InletInputs /></>}
+                    {activeTab === 'zones' && <ZoneInputs />}
                     {activeTab === 'display' && <DisplayInputs />}
                 </div>
 
