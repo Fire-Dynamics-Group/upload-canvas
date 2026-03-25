@@ -109,7 +109,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
         setInletConfig({
             ...inletConfig,
             [inletId]: {
-                ...(inletConfig[inletId] || { openingHeight: 3.0, openingBase: 0.0 }),
+                ...(inletConfig[inletId] || { openingHeight: 0.8, openingBase: 0.0 }),
                 [field]: value
             }
         })
@@ -829,7 +829,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
 
                                         <label className="text-sm">Opening Height (m):
                                             <input type="number" step="0.1" className="ml-2 border px-2 py-1 rounded-md w-24"
-                                                value={config.openingHeight ?? 3.0}
+                                                value={config.openingHeight ?? 0.8}
                                                 onChange={(e) => handleExtractConfigChange(extract.id, 'openingHeight', Number(e.target.value))}
                                             />
                                         </label>
@@ -897,7 +897,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                                     <div className="mt-2 flex flex-col gap-2">
                                         <label className="text-sm">Opening Height (m):
                                             <input type="number" step="0.1" className="ml-2 border px-2 py-1 rounded-md w-24"
-                                                value={config.openingHeight ?? 3.0}
+                                                value={config.openingHeight ?? 0.8}
                                                 onChange={(e) => handleInletConfigChange(inlet.id, 'openingHeight', Number(e.target.value))}
                                             />
                                         </label>
