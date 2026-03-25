@@ -863,10 +863,45 @@ function Canvas({dimensions, isDevMode}) {
                 const firePt = fireEl.points[0]
                 const pxPerM = pixelsPerMesh * 10
                 const offsetPx = 1.375 * pxPerM  // 2.75m / 2
-                const sprinklerPositions = [
+
+                // Point-in-polygon test (ray casting)
+                const pointInPoly = (px, py, poly) => {
+                    let inside = false
+                    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                        const xi = poly[i].x, yi = poly[i].y
+                        const xj = poly[j].x, yj = poly[j].y
+                        if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
+                            inside = !inside
+                        }
+                    }
+                    return inside
+                }
+
+                // Find enclosing obstruction polygon
+                const obstructions = elements.filter(el => el.comments === 'obstruction')
+                let enclosingPoly = null
+                for (const obs of obstructions) {
+                    if (pointInPoly(firePt.x, firePt.y, obs.points)) {
+                        enclosingPoly = obs.points
+                        break
+                    }
+                }
+
+                // 4 candidates, filter by polygon, take first 2
+                const allCandidates = [
                     { x: firePt.x + offsetPx, y: firePt.y + offsetPx },
                     { x: firePt.x - offsetPx, y: firePt.y - offsetPx },
+                    { x: firePt.x + offsetPx, y: firePt.y - offsetPx },
+                    { x: firePt.x - offsetPx, y: firePt.y + offsetPx },
                 ]
+                let sprinklerPositions
+                if (enclosingPoly) {
+                    sprinklerPositions = allCandidates.filter(c => pointInPoly(c.x, c.y, enclosingPoly)).slice(0, 2)
+                    if (sprinklerPositions.length < 2) sprinklerPositions = allCandidates.slice(0, 2)
+                } else {
+                    sprinklerPositions = allCandidates.slice(0, 2)
+                }
+
                 sprinklerPositions.forEach((sp, i) => {
                     // Blue circle with cross
                     context.beginPath()
