@@ -54,6 +54,8 @@ function Canvas({dimensions, isDevMode}) {
     const extractConfig = useStore((state) => state.extractConfig)
     const highlightedExtractId = useStore((state) => state.highlightedExtractId)
     const highlightedInletId = useStore((state) => state.highlightedInletId)
+    const isSprinklered = useStore((state) => state.isSprinklered)
+    const debugRects = useStore((state) => state.debugRects)
     const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
     const setPixelsPerMesh = useStore((state) => state.setPixelsPerMesh)
 
@@ -837,7 +839,62 @@ function Canvas({dimensions, isDevMode}) {
             }
         })
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, pixelsPerMesh])
+        // Debug: draw decomposed rectangles
+        if (debugRects && debugRects.length >= 4) {
+            const colors = ['rgba(255,0,0,0.3)', 'rgba(0,0,255,0.3)', 'rgba(255,255,0,0.3)', 'rgba(0,255,255,0.3)', 'rgba(255,0,255,0.3)', 'rgba(128,255,0,0.3)']
+            for (let i = 0; i < debugRects.length; i += 4) {
+                const x = debugRects[i]
+                const xMax = debugRects[i + 1]
+                const y = debugRects[i + 2]
+                const yMax = debugRects[i + 3]
+                const color = colors[(i / 4) % colors.length]
+                context.fillStyle = color
+                context.fillRect(x, y, xMax - x, yMax - y)
+                context.strokeStyle = 'red'
+                context.lineWidth = 1
+                context.strokeRect(x, y, xMax - x, yMax - y)
+            }
+        }
+
+        // Draw sprinkler markers when sprinklers enabled and fire exists
+        if (isSprinklered) {
+            const fireEl = elements.find(el => el.comments === 'fire')
+            if (fireEl && fireEl.points && fireEl.points.length > 0) {
+                const firePt = fireEl.points[0]
+                const pxPerM = pixelsPerMesh * 10
+                const offsetPx = 1.375 * pxPerM  // 2.75m / 2
+                const sprinklerPositions = [
+                    { x: firePt.x + offsetPx, y: firePt.y + offsetPx },
+                    { x: firePt.x - offsetPx, y: firePt.y - offsetPx },
+                ]
+                sprinklerPositions.forEach((sp, i) => {
+                    // Blue circle with cross
+                    context.beginPath()
+                    context.arc(sp.x, sp.y, 8, 0, Math.PI * 2)
+                    context.strokeStyle = '#3b82f6'
+                    context.lineWidth = 2
+                    context.stroke()
+                    // Cross inside
+                    context.beginPath()
+                    context.moveTo(sp.x - 5, sp.y)
+                    context.lineTo(sp.x + 5, sp.y)
+                    context.moveTo(sp.x, sp.y - 5)
+                    context.lineTo(sp.x, sp.y + 5)
+                    context.stroke()
+                    context.lineWidth = 1
+                    // Label
+                    context.font = '9px sans-serif'
+                    context.fillStyle = '#3b82f6'
+                    context.strokeStyle = 'black'
+                    context.lineWidth = 2
+                    context.strokeText(`SPRK${i + 1}`, sp.x + 10, sp.y + 3)
+                    context.fillText(`SPRK${i + 1}`, sp.x + 10, sp.y + 3)
+                    context.lineWidth = 1
+                })
+            }
+        }
+
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, debugRects])
 
     // Generate thumbnail by compositing PDF + drawing canvases
     const thumbnailTimerRef = useRef(null)
