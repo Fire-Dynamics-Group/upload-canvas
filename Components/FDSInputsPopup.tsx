@@ -1,7 +1,8 @@
 import useStore from '../store/useStore'
 import { defaultDoorTimings } from '../store/useStore'
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { computeCenterlinePoints, findCorridorObstruction, computeStairSensorPositions } from '../utils/corridorCenterline'
+import { findEnclosedRegions } from '../utils/findEnclosedRegions'
 
 // @ts-ignore
 const FDSInputsPopup = ({handleUserInput}) => {
@@ -135,7 +136,23 @@ const FDSInputsPopup = ({handleUserInput}) => {
         setObstructionTransparency({ ...obstructionTransparency, [key]: numVal })
     }
 
-    type TabType = 'general' | 'scenario' | 'doors' | 'devices' | 'stairs' | 'extracts' | 'zones' | 'display'
+    // Fire config
+    const fireHRR = useStore((state) => state.fireHRR)
+    const setFireHRR = useStore((state) => state.setFireHRR)
+    const fireDimension = useStore((state) => state.fireDimension)
+    const setFireDimension = useStore((state) => state.setFireDimension)
+    const fireHeightAboveFloor = useStore((state) => state.fireHeightAboveFloor)
+    const setFireHeightAboveFloor = useStore((state) => state.setFireHeightAboveFloor)
+    const fireBase = useStore((state) => state.fireBase)
+    const setFireBase = useStore((state) => state.setFireBase)
+    const fireType = useStore((state) => state.fireType)
+    const setFireType = useStore((state) => state.setFireType)
+    const fireGrowthRate = useStore((state) => state.fireGrowthRate)
+    const setFireGrowthRate = useStore((state) => state.setFireGrowthRate)
+    const fireCustomAlpha = useStore((state) => state.fireCustomAlpha)
+    const setFireCustomAlpha = useStore((state) => state.setFireCustomAlpha)
+
+    type TabType = 'general' | 'scenario' | 'fire' | 'doors' | 'devices' | 'stairs' | 'extracts' | 'zones' | 'display'
     const [activeTab, setActiveTab] = useState<TabType>('general')
 
     const TabButton = ({ tab, label }: { tab: TabType, label: string }) => (
@@ -227,6 +244,138 @@ const FDSInputsPopup = ({handleUserInput}) => {
                         placeholder="e.g. 40"
                         onChange={(e) => setAovActivationTime(e.target.value ? parseFloat(e.target.value) : null)}
                     />
+                </>
+            )}
+        </>
+    )
+
+    const fireHRRPresets = [
+        { label: "Chip Pan (476 kW)", value: 476 },
+        { label: "Chip Pan Banned (150.5 kW)", value: 150.5 },
+        { label: "1 MW Design Fire", value: 1000 },
+        { label: "Custom", value: "custom" },
+    ]
+
+    const growthRateOptions = [
+        { label: "Slow (0.00293 kW/s\u00B2)", value: "slow" },
+        { label: "Medium (0.01172 kW/s\u00B2)", value: "medium" },
+        { label: "Fast (0.04689 kW/s\u00B2)", value: "fast" },
+        { label: "Ultra Fast (0.1876 kW/s\u00B2)", value: "ultra_fast" },
+        { label: "Custom", value: "custom" },
+    ]
+
+    const [customHRR, setCustomHRR] = useState(!fireHRRPresets.some(p => p.value === fireHRR))
+
+    const FireInputs = () => (
+        <>
+            <h2 className="text-lg font-bold mb-2">Fire HRR (kW)</h2>
+            <select
+                className="w-full border border-gray-300 px-3 py-2 rounded-md mb-2"
+                value={customHRR ? "custom" : fireHRR}
+                onChange={(e) => {
+                    if (e.target.value === "custom") {
+                        setCustomHRR(true)
+                    } else {
+                        setCustomHRR(false)
+                        setFireHRR(Number(e.target.value))
+                    }
+                }}
+            >
+                {fireHRRPresets.map((p) => (
+                    <option key={String(p.value)} value={p.value}>{p.label}</option>
+                ))}
+            </select>
+            {customHRR && (
+                <input
+                    type="number"
+                    className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                    value={fireHRR}
+                    placeholder="Enter HRR in kW"
+                    onChange={(e) => setFireHRR(Number(e.target.value))}
+                />
+            )}
+
+            <h2 className="text-lg font-bold mb-2">Fire Dimension (m)</h2>
+            <p className="text-sm text-gray-500 mb-1">Square fire footprint side length. Area: {(fireDimension * fireDimension).toFixed(2)} m²</p>
+            <input
+                type="number"
+                step="0.1"
+                className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                value={fireDimension}
+                onChange={(e) => setFireDimension(Number(e.target.value))}
+            />
+
+            <p className="text-sm text-gray-500 mb-1">HRRPUA: {(fireHRR / (fireDimension * fireDimension)).toFixed(1)} kW/m²</p>
+
+            <h2 className="text-lg font-bold mb-2">Fire Height Above Floor (m)</h2>
+            <input
+                type="number"
+                step="0.1"
+                className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                value={fireHeightAboveFloor}
+                onChange={(e) => setFireHeightAboveFloor(Number(e.target.value))}
+            />
+
+            <h2 className="text-lg font-bold mb-2">Fire Base Height (m)</h2>
+            <input
+                type="number"
+                step="0.1"
+                className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                value={fireBase}
+                onChange={(e) => setFireBase(Number(e.target.value))}
+            />
+
+            <h2 className="text-lg font-bold mb-2">Fire Type</h2>
+            <div className="flex flex-col gap-2 mb-4">
+                {[
+                    { value: "growing", label: "Growing (t² ramp)" },
+                    { value: "steady_state", label: "Steady State (constant)" },
+                ].map((option) => (
+                    <label key={option.value} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="fireType"
+                            value={option.value}
+                            checked={fireType === option.value}
+                            onChange={(e) => setFireType(e.target.value)}
+                        />
+                        <span>{option.label}</span>
+                    </label>
+                ))}
+            </div>
+
+            {fireType === "growing" && (
+                <>
+                    <h2 className="text-lg font-bold mb-2">Growth Rate</h2>
+                    <select
+                        className="w-full border border-gray-300 px-3 py-2 rounded-md mb-2"
+                        value={fireGrowthRate}
+                        onChange={(e) => setFireGrowthRate(e.target.value)}
+                    >
+                        {growthRateOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                    </select>
+                    {fireGrowthRate === "custom" && (
+                        <>
+                            <h2 className="text-lg font-bold mb-2">Custom Alpha (kW/s²)</h2>
+                            <input
+                                type="number"
+                                step="0.001"
+                                className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                                value={fireCustomAlpha ?? ""}
+                                placeholder="e.g. 0.01172"
+                                onChange={(e) => setFireCustomAlpha(e.target.value ? parseFloat(e.target.value) : null)}
+                            />
+                        </>
+                    )}
+                    <p className="text-sm text-gray-500 mb-4">
+                        Time to reach {fireHRR} kW: {(() => {
+                            const alphaMap: Record<string, number> = { slow: 0.00293, medium: 0.01172, fast: 0.04689, ultra_fast: 0.1876 }
+                            const alpha = fireGrowthRate === "custom" ? (fireCustomAlpha || 0.01172) : (alphaMap[fireGrowthRate] || 0.01172)
+                            return Math.round(Math.sqrt(fireHRR / alpha))
+                        })()} s
+                    </p>
                 </>
             )}
         </>
@@ -938,8 +1087,10 @@ const FDSInputsPopup = ({handleUserInput}) => {
 
     const ZoneInputs = () => {
         const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
+
+        // Auto-detect enclosed regions from all obstruction wall segments
         // @ts-ignore
-        const obstructions = elements.filter(el => el.comments === 'obstruction')
+        const regions = useMemo(() => findEnclosedRegions(elements), [elements])
 
         // Point-in-polygon (ray casting)
         const pointInPoly = (px: number, py: number, poly: any[]) => {
@@ -954,9 +1105,12 @@ const FDSInputsPopup = ({handleUserInput}) => {
             return inside
         }
 
-        // Compute bounding box of all elements for scaling
+        // Compute bounding box for scaling
         let allPts: any[] = []
         elements.forEach((el: any) => el.points?.forEach((p: any) => allPts.push(p)))
+        if (allPts.length === 0) {
+            return <p className="text-sm text-amber-600">Draw obstructions on the canvas first.</p>
+        }
         const minX = Math.min(...allPts.map((p: any) => p.x))
         const maxX = Math.max(...allPts.map((p: any) => p.x))
         const minY = Math.min(...allPts.map((p: any) => p.y))
@@ -975,17 +1129,18 @@ const FDSInputsPopup = ({handleUserInput}) => {
             const rect = e.currentTarget.getBoundingClientRect()
             const mx = e.clientX - rect.left
             const my = e.clientY - rect.top
-            // Convert back to element coords
             const ex = (mx - pad) / scale + minX
             const ey = (my - pad) / scale + minY
 
-            // Find which obstruction contains the click
-            for (const obs of obstructions) {
-                if (pointInPoly(ex, ey, obs.points)) {
-                    setSelectedZoneId(obs.id)
-                    // Auto-assign default if not yet configured
-                    if (!zoneConfig[obs.id]) {
-                        setZoneConfig({ ...zoneConfig, [obs.id]: { type: 'corridor', name: 'Corridor 1' } })
+            // Find which detected region contains the click
+            for (const region of regions) {
+                if (pointInPoly(ex, ey, region.points)) {
+                    setSelectedZoneId(region.id)
+                    if (!zoneConfig[region.id]) {
+                        setZoneConfig({
+                            ...zoneConfig,
+                            [region.id]: { type: 'corridor', name: `Corridor ${Object.keys(zoneConfig).length + 1}`, points: region.points }
+                        })
                     }
                     return
                 }
@@ -1006,7 +1161,6 @@ const FDSInputsPopup = ({handleUserInput}) => {
             if (selectedZoneId === id) setSelectedZoneId(null)
         }
 
-        // Zone type colors
         const zoneColors: Record<string, string> = {
             corridor: 'rgba(59, 130, 246, 0.3)',
             lobby: 'rgba(168, 85, 247, 0.3)',
@@ -1016,51 +1170,59 @@ const FDSInputsPopup = ({handleUserInput}) => {
         return (
             <>
                 <h2 className="text-lg font-bold mb-2">Zone Assignment</h2>
-                <p className="text-sm text-gray-500 mb-3">Click an area on the map to assign it as a sensor zone.</p>
+                <p className="text-sm text-gray-500 mb-3">
+                    Click an enclosed area on the map to assign it as a sensor zone.
+                    {regions.length > 0 ? ` ${regions.length} region${regions.length > 1 ? 's' : ''} detected.` : ' No enclosed regions detected.'}
+                </p>
 
-                {allPts.length > 0 ? (
-                    <svg width={mapW} height={mapH} className="border rounded bg-gray-100 cursor-pointer mb-4" onClick={handleMapClick}>
-                        {/* Draw all obstructions */}
-                        {obstructions.map((obs: any) => {
-                            const zone = zoneConfig[obs.id]
-                            const isSelected = selectedZoneId === obs.id
-                            const pts = obs.points.map((p: any) => `${toMapX(p.x)},${toMapY(p.y)}`).join(' ')
-                            return (
-                                <g key={obs.id}>
-                                    <polygon
-                                        points={pts}
-                                        fill={zone ? zoneColors[zone.type] || 'rgba(156,163,175,0.2)' : 'rgba(156,163,175,0.2)'}
-                                        stroke={isSelected ? '#f59e0b' : zone ? '#3b82f6' : '#6b7280'}
-                                        strokeWidth={isSelected ? 3 : 1}
-                                    />
-                                    {zone && (
-                                        <text
-                                            x={toMapX(obs.points.reduce((s: number, p: any) => s + p.x, 0) / obs.points.length)}
-                                            y={toMapY(obs.points.reduce((s: number, p: any) => s + p.y, 0) / obs.points.length)}
-                                            textAnchor="middle" dominantBaseline="middle"
-                                            fontSize={11} fontWeight="bold" fill="#1e3a5f"
-                                        >
-                                            {zone.name}
-                                        </text>
-                                    )}
-                                </g>
-                            )
-                        })}
-                        {/* Draw doors, extracts, inlets for reference */}
-                        {elements.filter((el: any) => ['door', 'extract', 'inlet'].includes(el.comments)).map((el: any) => (
-                            <line key={el.id}
-                                x1={toMapX(el.points[0].x)} y1={toMapY(el.points[0].y)}
-                                x2={toMapX(el.points[1]?.x ?? el.points[0].x)} y2={toMapY(el.points[1]?.y ?? el.points[0].y)}
-                                stroke={el.comments === 'door' ? 'red' : el.comments === 'extract' ? 'cyan' : 'purple'}
-                                strokeWidth={2}
+                <svg width={mapW} height={mapH} className="border rounded bg-gray-100 cursor-pointer mb-4" onClick={handleMapClick}>
+                    {/* Draw detected regions as clickable filled polygons */}
+                    {regions.map((region: any) => {
+                        const zone = zoneConfig[region.id]
+                        const isSelected = selectedZoneId === region.id
+                        const pts = region.points.map((p: any) => `${toMapX(p.x)},${toMapY(p.y)}`).join(' ')
+                        const cx = region.points.reduce((s: number, p: any) => s + toMapX(p.x), 0) / region.points.length
+                        const cy = region.points.reduce((s: number, p: any) => s + toMapY(p.y), 0) / region.points.length
+                        return (
+                            <g key={region.id}>
+                                <polygon
+                                    points={pts}
+                                    fill={zone ? zoneColors[zone.type] || 'rgba(156,163,175,0.15)' : 'rgba(156,163,175,0.15)'}
+                                    stroke={isSelected ? '#f59e0b' : zone ? '#3b82f6' : '#9ca3af'}
+                                    strokeWidth={isSelected ? 3 : 1}
+                                />
+                                {zone && (
+                                    <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
+                                        fontSize={10} fontWeight="bold" fill="#1e3a5f">
+                                        {zone.name}
+                                    </text>
+                                )}
+                            </g>
+                        )
+                    })}
+                    {/* Draw wall segments on top */}
+                    {elements.filter((el: any) => el.comments === 'obstruction').map((obs: any, oi: number) => {
+                        const pts = obs.points
+                        return pts.slice(0, -1).map((_: any, i: number) => (
+                            <line key={`wall-${oi}-${i}`}
+                                x1={toMapX(pts[i].x)} y1={toMapY(pts[i].y)}
+                                x2={toMapX(pts[i + 1].x)} y2={toMapY(pts[i + 1].y)}
+                                stroke="#374151" strokeWidth={2}
                             />
-                        ))}
-                    </svg>
-                ) : (
-                    <p className="text-sm text-amber-600 mb-3">Draw obstructions on the canvas first.</p>
-                )}
+                        ))
+                    })}
+                    {/* Draw doors, extracts, inlets for reference */}
+                    {elements.filter((el: any) => ['door', 'extract', 'inlet'].includes(el.comments)).map((el: any) => (
+                        <line key={el.id}
+                            x1={toMapX(el.points[0].x)} y1={toMapY(el.points[0].y)}
+                            x2={toMapX(el.points[1]?.x ?? el.points[0].x)} y2={toMapY(el.points[1]?.y ?? el.points[0].y)}
+                            stroke={el.comments === 'door' ? 'red' : el.comments === 'extract' ? 'cyan' : 'purple'}
+                            strokeWidth={2}
+                        />
+                    ))}
+                </svg>
 
-                {/* Zone config for selected/assigned zones */}
+                {/* Zone config for assigned zones */}
                 {Object.keys(zoneConfig).length > 0 && (
                     <div className="mb-4">
                         <h3 className="font-bold text-sm mb-2">Assigned Zones</h3>
@@ -1108,6 +1270,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
             <div className="bg-white p-4 rounded-lg shadow-lg text-black max-h-[80vh] overflow-y-auto min-w-[400px]">
                 <div className="mb-4 border-b flex flex-wrap">
                     <TabButton tab="general" label="General" />
+                    <TabButton tab="fire" label="Fire" />
                     <TabButton tab="scenario" label="Scenario" />
                     <TabButton tab="doors" label="Doors" />
                     <TabButton tab="devices" label="Devices" />
@@ -1119,6 +1282,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
 
                 <div className="mt-4">
                     {activeTab === 'general' && <GeneralInputs />}
+                    {activeTab === 'fire' && <FireInputs />}
                     {activeTab === 'scenario' && <ScenarioInputs />}
                     {activeTab === 'doors' && <DoorInputs />}
                     {activeTab === 'devices' && <DeviceInputs />}

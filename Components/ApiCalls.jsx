@@ -167,7 +167,14 @@ export const sendFdsData = async (
   aov_activation_time=null,
   extract_config={},
   inlet_config={},
-  zone_config={}
+  zone_config={},
+  fire_hrr=1000,
+  fire_dimension=1.4,
+  fire_height_above_floor=0.5,
+  fire_base=0.0,
+  fire_type="growing",
+  fire_growth_rate="medium",
+  fire_custom_alpha=null,
 ) => {
     console.log("elementList at api call: ", elementList)
     let bodyContent = JSON.stringify( {
@@ -198,7 +205,14 @@ export const sendFdsData = async (
       aov_activation_time,
       extract_config,
       inlet_config,
-      zone_config
+      zone_config,
+      fire_hrr,
+      fire_dimension,
+      fire_height_above_floor,
+      fire_base,
+      fire_type,
+      fire_growth_rate,
+      fire_custom_alpha
     } )
     console.log("bodyContent: ", bodyContent)
     const response = await fetch(`${API_BASE}/fds`, {

@@ -53,6 +53,13 @@ const Toolbar = ({setShowModePopup}) => {
     const inletConfig = useStore((state) => state.inletConfig)
     const zoneConfig = useStore((state) => state.zoneConfig)
     const obstructionTransparency = useStore((state) => state.obstructionTransparency)
+    const fireHRR = useStore((state) => state.fireHRR)
+    const fireDimension = useStore((state) => state.fireDimension)
+    const fireHeightAboveFloor = useStore((state) => state.fireHeightAboveFloor)
+    const fireBase = useStore((state) => state.fireBase)
+    const fireType = useStore((state) => state.fireType)
+    const fireGrowthRate = useStore((state) => state.fireGrowthRate)
+    const fireCustomAlpha = useStore((state) => state.fireCustomAlpha)
     // const handleWalkingInput = useStore((state) => state.handleWalkingInput)
     // const [walkingInput, setWalkingInput] = useState(null)
     const [showWalkingPopup, setShowWalkingPopup] = useState(false)
@@ -178,7 +185,14 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                     aovActivationTime,
                     extractConfig,
                     inletConfig,
-                    zoneConfig
+                    zoneConfig,
+                    fireHRR,
+                    fireDimension,
+                    fireHeightAboveFloor,
+                    fireBase,
+                    fireType,
+                    fireGrowthRate,
+                    fireCustomAlpha
                     )
       }
 

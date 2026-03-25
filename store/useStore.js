@@ -50,6 +50,16 @@ const useStore = create(persist((set, get) => {
         thumbnail: null,
         totalHeatFlux: 476,
         heatEndpoint: 1.3333,
+
+        // Fire configuration
+        fireHRR: 1000,              // kW
+        fireDimension: 1.4,         // m (square fire side length)
+        fireHeightAboveFloor: 0.5,  // m
+        fireBase: 0.0,              // m
+        fireType: "growing",        // "growing" or "steady_state"
+        fireGrowthRate: "medium",   // "slow", "medium", "fast", "ultra_fast", "custom"
+        fireCustomAlpha: null,      // kW/s², only used when fireGrowthRate is "custom"
+
         fireFloorZ: 0,
         fireFloorNumber: 0,
         showTimeEqPopup: false,
@@ -226,6 +236,16 @@ const useStore = create(persist((set, get) => {
         setHeatEndpoint: (newVal) => set(() => ({
             heatEndpoint: newVal
         })),
+
+        // Fire configuration setters
+        setFireHRR: (newVal) => set(() => ({ fireHRR: newVal })),
+        setFireDimension: (newVal) => set(() => ({ fireDimension: newVal })),
+        setFireHeightAboveFloor: (newVal) => set(() => ({ fireHeightAboveFloor: newVal })),
+        setFireBase: (newVal) => set(() => ({ fireBase: newVal })),
+        setFireType: (newVal) => set(() => ({ fireType: newVal })),
+        setFireGrowthRate: (newVal) => set(() => ({ fireGrowthRate: newVal })),
+        setFireCustomAlpha: (newVal) => set(() => ({ fireCustomAlpha: newVal })),
+
         setShowTimeEqPopup: (newBool) => set(() => ({
             showTimeEqPopup: newBool
         })),
@@ -374,6 +394,13 @@ const useStore = create(persist((set, get) => {
                     obstructionTransparency: s.obstructionTransparency,
                     totalHeatFlux: s.totalHeatFlux,
                     heatEndpoint: s.heatEndpoint,
+                    fireHRR: s.fireHRR,
+                    fireDimension: s.fireDimension,
+                    fireHeightAboveFloor: s.fireHeightAboveFloor,
+                    fireBase: s.fireBase,
+                    fireType: s.fireType,
+                    fireGrowthRate: s.fireGrowthRate,
+                    fireCustomAlpha: s.fireCustomAlpha,
                     numberOfStairs: s.numberOfStairs,
                     stairObject: s.stairObject,
                     thumbnail: s.thumbnail,
@@ -435,6 +462,13 @@ const useStore = create(persist((set, get) => {
                 obstructionTransparency: ps.obstructionTransparency ?? { stairWalls: 0.25, stairRoof: 0.25, fireFloorWalls: 0.0 },
                 totalHeatFlux: ps.totalHeatFlux ?? 476,
                 heatEndpoint: ps.heatEndpoint ?? 1.3333,
+                fireHRR: ps.fireHRR ?? 1000,
+                fireDimension: ps.fireDimension ?? 1.4,
+                fireHeightAboveFloor: ps.fireHeightAboveFloor ?? 0.5,
+                fireBase: ps.fireBase ?? 0.0,
+                fireType: ps.fireType ?? "growing",
+                fireGrowthRate: ps.fireGrowthRate ?? "medium",
+                fireCustomAlpha: ps.fireCustomAlpha ?? null,
                 numberOfStairs: ps.numberOfStairs ?? 0,
                 stairObject: ps.stairObject ?? [],
                 // Floor-level settings
@@ -482,6 +516,13 @@ const useStore = create(persist((set, get) => {
                 pdfIsGreyscale: false,
                 totalHeatFlux: 476,
                 heatEndpoint: 1.3333,
+                fireHRR: 1000,
+                fireDimension: 1.4,
+                fireHeightAboveFloor: 0.5,
+                fireBase: 0.0,
+                fireType: "growing",
+                fireGrowthRate: "medium",
+                fireCustomAlpha: null,
                 fireFloorZ: 0,
                 fireFloorNumber: 0,
                 numberOfStairs: 0,
@@ -533,6 +574,13 @@ const useStore = create(persist((set, get) => {
         hasDoor: state.hasDoor,
         totalHeatFlux: state.totalHeatFlux,
         heatEndpoint: state.heatEndpoint,
+        fireHRR: state.fireHRR,
+        fireDimension: state.fireDimension,
+        fireHeightAboveFloor: state.fireHeightAboveFloor,
+        fireBase: state.fireBase,
+        fireType: state.fireType,
+        fireGrowthRate: state.fireGrowthRate,
+        fireCustomAlpha: state.fireCustomAlpha,
         fireFloorZ: state.fireFloorZ,
         fireFloorNumber: state.fireFloorNumber,
         totalFloors: state.totalFloors,
