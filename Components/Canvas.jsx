@@ -30,6 +30,7 @@ const elementConfig = {
     "inlet": "purple",
     "extract": "cyan",
     "landing": "blue",
+    "sprinkler": "#3b82f6",
     "sensorTree": "#00ff88"
 }
 
@@ -808,6 +809,34 @@ function Canvas({dimensions, isDevMode}) {
                     context.lineWidth = 1
                 }
 
+                // Draw manually-placed sprinkler with circle+cross icon
+                if (element.comments === 'sprinkler') {
+                    const pt = element.points[0]
+                    const sprinklerElements = elements.filter(el => el.comments === 'sprinkler')
+                    const sprIdx = sprinklerElements.indexOf(element) + 1
+                    // Blue circle with cross
+                    context.beginPath()
+                    context.arc(pt.x, pt.y, 8, 0, Math.PI * 2)
+                    context.strokeStyle = '#3b82f6'
+                    context.lineWidth = 2
+                    context.stroke()
+                    context.beginPath()
+                    context.moveTo(pt.x - 5, pt.y)
+                    context.lineTo(pt.x + 5, pt.y)
+                    context.moveTo(pt.x, pt.y - 5)
+                    context.lineTo(pt.x, pt.y + 5)
+                    context.stroke()
+                    context.lineWidth = 1
+                    // Label
+                    context.font = '9px sans-serif'
+                    context.fillStyle = '#3b82f6'
+                    context.strokeStyle = 'black'
+                    context.lineWidth = 2
+                    context.strokeText(`SPRK${sprIdx}`, pt.x + 10, pt.y + 3)
+                    context.fillText(`SPRK${sprIdx}`, pt.x + 10, pt.y + 3)
+                    context.lineWidth = 1
+                }
+
                 // Draw highlight ring + role label for highlighted or role-assigned landings
                 if (element.comments === 'landing') {
                     const isHighlighted = highlightedLandingId === element.id
@@ -856,8 +885,9 @@ function Canvas({dimensions, isDevMode}) {
             }
         }
 
-        // Draw sprinkler markers when sprinklers enabled and fire exists
-        if (isSprinklered) {
+        // Draw auto-placed sprinkler markers only when no manual sprinklers exist
+        const manualSprinklers = elements.filter(el => el.comments === 'sprinkler')
+        if (isSprinklered && manualSprinklers.length === 0) {
             const fireEl = elements.find(el => el.comments === 'fire')
             if (fireEl && fireEl.points && fireEl.points.length > 0) {
                 const firePt = fireEl.points[0]

@@ -269,6 +269,15 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                 setComment("extract")
                 }} />
                 <label htmlFor="extract">Extract</label>
+                {/* Sprinkler */}
+                <input type="radio"
+                id="sprinkler"
+                checked={tool === "point" && comment == 'sprinkler'}
+                onChange={() => {
+                setTool("point")
+                setComment("sprinkler")
+                }} />
+                <label htmlFor="sprinkler">Sprinkler</label>
 
         </>
     )
