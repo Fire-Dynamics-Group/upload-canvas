@@ -653,7 +653,38 @@ const FDSInputsPopup = ({handleUserInput}) => {
                         )
                     }
 
-                    setSensorTreeElements([...points, ...stairPoints])
+                    // Also compute zone sensor positions
+                    let zonePoints: Array<{x: number, y: number}> = []
+                    if (Object.keys(zoneConfig).length > 0) {
+                        const pxPerM = pixelsPerMesh * 10
+                        const spacingPx = 0.5 * pxPerM  // 0.5m spacing in pixels
+                        const insetPx = 0.3 * pxPerM
+
+                        for (const [, config] of Object.entries(zoneConfig) as any) {
+                            const pts = config.points
+                            if (!pts || pts.length < 3) continue
+
+                            const xs = pts.map((p: any) => p.x)
+                            const ys = pts.map((p: any) => p.y)
+                            const xmin = Math.min(...xs), xmax = Math.max(...xs)
+                            const ymin = Math.min(...ys), ymax = Math.max(...ys)
+                            const dx = xmax - xmin, dy = ymax - ymin
+
+                            if (dx > dy) {
+                                const yMid = (ymin + ymax) / 2
+                                for (let x = xmin + insetPx; x <= xmax - insetPx; x += spacingPx) {
+                                    zonePoints.push({ x, y: yMid })
+                                }
+                            } else {
+                                const xMid = (xmin + xmax) / 2
+                                for (let y = ymin + insetPx; y <= ymax - insetPx; y += spacingPx) {
+                                    zonePoints.push({ x: xMid, y })
+                                }
+                            }
+                        }
+                    }
+
+                    setSensorTreeElements([...points, ...stairPoints, ...zonePoints])
                 }}
             >
                 Compute Sensor Locations
