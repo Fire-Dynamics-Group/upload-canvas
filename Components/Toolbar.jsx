@@ -50,6 +50,7 @@ const Toolbar = ({setShowModePopup}) => {
     const aovMode = useStore((state) => state.aovMode)
     const aovActivationTime = useStore((state) => state.aovActivationTime)
     const extractConfig = useStore((state) => state.extractConfig)
+    const inletConfig = useStore((state) => state.inletConfig)
     const obstructionTransparency = useStore((state) => state.obstructionTransparency)
     // const handleWalkingInput = useStore((state) => state.handleWalkingInput)
     // const [walkingInput, setWalkingInput] = useState(null)
@@ -174,7 +175,8 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                     obstructionTransparency,
                     aovMode,
                     aovActivationTime,
-                    extractConfig
+                    extractConfig,
+                    inletConfig
                     )
       }
 
@@ -355,7 +357,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
             <input
               type="radio"
               id="fire"
-              checked={tool === "point"}
+              checked={tool === "point" && comment === "fire"}
               onChange={() => {
                 setTool("point")
                 setComment("fire")

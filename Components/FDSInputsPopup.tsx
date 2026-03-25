@@ -1,6 +1,7 @@
 import useStore from '../store/useStore'
 import { defaultDoorTimings } from '../store/useStore'
 import { useState } from "react";
+import { computeCenterlinePoints, findCorridorObstruction } from '../utils/corridorCenterline'
 
 // @ts-ignore
 const FDSInputsPopup = ({handleUserInput}) => {
@@ -77,19 +78,38 @@ const FDSInputsPopup = ({handleUserInput}) => {
     const setExtractConfig = useStore((state) => state.setExtractConfig)
     const setHighlightedExtractId = useStore((state) => state.setHighlightedExtractId)
 
+    // Inlet config
+    const inletConfig = useStore((state) => state.inletConfig)
+    const setInletConfig = useStore((state) => state.setInletConfig)
+    const setHighlightedInletId = useStore((state) => state.setHighlightedInletId)
+
     const elements = useStore((state) => state.elements)
+    const setSensorTreeElements = useStore((state) => state.setSensorTreeElements)
+    const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
     // @ts-ignore
     const doorElements = elements.filter(element => element.comments === 'door')
     // @ts-ignore
     const landingElements = elements.filter(element => element.comments === 'landing')
     // @ts-ignore
     const extractElements = elements.filter(element => element.comments === 'extract')
+    // @ts-ignore
+    const inletElements = elements.filter(element => element.comments === 'inlet')
 
     const handleExtractConfigChange = (extractId: string, field: string, value: any) => {
         setExtractConfig({
             ...extractConfig,
             [extractId]: {
                 ...(extractConfig[extractId] || { type: "natural", flowRate: 3.0, shaftWidth: 0.9, shaftDepth: 0.9, activation: "always_open", activationTime: null }),
+                [field]: value
+            }
+        })
+    }
+
+    const handleInletConfigChange = (inletId: string, field: string, value: any) => {
+        setInletConfig({
+            ...inletConfig,
+            [inletId]: {
+                ...(inletConfig[inletId] || { openingHeight: 3.0, openingBase: 0.0 }),
                 [field]: value
             }
         })
@@ -445,6 +465,42 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     />
                 </>
             )}
+            <button
+                className="w-full text-white bg-green-600 hover:bg-green-700 font-medium rounded-lg text-sm px-5 py-2 mb-4"
+                onClick={() => {
+                    // @ts-ignore
+                    const obstructions = elements.filter(el => el.comments === 'obstruction')
+                    if (obstructions.length === 0) return
+                    // Find the obstruction that interfaces with both corridor doors
+                    const corridor = findCorridorObstruction(obstructions, doorElements, doorRoles)
+                    if (!corridor) return
+                    console.log("Corridor obs id:", corridor.id, "points:", corridor.points.length, JSON.stringify(corridor.points))
+                    console.log("Corridor doors:", doorElements.filter(d => ['apartment','stair','lobby'].includes(doorRoles[d.id])).map(d => ({
+                        id: d.id, role: doorRoles[d.id],
+                        cx: (d.points[0].x + d.points[1].x) / 2,
+                        cy: (d.points[0].y + d.points[1].y) / 2,
+                    })))
+                    console.log("pxPerM:", pixelsPerMesh * 10)
+                    const points = computeCenterlinePoints(
+                        corridor.points,
+                        doorElements,
+                        doorRoles,
+                        pixelsPerMesh
+                    )
+                    console.log("Sensor points:", points.length)
+                    setSensorTreeElements(points)
+                }}
+            >
+                Compute Sensor Locations
+            </button>
+            {/* @ts-ignore */}
+            {elements.filter(el => el.comments === 'sensorTree').length > 0 && (
+                <p className="text-sm text-green-400 mb-4">
+                    {/* @ts-ignore */}
+                    {elements.filter(el => el.comments === 'sensorTree').length} sensors placed on corridor centerline
+                </p>
+            )}
+
             <h2 className="text-lg font-bold mb-4 mt-4">Sprinkler Settings</h2>
             <label className="flex items-center gap-2">
                 <input
@@ -818,6 +874,52 @@ const FDSInputsPopup = ({handleUserInput}) => {
         </>
     )
 
+    const InletInputs = () => (
+        <>
+            {inletElements.length > 0 ? (
+                <>
+                    <h2 className="text-lg font-bold mb-2 mt-6">Inlet Configuration</h2>
+                    <p className="text-sm text-gray-500 mb-3">Hover to highlight on canvas. Configure each inlet opening.</p>
+                    <div className="mb-4">
+                        {/* @ts-ignore */}
+                        {inletElements.map((inlet, idx) => {
+                            const config = inletConfig[inlet.id] || { openingHeight: 3.0, openingBase: 0.0 }
+                            return (
+                                <div
+                                    key={inlet.id}
+                                    className="mb-4 border-l-4 pl-3 py-1 cursor-pointer transition-colors"
+                                    style={{ borderColor: '#a855f7' }}
+                                    onMouseEnter={() => setHighlightedInletId(inlet.id)}
+                                    onMouseLeave={() => setHighlightedInletId(null)}
+                                >
+                                    <span className="font-bold text-sm">Inlet {idx + 1}</span>
+
+                                    <div className="mt-2 flex flex-col gap-2">
+                                        <label className="text-sm">Opening Height (m):
+                                            <input type="number" step="0.1" className="ml-2 border px-2 py-1 rounded-md w-24"
+                                                value={config.openingHeight ?? 3.0}
+                                                onChange={(e) => handleInletConfigChange(inlet.id, 'openingHeight', Number(e.target.value))}
+                                            />
+                                        </label>
+
+                                        <label className="text-sm">Opening Base (m above floor):
+                                            <input type="number" step="0.1" className="ml-2 border px-2 py-1 rounded-md w-24"
+                                                value={config.openingBase ?? 0.0}
+                                                onChange={(e) => handleInletConfigChange(inlet.id, 'openingBase', Number(e.target.value))}
+                                            />
+                                        </label>
+                                    </div>
+                                </div>
+                            )
+                        })}
+                    </div>
+                </>
+            ) : (
+                <p className="text-sm text-gray-500 mt-4">No inlets drawn yet. Use the Inlet tool to draw one.</p>
+            )}
+        </>
+    )
+
     function handleClick() {
         let object = {
             fireFloorZ: fireFloorZ,
@@ -847,7 +949,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     {activeTab === 'doors' && <DoorInputs />}
                     {activeTab === 'devices' && <DeviceInputs />}
                     {activeTab === 'stairs' && <StairInputs />}
-                    {activeTab === 'extracts' && <ExtractInputs />}
+                    {activeTab === 'extracts' && <><ExtractInputs /><InletInputs /></>}
                     {activeTab === 'display' && <DisplayInputs />}
                 </div>
 

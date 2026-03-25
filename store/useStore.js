@@ -95,6 +95,10 @@ const useStore = create(persist((set, get) => {
         extractConfig: {}, // per-extract: { [extractId]: { type, flowRate, shaftWidth, shaftDepth, activation, activationTime } }
         highlightedExtractId: null,
 
+        // Inlet settings
+        inletConfig: {}, // per-inlet: { [inletId]: { openingHeight, openingBase } }
+        highlightedInletId: null,
+
         // AOV settings
         aovMode: "always_open", // "always_open" | "timed" | "sprinkler"
         aovActivationTime: null, // seconds, used when aovMode is "timed"
@@ -123,6 +127,20 @@ const useStore = create(persist((set, get) => {
         addElement: (newEl) => set((state) => ({
             elements: [...state.elements, newEl]
         })),
+        // Replace all sensorTree elements with new ones
+        setSensorTreeElements: (sensorPoints) => set((state) => {
+            const withoutSensors = state.elements.filter(el => el.comments !== 'sensorTree')
+            const maxId = withoutSensors.length > 0
+                ? Math.max(...withoutSensors.map(el => el.id))
+                : -1
+            const newSensors = sensorPoints.map((pt, i) => ({
+                type: 'point',
+                points: [pt],
+                comments: 'sensorTree',
+                id: maxId + 1 + i,
+            }))
+            return { elements: [...withoutSensors, ...newSensors] }
+        }),
         changeElement: (changedEl) =>  set((state) => ({
             elements: 
                 state.elements.map(element => {
@@ -302,6 +320,10 @@ const useStore = create(persist((set, get) => {
             highlightedExtractId: newVal
         })),
 
+        // Inlet setters
+        setInletConfig: (newVal) => set(() => ({ inletConfig: newVal })),
+        setHighlightedInletId: (newVal) => set(() => ({ highlightedInletId: newVal })),
+
         // Landing role setters
         setLandingRoles: (newVal) => set(() => ({ landingRoles: newVal })),
         setHighlightedLandingId: (newVal) => set(() => ({ highlightedLandingId: newVal })),
@@ -361,6 +383,7 @@ const useStore = create(persist((set, get) => {
                             landingUpSide: s.landingUpSide,
                             stairStyle: s.stairStyle,
                             extractConfig: s.extractConfig,
+                            inletConfig: s.inletConfig,
                         },
                         elements: s.elements.map((el, i) => ({
                             element_index: el.id ?? i,
@@ -414,6 +437,7 @@ const useStore = create(persist((set, get) => {
                 landingUpSide: fs.landingUpSide ?? null,
                 stairStyle: fs.stairStyle ?? "overlapping",
                 extractConfig: fs.extractConfig ?? {},
+                inletConfig: fs.inletConfig ?? {},
                 // Elements
                 elements: (floorDetail.elements || []).map(el => ({
                     id: el.element_index,
@@ -471,6 +495,8 @@ const useStore = create(persist((set, get) => {
                 stairStyle: "overlapping",
                 extractConfig: {},
                 highlightedExtractId: null,
+                inletConfig: {},
+                highlightedInletId: null,
                 aovMode: "always_open",
                 aovActivationTime: null,
                 obstructionTransparency: { stairWalls: 0.25, stairRoof: 0.25, fireFloorWalls: 0.0 },
@@ -517,6 +543,7 @@ const useStore = create(persist((set, get) => {
         landingUpSide: state.landingUpSide,
         stairStyle: state.stairStyle,
         extractConfig: state.extractConfig,
+        inletConfig: state.inletConfig,
         aovMode: state.aovMode,
         aovActivationTime: state.aovActivationTime,
         obstructionTransparency: state.obstructionTransparency,

@@ -29,7 +29,8 @@ const elementConfig = {
     "opening": "blue",
     "inlet": "purple",
     "extract": "cyan",
-    "landing": "blue"
+    "landing": "blue",
+    "sensorTree": "#00ff88"
 }
 
 // eslint-disable-next-line react/prop-types
@@ -52,7 +53,9 @@ function Canvas({dimensions, isDevMode}) {
     const landingRoles = useStore((state) => state.landingRoles)
     const extractConfig = useStore((state) => state.extractConfig)
     const highlightedExtractId = useStore((state) => state.highlightedExtractId)
+    const highlightedInletId = useStore((state) => state.highlightedInletId)
     const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
+    const setPixelsPerMesh = useStore((state) => state.setPixelsPerMesh)
 
 
     const [isDrawing, setIsDrawing] = useState(false)
@@ -67,11 +70,6 @@ function Canvas({dimensions, isDevMode}) {
     // add type of line -> include in useLayoutEffect canvas rendering
     const [isEnterPressed, setIsEnterPressed] = useState(false)
     const canvasRef = useRef(null)
-    // const pixelsPerMesh = 10 // calc from scale
-    // const [pixelsPerMesh, setPixelsPerMesh] = useState(1)
-    const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
-    const setPixelsPerMesh = useStore((state) => state.setPixelsPerMesh)
-
     const [hasScale, setHasScale] = useState(false)
     const [scalePoints, setScalePoints] = useState([])
     const canvasWidth = dimensions.width
@@ -599,6 +597,7 @@ function Canvas({dimensions, isDevMode}) {
         // Pre-compute indices for numbered labels
         const doorElements = elements.filter(el => el.comments === 'door')
         const extractElements = elements.filter(el => el.comments === 'extract')
+        const inletElements = elements.filter(el => el.comments === 'inlet')
 
         // all historical elements
         // later have different logic for different line types
@@ -635,7 +634,29 @@ function Canvas({dimensions, isDevMode}) {
             }
                     console.log("useLayoutRect: ", element.points)
                 } else if (element.type == 'point') {
-                    drawPolyline(element.points, context, element.comments)
+                    if (element.comments === 'sensorTree') {
+                        // Draw bullseye icon (concentric circles)
+                        const p = element.points[0]
+                        const color = elementConfig['sensorTree']
+                        // Outer ring
+                        context.beginPath()
+                        context.arc(p.x, p.y, 8, 0, Math.PI * 2)
+                        context.strokeStyle = color
+                        context.lineWidth = 1.5
+                        context.stroke()
+                        // Middle ring
+                        context.beginPath()
+                        context.arc(p.x, p.y, 5, 0, Math.PI * 2)
+                        context.stroke()
+                        // Centre dot
+                        context.beginPath()
+                        context.arc(p.x, p.y, 2, 0, Math.PI * 2)
+                        context.fillStyle = color
+                        context.fill()
+                        context.lineWidth = 1
+                    } else {
+                        drawPolyline(element.points, context, element.comments)
+                    }
                 }
 
                 // Draw highlight ring + role label for highlighted or role-assigned doors
@@ -758,6 +779,33 @@ function Canvas({dimensions, isDevMode}) {
                     context.lineWidth = 1
                 }
 
+                // Draw inlet label
+                if (element.comments === 'inlet') {
+                    const pts = element.points
+                    const cx = (pts[0].x + pts[1].x) / 2
+                    const cy = (pts[0].y + pts[1].y) / 2
+                    const inletIdx = inletElements.indexOf(element) + 1
+                    const isInletHighlighted = highlightedInletId === element.id
+
+                    if (isInletHighlighted) {
+                        context.beginPath()
+                        context.arc(cx, cy, 20, 0, Math.PI * 2)
+                        context.strokeStyle = 'yellow'
+                        context.lineWidth = 3
+                        context.stroke()
+                        context.lineWidth = 1
+                    }
+
+                    const label = `Inlet ${inletIdx}`
+                    context.font = '11px sans-serif'
+                    context.fillStyle = isInletHighlighted ? 'yellow' : '#a855f7'
+                    context.strokeStyle = 'black'
+                    context.lineWidth = 3
+                    context.strokeText(label, cx + 12, cy - 12)
+                    context.fillText(label, cx + 12, cy - 12)
+                    context.lineWidth = 1
+                }
+
                 // Draw highlight ring + role label for highlighted or role-assigned landings
                 if (element.comments === 'landing') {
                     const isHighlighted = highlightedLandingId === element.id
@@ -789,7 +837,7 @@ function Canvas({dimensions, isDevMode}) {
             }
         })
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, pixelsPerMesh])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, pixelsPerMesh])
 
     // Generate thumbnail by compositing PDF + drawing canvases
     const thumbnailTimerRef = useRef(null)

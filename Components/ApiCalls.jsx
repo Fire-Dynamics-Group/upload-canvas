@@ -1,7 +1,7 @@
 import { saveAs } from 'file-saver'
 
 const server_urls = {
-    "localhost": 'http://127.0.0.1:8000',
+    "localhost": 'http://127.0.0.1:8001',
     // "server": 'https://fdsbackend-1-r7337380.deta.app'
     "server": 'https://backendfornextapp-production.up.railway.app'
 
@@ -9,9 +9,10 @@ const server_urls = {
     // fastapi-production-e615.up.railway.app
   }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || server_urls.server
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || server_urls.localhost
 
 console.log("server_urls: ", server_urls)
+console.log("API_BASE: ", API_BASE)
 
 // --- Project persistence API ---
 
@@ -164,7 +165,8 @@ export const sendFdsData = async (
   obstruction_transparency={},
   aov_mode="always_open",
   aov_activation_time=null,
-  extract_config={}
+  extract_config={},
+  inlet_config={}
 ) => {
     console.log("elementList at api call: ", elementList)
     let bodyContent = JSON.stringify( {
@@ -193,7 +195,8 @@ export const sendFdsData = async (
       obstruction_transparency,
       aov_mode,
       aov_activation_time,
-      extract_config
+      extract_config,
+      inlet_config
     } )
     console.log("bodyContent: ", bodyContent)
     const response = await fetch(`${API_BASE}/fds`, {
