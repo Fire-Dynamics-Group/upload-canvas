@@ -771,6 +771,20 @@ const FDSInputsPopup = ({handleUserInput}) => {
                                             />
                                         </label>
 
+                                        <label className="text-sm">Opening Height (m):
+                                            <input type="number" step="0.1" className="ml-2 border px-2 py-1 rounded-md w-24"
+                                                value={config.openingHeight ?? 3.0}
+                                                onChange={(e) => handleExtractConfigChange(extract.id, 'openingHeight', Number(e.target.value))}
+                                            />
+                                        </label>
+
+                                        <label className="text-sm">Opening Base (m above floor):
+                                            <input type="number" step="0.1" className="ml-2 border px-2 py-1 rounded-md w-24"
+                                                value={config.openingBase ?? 0.0}
+                                                onChange={(e) => handleExtractConfigChange(extract.id, 'openingBase', Number(e.target.value))}
+                                            />
+                                        </label>
+
                                         <label className="text-sm">Activation:
                                             <select
                                                 className="ml-2 border border-gray-300 px-2 py-1 rounded-md text-sm"
