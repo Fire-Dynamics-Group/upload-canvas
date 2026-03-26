@@ -154,6 +154,7 @@ export const sendFdsData = async (
   include_sensors=true,
   corridor_sensor_heights=[2.0],
   stair_sensor_heights=[0.5, 1.0, 1.5, 2.0],
+  fsa_sensor_heights=[1.5],
   is_sprinklered=true,
   door_leakages_enabled=true,
   door_leakage_config={},
@@ -175,6 +176,7 @@ export const sendFdsData = async (
   fire_type="growing",
   fire_growth_rate="medium",
   fire_custom_alpha=null,
+  slice_z_height=2.0,
 ) => {
     console.log("elementList at api call: ", elementList)
     let bodyContent = JSON.stringify( {
@@ -192,6 +194,7 @@ export const sendFdsData = async (
       include_sensors,
       corridor_sensor_heights,
       stair_sensor_heights,
+      fsa_sensor_heights,
       is_sprinklered,
       door_leakages_enabled,
       door_leakage_config,
@@ -212,7 +215,8 @@ export const sendFdsData = async (
       fire_base,
       fire_type,
       fire_growth_rate,
-      fire_custom_alpha
+      fire_custom_alpha,
+      slice_z_height
     } )
     console.log("bodyContent: ", bodyContent)
     const response = await fetch(`${API_BASE}/fds`, {

@@ -1,8 +1,33 @@
 import useStore from '../store/useStore'
 import { defaultDoorTimings } from '../store/useStore'
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { computeCenterlinePoints, findCorridorObstruction, computeStairSensorPositions } from '../utils/corridorCenterline'
+import { runFsaPathfinding } from '../utils/fsaPathfinding'
 import { findEnclosedRegions } from '../utils/findEnclosedRegions'
+
+/**
+ * Text input that uses local state while typing, only syncing to store on blur.
+ * Defined OUTSIDE FDSInputsPopup to avoid remount on every parent render.
+ */
+// @ts-ignore
+const BlurInput = ({ value, onChange, className = '', ...props }) => {
+    const [local, setLocal] = useState(String(value ?? ''))
+    const prev = useRef(value)
+    // Sync from store if it changes externally (e.g. tab switch, reset)
+    if (prev.current !== value && String(value) !== local) {
+        setLocal(String(value ?? ''))
+    }
+    prev.current = value
+    return (
+        <input
+            {...props}
+            className={className}
+            value={local}
+            onChange={(e: any) => setLocal(e.target.value)}
+            onBlur={() => onChange(local)}
+        />
+    )
+}
 
 // @ts-ignore
 const FDSInputsPopup = ({handleUserInput}) => {
@@ -45,6 +70,8 @@ const FDSInputsPopup = ({handleUserInput}) => {
     const setCorridorSensorHeights = useStore((state) => state.setCorridorSensorHeights)
     const stairSensorHeights = useStore((state) => state.stairSensorHeights)
     const setStairSensorHeights = useStore((state) => state.setStairSensorHeights)
+    const fsaSensorHeights = useStore((state) => state.fsaSensorHeights)
+    const setFsaSensorHeights = useStore((state) => state.setFsaSensorHeights)
 
     // Door leakage settings
     const doorLeakagesEnabled = useStore((state) => state.doorLeakagesEnabled)
@@ -87,6 +114,8 @@ const FDSInputsPopup = ({handleUserInput}) => {
     // Zone config
     const zoneConfig = useStore((state) => state.zoneConfig)
     const setZoneConfig = useStore((state) => state.setZoneConfig)
+    const sliceZHeight = useStore((state) => state.sliceZHeight)
+    const setSliceZHeight = useStore((state) => state.setSliceZHeight)
 
     const elements = useStore((state) => state.elements)
     const setSensorTreeElements = useStore((state) => state.setSensorTreeElements)
@@ -154,6 +183,21 @@ const FDSInputsPopup = ({handleUserInput}) => {
 
     type TabType = 'general' | 'scenario' | 'fire' | 'doors' | 'devices' | 'stairs' | 'extracts' | 'zones' | 'display'
     const [activeTab, setActiveTab] = useState<TabType>('general')
+    const [fsaStatus, setFsaStatus] = useState<{walkingDistance: number, placed: number[], missed: number[]} | null>(null)
+    const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
+    const scrollRef = useRef<HTMLDivElement>(null)
+    const scrollTop = useRef(0)
+
+    // Preserve scroll position across re-renders
+    useEffect(() => {
+        const el = scrollRef.current
+        if (!el) return
+        // Restore scroll position after render
+        el.scrollTop = scrollTop.current
+        const onScroll = () => { scrollTop.current = el.scrollTop }
+        el.addEventListener('scroll', onScroll)
+        return () => el.removeEventListener('scroll', onScroll)
+    })
 
     const TabButton = ({ tab, label }: { tab: TabType, label: string }) => (
         <button
@@ -173,47 +217,23 @@ const FDSInputsPopup = ({handleUserInput}) => {
     const GeneralInputs = () => (
         <>
             <h2 className="text-lg font-bold mb-2">Enter Fire Floor Height (m):</h2>
-            <input
-                type="text"
-                className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
-                value={fireFloorZ}
-                onChange={(e) => setFireFloorZ(e.target.value)}
-            />
+            <BlurInput type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                value={fireFloorZ} onChange={(v: string) => setFireFloorZ(v)} />
             <h2 className="text-lg font-bold mb-2">Wall Height (m):</h2>
-            <input
-                type="text"
-                className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
-                value={wallHeight}
-                onChange={(e) => setWallHeight(e.target.value)}
-            />
+            <BlurInput type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                value={wallHeight} onChange={(v: string) => setWallHeight(v)} />
             <h2 className="text-lg font-bold mb-2">Enter Fire Floor Number:</h2>
-            <input
-                type="text"
-                className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
-                value={fireFloorNumber}
-                onChange={(e) => setFireFloorNumber(e.target.value)}
-            />
+            <BlurInput type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                value={fireFloorNumber} onChange={(v: string) => setFireFloorNumber(v)} />
             <h2 className="text-lg font-bold mb-2">Total Number of Storeys:</h2>
-            <input
-                type="text"
-                className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
-                value={totalFloors}
-                onChange={(e) => setTotalFloors(e.target.value)}
-            />
+            <BlurInput type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                value={totalFloors} onChange={(v: string) => setTotalFloors(v)} />
             <h2 className="text-lg font-bold mb-2">Stair top storey height (m):</h2>
-            <input
-                type="text"
-                className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
-                value={topStoreyHeight}
-                onChange={(e) => setTopStoreyHeight(e.target.value)}
-            />
+            <BlurInput type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                value={topStoreyHeight} onChange={(v: string) => setTopStoreyHeight(v)} />
             <h2 className="text-lg font-bold mb-2">Stair roof height (m):</h2>
-            <input
-                type="text"
-                className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
-                value={stairRoofZ}
-                onChange={(e) => setStairRoofZ(e.target.value)}
-            />
+            <BlurInput type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                value={stairRoofZ} onChange={(v: string) => setStairRoofZ(v)} />
 
             <h2 className="text-lg font-bold mb-2">AOV Activation</h2>
             <div className="flex flex-col gap-2 mb-4">
@@ -597,26 +617,29 @@ const FDSInputsPopup = ({handleUserInput}) => {
                 <>
                     <h3 className="font-bold mb-2">Corridor Sensor Heights (m above fire floor):</h3>
                     <p className="text-sm text-gray-500 mb-1">Temp, Pressure, Visibility, Velocity at each height</p>
-                    <input
-                        type="text"
-                        className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                    <BlurInput type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
                         value={corridorSensorHeights.join(', ')}
-                        onChange={(e) => setCorridorSensorHeights(
-                            e.target.value.split(',').map(v => parseFloat(v.trim())).filter(v => !isNaN(v))
-                        )}
+                        onChange={(v: string) => setCorridorSensorHeights(v.split(',').map((s: string) => parseFloat(s.trim())).filter((n: number) => !isNaN(n)))}
                         placeholder="e.g. 2.0"
                     />
                     <h3 className="font-bold mb-2">Stair Sensor Tree Heights (m above fire floor):</h3>
                     <p className="text-sm text-gray-500 mb-1">Temp, Visibility tree at each stair position</p>
-                    <input
-                        type="text"
-                        className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                    <BlurInput type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
                         value={stairSensorHeights.join(', ')}
-                        onChange={(e) => setStairSensorHeights(
-                            e.target.value.split(',').map(v => parseFloat(v.trim())).filter(v => !isNaN(v))
-                        )}
+                        onChange={(v: string) => setStairSensorHeights(v.split(',').map((s: string) => parseFloat(s.trim())).filter((n: number) => !isNaN(n)))}
                         placeholder="e.g. 0.5, 1.0, 1.5, 2.0"
                     />
+                    {(scenarioType === "FSA" || scenarioType === "Both") && (
+                        <>
+                            <h3 className="font-bold mb-2">FSA Path Sensor Heights (m above fire floor):</h3>
+                            <p className="text-sm text-gray-500 mb-1">All types at 2m, 4m, 15m from apartment door along walking route</p>
+                            <BlurInput type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                                value={fsaSensorHeights.join(', ')}
+                                onChange={(v: string) => setFsaSensorHeights(v.split(',').map((s: string) => parseFloat(s.trim())).filter((n: number) => !isNaN(n)))}
+                                placeholder="e.g. 1.5"
+                            />
+                        </>
+                    )}
                 </>
             )}
             <button
@@ -661,6 +684,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                         const insetPx = 0.3 * pxPerM
 
                         for (const [, config] of Object.entries(zoneConfig) as any) {
+                            if (config.sensors === false) continue
                             const pts = config.points
                             if (!pts || pts.length < 3) continue
 
@@ -684,7 +708,54 @@ const FDSInputsPopup = ({handleUserInput}) => {
                         }
                     }
 
-                    setSensorTreeElements([...points, ...stairPoints, ...zonePoints])
+                    // Compute FSA path sensors if scenario is FSA or Both
+                    let fsaPoints: Array<{x: number, y: number, fsaDistance: number}> = []
+                    const targetDistances = [2, 4, 15]
+                    if ((scenarioType === "FSA" || scenarioType === "Both") && corridor) {
+                        const aptDoor = doorElements.find((d: any) => doorRoles[d.id] === 'apartment')
+                        const strDoor = doorElements.find((d: any) => doorRoles[d.id] === 'stair')
+                        if (aptDoor && strDoor) {
+                            const pxPerM = pixelsPerMesh * 10
+                            const startM = {
+                                x: (aptDoor.points[0].x + aptDoor.points[1].x) / 2 / pxPerM,
+                                y: (aptDoor.points[0].y + aptDoor.points[1].y) / 2 / pxPerM,
+                            }
+                            const endM = {
+                                x: (strDoor.points[0].x + strDoor.points[1].x) / 2 / pxPerM,
+                                y: (strDoor.points[0].y + strDoor.points[1].y) / 2 / pxPerM,
+                            }
+                            const corridorVerticesM = corridor.points.map((p: any) => ({
+                                x: p.x / pxPerM,
+                                y: p.y / pxPerM,
+                            }))
+                            const fsaResult = runFsaPathfinding(startM, endM, corridorVerticesM)
+                            if (fsaResult) {
+                                const placedDistances: number[] = []
+                                for (const [dist, loc] of Object.entries(fsaResult.sensorLocations) as any) {
+                                    fsaPoints.push({
+                                        x: Math.round(loc.x * pxPerM),
+                                        y: Math.round(loc.y * pxPerM),
+                                        fsaDistance: Number(dist),
+                                    })
+                                    placedDistances.push(Number(dist))
+                                }
+                                const missedDistances = targetDistances.filter(d => !placedDistances.includes(d))
+                                setFsaStatus({
+                                    walkingDistance: fsaResult.maxDistance,
+                                    placed: placedDistances,
+                                    missed: missedDistances,
+                                })
+                            } else {
+                                setFsaStatus({ walkingDistance: 0, placed: [], missed: targetDistances })
+                            }
+                        } else {
+                            setFsaStatus(null)
+                        }
+                    } else {
+                        setFsaStatus(null)
+                    }
+
+                    setSensorTreeElements([...points, ...stairPoints, ...zonePoints], fsaPoints)
                 }}
             >
                 Compute Sensor Locations
@@ -695,6 +766,28 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     {/* @ts-ignore */}
                     {elements.filter(el => el.comments === 'sensorTree').length} sensors placed (corridor + stair)
                 </p>
+            )}
+            {fsaStatus && (
+                <div className="text-sm mb-4">
+                    <p className="text-gray-400">
+                        FSA walking distance: {fsaStatus.walkingDistance.toFixed(1)}m (apt door to stair door)
+                    </p>
+                    {fsaStatus.placed.length > 0 && (
+                        <p className="text-yellow-400">
+                            FSA sensors placed: {fsaStatus.placed.map(d => `${d}m`).join(', ')}
+                        </p>
+                    )}
+                    {fsaStatus.missed.length > 0 && fsaStatus.missed.length < 3 && (
+                        <p className="text-orange-400">
+                            Not placed (corridor too short): {fsaStatus.missed.map(d => `${d}m`).join(', ')}
+                        </p>
+                    )}
+                    {fsaStatus.missed.length === 3 && (
+                        <p className="text-red-400">
+                            No FSA sensors placed — corridor walking distance ({fsaStatus.walkingDistance.toFixed(1)}m) is shorter than 2m
+                        </p>
+                    )}
+                </div>
             )}
 
             <h2 className="text-lg font-bold mb-4 mt-4">Sprinkler Settings</h2>
@@ -1116,86 +1209,93 @@ const FDSInputsPopup = ({handleUserInput}) => {
         </>
     )
 
-    const ZoneInputs = () => {
-        const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
+    // @ts-ignore — region detection at parent scope (not inside inline component)
+    const detectedRegions = useMemo(() => {
+        try { return findEnclosedRegions(elements) }
+        catch (e) { return [] }
+    }, [elements])
 
-        // Auto-detect enclosed regions from all obstruction wall segments
-        // @ts-ignore
-        const regions = useMemo(() => findEnclosedRegions(elements), [elements])
-
-        // Point-in-polygon (ray casting)
-        const pointInPoly = (px: number, py: number, poly: any[]) => {
-            let inside = false
-            for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-                const xi = poly[i].x, yi = poly[i].y
-                const xj = poly[j].x, yj = poly[j].y
-                if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
-                    inside = !inside
-                }
-            }
-            return inside
+    // Zone helpers at parent scope (not recreated on each render)
+    const zoneColors: Record<string, string> = {
+        corridor: 'rgba(59, 130, 246, 0.3)',
+        lobby: 'rgba(168, 85, 247, 0.3)',
+        fire_room: 'rgba(239, 68, 68, 0.3)',
+        internal_corridor: 'rgba(251, 191, 36, 0.3)',
+        other: 'rgba(34, 197, 94, 0.3)',
+    }
+    const zoneTypeDefaults: Record<string, { slices: boolean, sensors: boolean }> = {
+        corridor: { slices: true, sensors: true },
+        lobby: { slices: true, sensors: true },
+        fire_room: { slices: true, sensors: false },
+        internal_corridor: { slices: true, sensors: true },
+        other: { slices: false, sensors: false },
+    }
+    const handleZoneChange = useCallback((id: string, field: string, value: any) => {
+        const existing = zoneConfig[id] || { type: 'corridor', name: 'Corridor 1' }
+        const updated = { ...existing, [field]: value }
+        if (field === 'type' && zoneTypeDefaults[value]) {
+            updated.slices = zoneTypeDefaults[value].slices
+            updated.sensors = zoneTypeDefaults[value].sensors
         }
+        setZoneConfig({ ...zoneConfig, [id]: updated })
+    }, [zoneConfig, setZoneConfig])
 
-        // Compute bounding box for scaling
+    const removeZone = useCallback((id: string) => {
+        const newConfig = { ...zoneConfig }
+        delete newConfig[id]
+        setZoneConfig(newConfig)
+        if (selectedZoneId === id) setSelectedZoneId(null)
+    }, [zoneConfig, setZoneConfig, selectedZoneId])
+
+    // Zone map geometry (computed once, not inside inline component)
+    const zoneMapGeo = useMemo(() => {
         let allPts: any[] = []
         elements.forEach((el: any) => el.points?.forEach((p: any) => allPts.push(p)))
-        if (allPts.length === 0) {
-            return <p className="text-sm text-amber-600">Draw obstructions on the canvas first.</p>
-        }
+        if (allPts.length === 0) return null
         const minX = Math.min(...allPts.map((p: any) => p.x))
         const maxX = Math.max(...allPts.map((p: any) => p.x))
         const minY = Math.min(...allPts.map((p: any) => p.y))
         const maxY = Math.max(...allPts.map((p: any) => p.y))
-        const pad = 20
-        const mapW = 360
-        const rangeX = maxX - minX || 1
-        const rangeY = maxY - minY || 1
+        const pad = 20, mapW = 360
+        const rangeX = maxX - minX || 1, rangeY = maxY - minY || 1
         const scale = Math.min((mapW - pad * 2) / rangeX, (mapW - pad * 2) / rangeY)
         const mapH = rangeY * scale + pad * 2
-
         const toMapX = (x: number) => pad + (x - minX) * scale
         const toMapY = (y: number) => pad + (y - minY) * scale
+        return { minX, maxX, minY, maxY, pad, mapW, mapH, scale, toMapX, toMapY }
+    }, [elements])
+
+    // Inline zone content (NOT a component — no remount issues)
+    const zoneContent = (() => {
+        const regions = detectedRegions
+        if (!zoneMapGeo) return <p className="text-sm text-amber-600">Draw obstructions on the canvas first.</p>
+        const { minX, pad, mapW, mapH, scale, toMapX, toMapY } = zoneMapGeo
+
+        const pointInPoly = (px: number, py: number, poly: any[]) => {
+            let inside = false
+            for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y
+                if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside
+            }
+            return inside
+        }
 
         const handleMapClick = (e: React.MouseEvent<SVGSVGElement>) => {
             const rect = e.currentTarget.getBoundingClientRect()
-            const mx = e.clientX - rect.left
-            const my = e.clientY - rect.top
-            const ex = (mx - pad) / scale + minX
-            const ey = (my - pad) / scale + minY
-
-            // Find which detected region contains the click
+            const ex = (e.clientX - rect.left - pad) / scale + minX
+            const ey = (e.clientY - rect.top - pad) / scale + zoneMapGeo.minY
             for (const region of regions) {
                 if (pointInPoly(ex, ey, region.points)) {
                     setSelectedZoneId(region.id)
                     if (!zoneConfig[region.id]) {
                         setZoneConfig({
                             ...zoneConfig,
-                            [region.id]: { type: 'corridor', name: `Corridor ${Object.keys(zoneConfig).length + 1}`, points: region.points }
+                            [region.id]: { type: 'corridor', name: `Corridor ${Object.keys(zoneConfig).length + 1}`, points: region.points, slices: true, sensors: true }
                         })
                     }
                     return
                 }
             }
-        }
-
-        const handleZoneChange = (id: string, field: string, value: string) => {
-            setZoneConfig({
-                ...zoneConfig,
-                [id]: { ...(zoneConfig[id] || { type: 'corridor', name: 'Corridor 1' }), [field]: value }
-            })
-        }
-
-        const removeZone = (id: string) => {
-            const newConfig = { ...zoneConfig }
-            delete newConfig[id]
-            setZoneConfig(newConfig)
-            if (selectedZoneId === id) setSelectedZoneId(null)
-        }
-
-        const zoneColors: Record<string, string> = {
-            corridor: 'rgba(59, 130, 246, 0.3)',
-            lobby: 'rgba(168, 85, 247, 0.3)',
-            other: 'rgba(34, 197, 94, 0.3)',
         }
 
         return (
@@ -1206,7 +1306,33 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     {regions.length > 0 ? ` ${regions.length} region${regions.length > 1 ? 's' : ''} detected.` : ' No enclosed regions detected.'}
                 </p>
 
-                <svg width={mapW} height={mapH} className="border rounded bg-gray-100 cursor-pointer mb-4" onClick={handleMapClick}>
+                <svg width={mapW} height={mapH} className="border rounded bg-gray-100 cursor-pointer mb-4 select-none" style={{ userSelect: 'none' }} onClick={handleMapClick}>
+                    {/* Draw endpoint connection indicators */}
+                    {(() => {
+                        const wallEls = elements.filter((el: any) => ['obstruction', 'stairObstruction', 'door'].includes(el.comments))
+                        const endpoints: Array<{x: number, y: number}> = []
+                        for (const el of wallEls) {
+                            const pts = el.points
+                            if (pts.length >= 2) {
+                                endpoints.push(pts[0])
+                                endpoints.push(pts[pts.length - 1])
+                            }
+                        }
+                        const tol = 5
+                        return endpoints.map((ep: any, i: number) => {
+                            const connections = endpoints.filter((other: any, j: number) =>
+                                j !== i && Math.abs(other.x - ep.x) < tol && Math.abs(other.y - ep.y) < tol
+                            ).length
+                            // Skip well-connected points (2+ connections = part of a junction)
+                            if (connections >= 2) return null
+                            const color = connections === 0 ? '#ef4444' : '#f59e0b' // red = dangling, yellow = 1 connection
+                            return (
+                                <circle key={`ep-${i}`} cx={toMapX(ep.x)} cy={toMapY(ep.y)} r={connections === 0 ? 3 : 2}
+                                    fill={color} stroke="white" strokeWidth={0.5}
+                                    style={{ pointerEvents: 'none' }} />
+                            )
+                        })
+                    })()}
                     {/* Draw detected regions as clickable filled polygons */}
                     {regions.map((region: any) => {
                         const zone = zoneConfig[region.id]
@@ -1221,17 +1347,29 @@ const FDSInputsPopup = ({handleUserInput}) => {
                                     fill={zone ? zoneColors[zone.type] || 'rgba(156,163,175,0.15)' : 'rgba(156,163,175,0.15)'}
                                     stroke={isSelected ? '#f59e0b' : zone ? '#3b82f6' : '#9ca3af'}
                                     strokeWidth={isSelected ? 3 : 1}
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        setSelectedZoneId(region.id)
+                                        if (!zoneConfig[region.id]) {
+                                            setZoneConfig({
+                                                ...zoneConfig,
+                                                [region.id]: { type: 'corridor', name: `Corridor ${Object.keys(zoneConfig).length + 1}`, points: region.points, slices: true, sensors: true }
+                                            })
+                                        }
+                                    }}
                                 />
                                 {zone && (
                                     <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
-                                        fontSize={10} fontWeight="bold" fill="#1e3a5f">
+                                        fontSize={10} fontWeight="bold" fill="#1e3a5f"
+                                        style={{ pointerEvents: 'none', userSelect: 'none' }}>
                                         {zone.name}
                                     </text>
                                 )}
                             </g>
                         )
                     })}
-                    {/* Draw wall segments on top */}
+                    {/* Draw wall segments on top — pointer events disabled so clicks pass through to regions */}
                     {elements.filter((el: any) => el.comments === 'obstruction').map((obs: any, oi: number) => {
                         const pts = obs.points
                         return pts.slice(0, -1).map((_: any, i: number) => (
@@ -1239,18 +1377,75 @@ const FDSInputsPopup = ({handleUserInput}) => {
                                 x1={toMapX(pts[i].x)} y1={toMapY(pts[i].y)}
                                 x2={toMapX(pts[i + 1].x)} y2={toMapY(pts[i + 1].y)}
                                 stroke="#374151" strokeWidth={2}
+                                style={{ pointerEvents: 'none' }}
                             />
                         ))
                     })}
+                    {/* Draw slice lines through zones with slices enabled (both X and Y, like exe) */}
+                    {Object.entries(zoneConfig).map(([id, zone]: [string, any]) => {
+                        if (!zone.slices || !zone.points || zone.points.length < 3) return null
+                        const xs = zone.points.map((p: any) => toMapX(p.x))
+                        const ys = zone.points.map((p: any) => toMapY(p.y))
+                        const xmin = Math.min(...xs), xmax = Math.max(...xs)
+                        const ymin = Math.min(...ys), ymax = Math.max(...ys)
+                        const midX = (xmin + xmax) / 2
+                        const midY = (ymin + ymax) / 2
+                        return (
+                            <g key={`slice-${id}`} style={{ pointerEvents: 'none' }}>
+                                {/* PBX slice (vertical line through center) */}
+                                <line x1={midX} y1={ymin + 2} x2={midX} y2={ymax - 2}
+                                    stroke="#ef4444" strokeWidth={1.5} strokeDasharray="4 3" />
+                                {/* PBY slice (horizontal line through center) */}
+                                <line x1={xmin + 2} y1={midY} x2={xmax - 2} y2={midY}
+                                    stroke="#ef4444" strokeWidth={1.5} strokeDasharray="4 3" />
+                            </g>
+                        )
+                    })}
                     {/* Draw doors, extracts, inlets for reference */}
-                    {elements.filter((el: any) => ['door', 'extract', 'inlet'].includes(el.comments)).map((el: any) => (
-                        <line key={el.id}
-                            x1={toMapX(el.points[0].x)} y1={toMapY(el.points[0].y)}
-                            x2={toMapX(el.points[1]?.x ?? el.points[0].x)} y2={toMapY(el.points[1]?.y ?? el.points[0].y)}
-                            stroke={el.comments === 'door' ? 'red' : el.comments === 'extract' ? 'cyan' : 'purple'}
-                            strokeWidth={2}
-                        />
-                    ))}
+                    {elements.filter((el: any) => ['door', 'extract', 'inlet'].includes(el.comments)).map((el: any) => {
+                        const x1 = toMapX(el.points[0].x), y1 = toMapY(el.points[0].y)
+                        const x2 = toMapX(el.points[1]?.x ?? el.points[0].x), y2 = toMapY(el.points[1]?.y ?? el.points[0].y)
+                        const color = el.comments === 'door' ? 'red' : el.comments === 'extract' ? 'cyan' : 'purple'
+                        const role = doorRoles[el.id]
+                        const showSlice = el.comments === 'door' && (role === 'apartment' || role === 'stair')
+                        const midX = (x1 + x2) / 2, midY = (y1 + y2) / 2
+                        const ext = 12
+                        // Door is horizontal if dx > dy, slice goes perpendicular
+                        const isHoriz = Math.abs(x2 - x1) > Math.abs(y2 - y1)
+                        return (
+                            <g key={el.id} style={{ pointerEvents: 'none' }}>
+                                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={2} />
+                                {showSlice && (
+                                    <line
+                                        x1={isHoriz ? midX : midX - ext} y1={isHoriz ? midY - ext : midY}
+                                        x2={isHoriz ? midX : midX + ext} y2={isHoriz ? midY + ext : midY}
+                                        stroke="#ef4444" strokeWidth={1} strokeDasharray="3 2" />
+                                )}
+                            </g>
+                        )
+                    })}
+                    {/* Draw fire elements with slice crosshairs */}
+                    {elements.filter((el: any) => el.comments === 'fire').map((el: any) => {
+                        const xs = el.points.map((p: any) => toMapX(p.x))
+                        const ys = el.points.map((p: any) => toMapY(p.y))
+                        const xmin = Math.min(...xs), xmax = Math.max(...xs)
+                        const ymin = Math.min(...ys), ymax = Math.max(...ys)
+                        const midX = (xmin + xmax) / 2
+                        const midY = (ymin + ymax) / 2
+                        const pts = el.points.map((p: any) => `${toMapX(p.x)},${toMapY(p.y)}`).join(' ')
+                        const ext = 8 // extend slice lines beyond fire footprint
+                        return (
+                            <g key={`fire-${el.id}`} style={{ pointerEvents: 'none' }}>
+                                <polygon points={pts} fill="rgba(255, 120, 0, 0.4)" stroke="#ff6600" strokeWidth={1.5} />
+                                {/* PBX slice through fire */}
+                                <line x1={midX} y1={ymin - ext} x2={midX} y2={ymax + ext}
+                                    stroke="#ff6600" strokeWidth={1} strokeDasharray="3 2" />
+                                {/* PBY slice through fire */}
+                                <line x1={xmin - ext} y1={midY} x2={xmax + ext} y2={midY}
+                                    stroke="#ff6600" strokeWidth={1} strokeDasharray="3 2" />
+                            </g>
+                        )
+                    })}
                 </svg>
 
                 {/* Zone config for assigned zones */}
@@ -1269,22 +1464,47 @@ const FDSInputsPopup = ({handleUserInput}) => {
                                     >
                                         <option value="corridor">Corridor</option>
                                         <option value="lobby">Lobby</option>
+                                        <option value="fire_room">Fire Room</option>
+                                        <option value="internal_corridor">Internal Corridor</option>
                                         <option value="other">Other</option>
                                     </select>
-                                    <input type="text" className="border border-gray-300 px-2 py-1 rounded-md text-sm flex-1"
+                                    <BlurInput type="text" className="border border-gray-300 px-2 py-1 rounded-md text-sm flex-1"
                                         value={zone.name}
-                                        onChange={(e) => handleZoneChange(id, 'name', e.target.value)}
+                                        onChange={(v: string) => handleZoneChange(id, 'name', v)}
                                         placeholder="Zone name"
                                     />
                                     <button className="text-red-500 text-sm px-2" onClick={() => removeZone(id)}>Remove</button>
+                                </div>
+                                <div className="flex items-center gap-4 mt-1 ml-1">
+                                    <label className="flex items-center gap-1 text-xs text-gray-600">
+                                        <input type="checkbox" checked={zone.slices ?? false}
+                                            onChange={(e) => handleZoneChange(id, 'slices', e.target.checked)} />
+                                        Slices
+                                    </label>
+                                    <label className="flex items-center gap-1 text-xs text-gray-600">
+                                        <input type="checkbox" checked={zone.sensors ?? false}
+                                            onChange={(e) => handleZoneChange(id, 'sensors', e.target.checked)} />
+                                        Sensors
+                                    </label>
                                 </div>
                             </div>
                         ))}
                     </div>
                 )}
+
+                <div className="mt-4 pt-3 border-t">
+                    <h3 className="font-bold text-sm mb-2">Slice Settings</h3>
+                    <label className="flex items-center gap-2 text-sm">
+                        Z slice height above fire floor (m):
+                        <input type="number" step="0.1" min="0" className="border border-gray-300 px-2 py-1 rounded-md text-sm w-20"
+                            value={sliceZHeight}
+                            onChange={(e) => setSliceZHeight(parseFloat(e.target.value) || 2.0)} />
+                    </label>
+                    <p className="text-xs text-gray-400 mt-1">Default 2.0m. Generates horizontal slice plane at this height on every run.</p>
+                </div>
             </>
         )
-    }
+    })()
 
     function handleClick() {
         let object = {
@@ -1298,7 +1518,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
 
     return (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-            <div className="bg-white p-4 rounded-lg shadow-lg text-black max-h-[80vh] overflow-y-auto min-w-[400px]">
+            <div ref={scrollRef} className="bg-white p-4 rounded-lg shadow-lg text-black max-h-[80vh] overflow-y-auto min-w-[400px]">
                 <div className="mb-4 border-b flex flex-wrap">
                     <TabButton tab="general" label="General" />
                     <TabButton tab="fire" label="Fire" />
@@ -1319,7 +1539,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     {activeTab === 'devices' && <DeviceInputs />}
                     {activeTab === 'stairs' && <StairInputs />}
                     {activeTab === 'extracts' && <><ExtractInputs /><InletInputs /></>}
-                    {activeTab === 'zones' && <ZoneInputs />}
+                    {activeTab === 'zones' && zoneContent}
                     {activeTab === 'display' && <DisplayInputs />}
                 </div>
 
