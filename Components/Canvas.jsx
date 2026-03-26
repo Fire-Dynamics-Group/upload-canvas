@@ -6,6 +6,7 @@ import { CSVLink } from 'react-csv'
 import useStore from '../store/useStore'
 import { calcDistance } from '@/utils/helperFunctions'
 import { computeShaftRect } from '@/utils/shaftGeometry'
+import { computeAutoSprinklerPositions } from '@/utils/autoSprinklers'
 import { get } from 'http'
 
 /**
@@ -31,7 +32,8 @@ const elementConfig = {
     "extract": "cyan",
     "landing": "blue",
     "sprinkler": "#3b82f6",
-    "sensorTree": "#00ff88"
+    "sensorTree": "#00ff88",
+    "fsaSensor": "#ff9900"
 }
 
 // eslint-disable-next-line react/prop-types
@@ -101,7 +103,6 @@ function Canvas({dimensions, isDevMode}) {
     const setTool = useStore((state) => state.setTool)
 
 
-    console.log("scaleDistance: ", scaleDistance)      
 
     // useCallback return memoized version of function -> only changes if dep val changes
     // therefore, not re-ran each re-render of useEffect
@@ -148,7 +149,6 @@ function Canvas({dimensions, isDevMode}) {
                 setIsEscapePressed(true)
                 
                 if (selectedElement && selectedElement["element"]) {
-                    console.log("key: ", key, selectedElement["element"])
                     // remove selected element from elements
                     let selectedId = selectedElement["element"]["id"]
                     // console.log("filtered element: ", elements.filter(element => element.id !== selectedId))
@@ -238,13 +238,11 @@ function Canvas({dimensions, isDevMode}) {
         let desiredScale = 0.1 //m - later be changeable
         let pixels = calcDistance(scalePoints[0], scalePoints[1])
         let temp = pixels / (scaleDistance / desiredScale)
-        console.log("pxPerMesh: ", pixels/scaleDistance)
         deltaGridlines(temp, 'polyline')
     }
  
     useLayoutEffect(() => {
         // TODO: render selectedElement
-        console.log("elements: ", elements)
         // TODO: need to add finished polygon or points to object array
         const canvas = canvasRef.current
         const context = canvas.getContext('2d')
@@ -336,7 +334,6 @@ function Canvas({dimensions, isDevMode}) {
                             for (let k = 0; k < checkCorners.length; k++) {
                                 let checkStart = checkCorners[k]
                                 let checkEnd = checkCorners[(k+1)%4]
-                                console.log("checking alignment")
                                 // check if any of the sides align
                                 if (linesSharePoint(currentStart, currentEnd, checkStart, checkEnd)) {
                                     return {"isAligned":true, keyPoints: [currentStart, currentEnd, checkStart, checkEnd]}; // need side that aligns
@@ -372,7 +369,6 @@ function Canvas({dimensions, isDevMode}) {
 
         function drawRectAndGuide(points, context, comments, dotted=true) { 
             // need if beingEdited
-            console.log("selectedElement and guideLine: ",selectedElement, guideLine)
             if (selectedElement) {
                 // change polypoints before drawing
                 // if beingEdited
@@ -427,7 +423,6 @@ function Canvas({dimensions, isDevMode}) {
         }
 
         function drawPolyline(points, context, comments) {
-            console.log("polyline inputs: ",points, context, comments)
             // TODO: have all the options in an object, not just colours
             for (let i=0; i<points.length; i++) {
                 // draw vertex
@@ -436,7 +431,6 @@ function Canvas({dimensions, isDevMode}) {
                     let dimension = 10
                     // bug when fire point selected and shifted
                     // no comments available
-                    console.log("comments: ", comments, elementConfig[comments])
                     context.fillStyle = elementConfig[comments] // have config depending on comment
                     context.fillRect(points[i].x - dimension/2, points[i].y - dimension/2, dimension, dimension)  
                 }
@@ -459,7 +453,6 @@ function Canvas({dimensions, isDevMode}) {
         function drawPolyAndGuide(poly, comment, context) {
                     
             // need if beingEdited
-            console.log("selectedElement and guideLine: ",selectedElement, guideLine)
             if (selectedElement) {
                 // change polypoints before drawing
                 // if beingEdited
@@ -500,7 +493,6 @@ function Canvas({dimensions, isDevMode}) {
             let selectedPoints = selectedElement["element"]["points"]
             let selectedType = selectedElement["element"]["type"]
             let rectOutlinePoints = (selectedType === 'rect') ? selectedPoints : [selectedElement["pointerDown"]]
-            console.log("selPoints useLayout: ", selectedElement["pointerDown"])
             // if mesh/rect then needs to use delta for max and min y
             // find points
             let maxX = null
@@ -529,7 +521,6 @@ function Canvas({dimensions, isDevMode}) {
                 }                
             }
 
-            console.log("mins: ",maxX, maxY, minX, minY)
             let buffer = 10
             maxX += buffer
             maxY += buffer
@@ -553,7 +544,6 @@ function Canvas({dimensions, isDevMode}) {
                 // drawPolyline(selectedPoints, context,"fire") // should just add to state
             } else if (selectedType == 'rect') {
 
-                console.log("rect drawing: ", selectedElement)
                 drawRectAndGuide(selectedPoints, context, comment)
 
                 
@@ -569,7 +559,6 @@ function Canvas({dimensions, isDevMode}) {
                 // should be current element with type and points object
                 // logic should allow guide to not be final point
 
-                console.log("hits here")
                 
                 if (tool === 'polyline') {
                     drawPolyAndGuide(currentPoly, comment, context)
@@ -581,7 +570,6 @@ function Canvas({dimensions, isDevMode}) {
                 } else if (tool === 'point'){
                     drawPolyline(currentPoint, context, comment) // should just add to state
                 } else if (tool == 'rect') {
-                    console.log("rect drawing: ", currentRect)
                     if (currentRect.length == 1) {
                         // use guide for mousePosition
                         if (guideLine != null) {
@@ -618,7 +606,6 @@ function Canvas({dimensions, isDevMode}) {
             if (isMesh(element)) { 
                 let alignedObject = isMeshAligned(element.points, elements)
                 if (alignedObject["isAligned"]) { 
-                    console.log("is aligned")
                     // draw cross
                     let keyPoints = alignedObject["keyPoints"]
                     let p1 = keyPoints[0]
@@ -635,7 +622,6 @@ function Canvas({dimensions, isDevMode}) {
                     context.stroke()
                 }
             }
-                    console.log("useLayoutRect: ", element.points)
                 } else if (element.type == 'point') {
                     if (element.comments === 'sensorTree') {
                         // Draw bullseye icon (concentric circles)
@@ -656,6 +642,32 @@ function Canvas({dimensions, isDevMode}) {
                         context.arc(p.x, p.y, 2, 0, Math.PI * 2)
                         context.fillStyle = color
                         context.fill()
+                        context.lineWidth = 1
+                    } else if (element.comments === 'fsaSensor') {
+                        // Draw FSA sensor as diamond with distance label
+                        const p = element.points[0]
+                        const color = elementConfig['fsaSensor']
+                        const size = 10
+                        // Diamond shape
+                        context.beginPath()
+                        context.moveTo(p.x, p.y - size)
+                        context.lineTo(p.x + size, p.y)
+                        context.lineTo(p.x, p.y + size)
+                        context.lineTo(p.x - size, p.y)
+                        context.closePath()
+                        context.strokeStyle = color
+                        context.lineWidth = 2
+                        context.stroke()
+                        context.fillStyle = color
+                        context.globalAlpha = 0.3
+                        context.fill()
+                        context.globalAlpha = 1.0
+                        // Distance label
+                        if (element.fsaDistance) {
+                            context.font = 'bold 11px sans-serif'
+                            context.fillStyle = color
+                            context.fillText(`${element.fsaDistance}m`, p.x + size + 3, p.y + 4)
+                        }
                         context.lineWidth = 1
                     } else {
                         drawPolyline(element.points, context, element.comments)
@@ -680,7 +692,7 @@ function Canvas({dimensions, isDevMode}) {
                     }
 
                     // Leakage-only doors: redraw with orange dashed line
-                    if (role === 'leakage') {
+                    if (role === 'leakage' && element.points.length >= 2) {
                         const pts = element.points
                         context.beginPath()
                         context.setLineDash([6, 4])
@@ -693,7 +705,7 @@ function Canvas({dimensions, isDevMode}) {
                         context.lineWidth = 1
                     }
 
-                    {
+                    if (element.points.length >= 2) {
                         const pts = element.points
                         const cx = (pts[0].x + pts[1].x) / 2
                         const cy = (pts[0].y + pts[1].y) / 2
@@ -886,76 +898,9 @@ function Canvas({dimensions, isDevMode}) {
         }
 
         // Draw auto-placed sprinkler markers only when no manual sprinklers exist
-        const manualSprinklers = elements.filter(el => el.comments === 'sprinkler')
-        if (isSprinklered && manualSprinklers.length === 0) {
-            const fireEl = elements.find(el => el.comments === 'fire')
-            if (fireEl && fireEl.points && fireEl.points.length > 0) {
-                const firePt = fireEl.points[0]
-                const pxPerM = pixelsPerMesh * 10
-                const offsetPx = 1.375 * pxPerM  // 2.75m / 2
-
-                // Point-in-polygon test (ray casting)
-                const pointInPoly = (px, py, poly) => {
-                    let inside = false
-                    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-                        const xi = poly[i].x, yi = poly[i].y
-                        const xj = poly[j].x, yj = poly[j].y
-                        if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
-                            inside = !inside
-                        }
-                    }
-                    return inside
-                }
-
-                // Find enclosing obstruction polygon
-                const obstructions = elements.filter(el => el.comments === 'obstruction')
-                let enclosingPoly = null
-                for (const obs of obstructions) {
-                    if (pointInPoly(firePt.x, firePt.y, obs.points)) {
-                        enclosingPoly = obs.points
-                        break
-                    }
-                }
-
-                // Min distance from point to polygon edges
-                const minDistToPoly = (px, py, poly) => {
-                    let minDist = Infinity
-                    for (let i = 0; i < poly.length; i++) {
-                        const p1 = poly[i], p2 = poly[(i + 1) % poly.length]
-                        const dx = p2.x - p1.x, dy = p2.y - p1.y
-                        const segLenSq = dx * dx + dy * dy
-                        if (segLenSq === 0) {
-                            minDist = Math.min(minDist, Math.hypot(px - p1.x, py - p1.y))
-                        } else {
-                            const t = Math.max(0, Math.min(1, ((px - p1.x) * dx + (py - p1.y) * dy) / segLenSq))
-                            minDist = Math.min(minDist, Math.hypot(px - (p1.x + t * dx), py - (p1.y + t * dy)))
-                        }
-                    }
-                    return minDist
-                }
-
-                // 4 candidates, filter by polygon + 1m wall clearance, take first 2
-                const minClearancePx = 1.0 * pxPerM  // BS 9251: 1m from walls
-                const allCandidates = [
-                    { x: firePt.x + offsetPx, y: firePt.y + offsetPx },
-                    { x: firePt.x - offsetPx, y: firePt.y - offsetPx },
-                    { x: firePt.x + offsetPx, y: firePt.y - offsetPx },
-                    { x: firePt.x - offsetPx, y: firePt.y + offsetPx },
-                ]
-                let sprinklerPositions
-                if (enclosingPoly) {
-                    sprinklerPositions = allCandidates.filter(c =>
-                        pointInPoly(c.x, c.y, enclosingPoly) &&
-                        minDistToPoly(c.x, c.y, enclosingPoly) >= minClearancePx
-                    ).slice(0, 2)
-                    if (sprinklerPositions.length < 2) {
-                        sprinklerPositions = allCandidates.filter(c => pointInPoly(c.x, c.y, enclosingPoly)).slice(0, 2)
-                    }
-                    if (sprinklerPositions.length < 2) sprinklerPositions = allCandidates.slice(0, 2)
-                } else {
-                    sprinklerPositions = allCandidates.slice(0, 2)
-                }
-
+        if (isSprinklered && elements.filter(el => el.comments === 'sprinkler').length === 0) {
+            const sprinklerPositions = computeAutoSprinklerPositions(elements, pixelsPerMesh)
+            if (sprinklerPositions.length > 0) {
                 sprinklerPositions.forEach((sp, i) => {
                     // Blue circle with cross
                     context.beginPath()
@@ -1190,13 +1135,10 @@ function Canvas({dimensions, isDevMode}) {
                     // needs further points for rect
                     if (currentEl["comments"].toLowerCase().includes("mesh")) {                       
                         currentPoints = getRectCorners(currentPoints)
-                        console.log("p's:", currentPoints)
                     }
                     for (let j = 0; j < currentPoints.length; j++) {
                         let currentP = currentPoints[j]
                         let currentDistance = calcDistance(pointer, currentP)
-                        console.log("currentP: ", currentP, j, currentDistance)
-                        console.log("currentPoints.length: ", currentPoints.length)
                         //-> check what is closest shape and 
                         // find distance
                         // TODO: add threshold of certain pixels
@@ -1285,7 +1227,6 @@ function Canvas({dimensions, isDevMode}) {
     }
     function handlePointerUp(event){
         // event.preventDefault(); 
-        console.log("pointerUP")
         let pointer = {x: event.pageX, y: event.pageY}
         if (selectedElement) {
             let el = selectedElement["element"] // needs id added to state
@@ -1339,7 +1280,6 @@ function Canvas({dimensions, isDevMode}) {
         // need previous pointer down point
         // apply offset to all points
         // later apply only to target point
-        console.log("selectedEl: ",selectedElement)
         // should be action not moving!
         // setSelectedElement(null)
     }

@@ -5,6 +5,7 @@ import FireInputsPopup from './FireInputsPopup'
 import FDSInputsPopup from './FDSInputsPopup.tsx'
 import TimeEquivalenceInputPopup from './TimeEquivalenceInputPopup'
 import {sendFdsData} from './ApiCalls'
+import { computeAutoSprinklerPositions } from '@/utils/autoSprinklers'
 
 import { useState } from 'react';
 import ErrorPopup from './ErrorPopup';
@@ -39,7 +40,9 @@ const Toolbar = ({setShowModePopup}) => {
     const includeSensors = useStore((state) => state.includeSensors)
     const corridorSensorHeights = useStore((state) => state.corridorSensorHeights)
     const stairSensorHeights = useStore((state) => state.stairSensorHeights)
+    const fsaSensorHeights = useStore((state) => state.fsaSensorHeights)
     const isSprinklered = useStore((state) => state.isSprinklered)
+    const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
     const doorLeakagesEnabled = useStore((state) => state.doorLeakagesEnabled)
     const doorLeakageConfig = useStore((state) => state.doorLeakageConfig)
     const doorOpenings = useStore((state) => state.doorOpenings)
@@ -52,6 +55,7 @@ const Toolbar = ({setShowModePopup}) => {
     const extractConfig = useStore((state) => state.extractConfig)
     const inletConfig = useStore((state) => state.inletConfig)
     const zoneConfig = useStore((state) => state.zoneConfig)
+    const sliceZHeight = useStore((state) => state.sliceZHeight)
     const obstructionTransparency = useStore((state) => state.obstructionTransparency)
     const fireHRR = useStore((state) => state.fireHRR)
     const fireDimension = useStore((state) => state.fireDimension)
@@ -157,8 +161,24 @@ const [errorList, setErrorList] = useState(defaultErrorList)
 
       function handleFDSClick() {
         console.log("handleFDSClick elements: ", elements)
+        // Inject auto-placed sprinklers as elements so backend uses frontend-computed positions
+        let elementsToSend = elements
+        const hasManualSprinklers = elements.some(el => el.comments === 'sprinkler')
+        if (isSprinklered && !hasManualSprinklers) {
+            const autoPositions = computeAutoSprinklerPositions(elements, pixelsPerMesh)
+            if (autoPositions.length > 0) {
+                const maxId = Math.max(0, ...elements.map(el => el.id || 0))
+                const sprinklerEls = autoPositions.map((pos, i) => ({
+                    id: maxId + 1 + i,
+                    type: 'point',
+                    comments: 'sprinkler',
+                    points: [{ x: pos.x, y: pos.y }]
+                }))
+                elementsToSend = [...elements, ...sprinklerEls]
+            }
+        }
         sendFdsData(
-                    elements,
+                    elementsToSend,
                     fireFloorZ,
                     wallHeight,
                     topStoreyHeight,
@@ -172,6 +192,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                     includeSensors,
                     corridorSensorHeights,
                     stairSensorHeights,
+                    fsaSensorHeights,
                     isSprinklered,
                     doorLeakagesEnabled,
                     doorLeakageConfig,
@@ -192,7 +213,8 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                     fireBase,
                     fireType,
                     fireGrowthRate,
-                    fireCustomAlpha
+                    fireCustomAlpha,
+                    sliceZHeight
                     )
       }
 

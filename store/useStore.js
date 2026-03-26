@@ -80,6 +80,7 @@ const useStore = create(persist((set, get) => {
         includeSensors: true,
         corridorSensorHeights: [2.0], // above fire floor, all types (temp, pressure, vis, velocity)
         stairSensorHeights: [0.5, 1.0, 1.5, 2.0], // above fire floor, tree of sensors at each stair position
+        fsaSensorHeights: [1.5], // above fire floor, FSA path sensors (2m/4m/15m from apt door)
         isSprinklered: true,
 
         // Door role assignment: { [doorId]: "apartment" | "stair" | "lobby" | "other" }
@@ -109,8 +110,10 @@ const useStore = create(persist((set, get) => {
         inletConfig: {}, // per-inlet: { [inletId]: { openingHeight, openingBase } }
         highlightedInletId: null,
 
-        // Zone assignment: { [elementId]: { type: "corridor"|"lobby"|"other", name: "Lobby 1" } }
+        // Zone assignment: { [elementId]: { type, name, slices, sensors, points } }
+        // types: "corridor"|"lobby"|"fire_room"|"internal_corridor"|"other"
         zoneConfig: {},
+        sliceZHeight: 2.0, // Z slice height above fire floor (m)
 
         // Debug: decomposed rectangles for sensor visualization (pixel coords)
         debugRects: [], // flat array [x1,y1,x2,y2, ...] of rect corners in pixels
@@ -143,9 +146,9 @@ const useStore = create(persist((set, get) => {
         addElement: (newEl) => set((state) => ({
             elements: [...state.elements, newEl]
         })),
-        // Replace all sensorTree elements with new ones
-        setSensorTreeElements: (sensorPoints) => set((state) => {
-            const withoutSensors = state.elements.filter(el => el.comments !== 'sensorTree')
+        // Replace all sensorTree and fsaSensor elements with new ones
+        setSensorTreeElements: (sensorPoints, fsaPoints = []) => set((state) => {
+            const withoutSensors = state.elements.filter(el => el.comments !== 'sensorTree' && el.comments !== 'fsaSensor')
             const maxId = withoutSensors.length > 0
                 ? Math.max(...withoutSensors.map(el => el.id))
                 : -1
@@ -155,7 +158,14 @@ const useStore = create(persist((set, get) => {
                 comments: 'sensorTree',
                 id: maxId + 1 + i,
             }))
-            return { elements: [...withoutSensors, ...newSensors] }
+            const newFsa = fsaPoints.map((pt, i) => ({
+                type: 'point',
+                points: [pt],
+                comments: 'fsaSensor',
+                fsaDistance: pt.fsaDistance, // 2, 4, or 15 metres from apt door
+                id: maxId + 1 + sensorPoints.length + i,
+            }))
+            return { elements: [...withoutSensors, ...newSensors, ...newFsa] }
         }),
         changeElement: (changedEl) =>  set((state) => ({
             elements: 
@@ -313,6 +323,9 @@ const useStore = create(persist((set, get) => {
         setStairSensorHeights: (newVal) => set(() => ({
             stairSensorHeights: newVal
         })),
+        setFsaSensorHeights: (newVal) => set(() => ({
+            fsaSensorHeights: newVal
+        })),
         setIsSprinklered: (newVal) => set(() => ({
             isSprinklered: newVal
         })),
@@ -352,6 +365,7 @@ const useStore = create(persist((set, get) => {
 
         // Zone setters
         setZoneConfig: (newVal) => set(() => ({ zoneConfig: newVal })),
+        setSliceZHeight: (newVal) => set(() => ({ sliceZHeight: newVal })),
 
         // Landing role setters
         setLandingRoles: (newVal) => set(() => ({ landingRoles: newVal })),
@@ -387,6 +401,7 @@ const useStore = create(persist((set, get) => {
                     includeSensors: s.includeSensors,
                     corridorSensorHeights: s.corridorSensorHeights,
                     stairSensorHeights: s.stairSensorHeights,
+                    fsaSensorHeights: s.fsaSensorHeights,
                     isSprinklered: s.isSprinklered,
                     doorOpenings: s.doorOpenings,
                     aovMode: s.aovMode,
@@ -422,6 +437,7 @@ const useStore = create(persist((set, get) => {
                             extractConfig: s.extractConfig,
                             inletConfig: s.inletConfig,
                             zoneConfig: s.zoneConfig,
+                            sliceZHeight: s.sliceZHeight,
                         },
                         elements: s.elements.map((el, i) => ({
                             element_index: el.id ?? i,
@@ -455,6 +471,7 @@ const useStore = create(persist((set, get) => {
                 includeSensors: ps.includeSensors ?? true,
                 corridorSensorHeights: ps.corridorSensorHeights ?? [2.0],
                 stairSensorHeights: ps.stairSensorHeights ?? [0.5, 1.0, 1.5, 2.0],
+                fsaSensorHeights: ps.fsaSensorHeights ?? [1.5],
                 isSprinklered: ps.isSprinklered ?? true,
                 doorOpenings: ps.doorOpenings ?? { ...defaultDoorTimings.MOE },
                 aovMode: ps.aovMode ?? "always_open",
@@ -484,6 +501,7 @@ const useStore = create(persist((set, get) => {
                 extractConfig: fs.extractConfig ?? {},
                 inletConfig: fs.inletConfig ?? {},
                 zoneConfig: fs.zoneConfig ?? {},
+                sliceZHeight: fs.sliceZHeight ?? 2.0,
                 // Elements
                 elements: (floorDetail.elements || []).map(el => ({
                     id: el.element_index,
@@ -536,6 +554,7 @@ const useStore = create(persist((set, get) => {
                 includeSensors: true,
                 corridorSensorHeights: [2.0],
                 stairSensorHeights: [0.5, 1.0, 1.5, 2.0],
+                fsaSensorHeights: [1.5],
                 isSprinklered: true,
                 doorRoles: {},
                 highlightedDoorId: null,
@@ -551,6 +570,7 @@ const useStore = create(persist((set, get) => {
                 inletConfig: {},
                 highlightedInletId: null,
                 zoneConfig: {},
+                sliceZHeight: 2.0,
                 aovMode: "always_open",
                 aovActivationTime: null,
                 obstructionTransparency: { stairWalls: 0.25, stairRoof: 0.25, fireFloorWalls: 0.0 },
@@ -595,6 +615,7 @@ const useStore = create(persist((set, get) => {
         includeSensors: state.includeSensors,
         corridorSensorHeights: state.corridorSensorHeights,
         stairSensorHeights: state.stairSensorHeights,
+        fsaSensorHeights: state.fsaSensorHeights,
         isSprinklered: state.isSprinklered,
         doorRoles: state.doorRoles,
         doorLeakagesEnabled: state.doorLeakagesEnabled,
@@ -606,6 +627,7 @@ const useStore = create(persist((set, get) => {
         extractConfig: state.extractConfig,
         inletConfig: state.inletConfig,
         zoneConfig: state.zoneConfig,
+        sliceZHeight: state.sliceZHeight,
         aovMode: state.aovMode,
         aovActivationTime: state.aovActivationTime,
         obstructionTransparency: state.obstructionTransparency,

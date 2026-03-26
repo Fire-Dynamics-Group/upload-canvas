@@ -1,8 +1,32 @@
 import useStore from '../store/useStore'
 import { defaultDoorTimings } from '../store/useStore'
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { computeCenterlinePoints, findCorridorObstruction, computeStairSensorPositions } from '../utils/corridorCenterline'
 import { findEnclosedRegions } from '../utils/findEnclosedRegions'
+import { runFsaPathfinding } from '../utils/fsaPathfinding'
+
+/**
+ * Text input that uses local state while typing, only syncing to store on blur.
+ * Defined OUTSIDE FDSInputsPopup to avoid remount on every parent render.
+ */
+// @ts-ignore
+const BlurInput = ({ value, onChange, className = '', ...props }) => {
+    const [local, setLocal] = useState(String(value ?? ''))
+    const prev = useRef(value)
+    if (prev.current !== value && String(value) !== local) {
+        setLocal(String(value ?? ''))
+    }
+    prev.current = value
+    return (
+        <input
+            {...props}
+            className={className}
+            value={local}
+            onChange={(e: any) => setLocal(e.target.value)}
+            onBlur={() => onChange(local)}
+        />
+    )
+}
 
 // @ts-ignore
 const FDSInputsPopup = ({handleUserInput}) => {
@@ -45,6 +69,8 @@ const FDSInputsPopup = ({handleUserInput}) => {
     const setCorridorSensorHeights = useStore((state) => state.setCorridorSensorHeights)
     const stairSensorHeights = useStore((state) => state.stairSensorHeights)
     const setStairSensorHeights = useStore((state) => state.setStairSensorHeights)
+    const fsaSensorHeights = useStore((state) => state.fsaSensorHeights)
+    const setFsaSensorHeights = useStore((state) => state.setFsaSensorHeights)
 
     // Door leakage settings
     const doorLeakagesEnabled = useStore((state) => state.doorLeakagesEnabled)
@@ -154,6 +180,19 @@ const FDSInputsPopup = ({handleUserInput}) => {
 
     type TabType = 'general' | 'scenario' | 'fire' | 'doors' | 'devices' | 'stairs' | 'extracts' | 'zones' | 'display'
     const [activeTab, setActiveTab] = useState<TabType>('general')
+    const [fsaStatus, setFsaStatus] = useState<{walkingDistance: number, placed: number[], missed: number[]} | null>(null)
+    const scrollRef = useRef<HTMLDivElement>(null)
+    const scrollTop = useRef(0)
+
+    // Preserve scroll position across re-renders
+    useEffect(() => {
+        const el = scrollRef.current
+        if (!el) return
+        el.scrollTop = scrollTop.current
+        const onScroll = () => { scrollTop.current = el.scrollTop }
+        el.addEventListener('scroll', onScroll)
+        return () => el.removeEventListener('scroll', onScroll)
+    })
 
     const TabButton = ({ tab, label }: { tab: TabType, label: string }) => (
         <button
@@ -608,15 +647,22 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     />
                     <h3 className="font-bold mb-2">Stair Sensor Tree Heights (m above fire floor):</h3>
                     <p className="text-sm text-gray-500 mb-1">Temp, Visibility tree at each stair position</p>
-                    <input
-                        type="text"
-                        className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                    <BlurInput type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
                         value={stairSensorHeights.join(', ')}
-                        onChange={(e) => setStairSensorHeights(
-                            e.target.value.split(',').map(v => parseFloat(v.trim())).filter(v => !isNaN(v))
-                        )}
+                        onChange={(v: string) => setStairSensorHeights(v.split(',').map((s: string) => parseFloat(s.trim())).filter((n: number) => !isNaN(n)))}
                         placeholder="e.g. 0.5, 1.0, 1.5, 2.0"
                     />
+                    {(scenarioType === "FSA" || scenarioType === "Both") && (
+                        <>
+                            <h3 className="font-bold mb-2">FSA Path Sensor Heights (m above fire floor):</h3>
+                            <p className="text-sm text-gray-500 mb-1">All types at 2m, 4m, 15m from apartment door along walking route</p>
+                            <BlurInput type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                                value={fsaSensorHeights.join(', ')}
+                                onChange={(v: string) => setFsaSensorHeights(v.split(',').map((s: string) => parseFloat(s.trim())).filter((n: number) => !isNaN(n)))}
+                                placeholder="e.g. 1.5"
+                            />
+                        </>
+                    )}
                 </>
             )}
             <button
@@ -684,7 +730,54 @@ const FDSInputsPopup = ({handleUserInput}) => {
                         }
                     }
 
-                    setSensorTreeElements([...points, ...stairPoints, ...zonePoints])
+                    // Compute FSA path sensors if scenario is FSA or Both
+                    let fsaPoints: Array<{x: number, y: number, fsaDistance: number}> = []
+                    const targetDistances = [2, 4, 15]
+                    if ((scenarioType === "FSA" || scenarioType === "Both") && corridor) {
+                        const aptDoor = doorElements.find((d: any) => doorRoles[d.id] === 'apartment')
+                        const strDoor = doorElements.find((d: any) => doorRoles[d.id] === 'stair')
+                        if (aptDoor && strDoor) {
+                            const pxPerM = pixelsPerMesh * 10
+                            const startM = {
+                                x: (aptDoor.points[0].x + aptDoor.points[1].x) / 2 / pxPerM,
+                                y: (aptDoor.points[0].y + aptDoor.points[1].y) / 2 / pxPerM,
+                            }
+                            const endM = {
+                                x: (strDoor.points[0].x + strDoor.points[1].x) / 2 / pxPerM,
+                                y: (strDoor.points[0].y + strDoor.points[1].y) / 2 / pxPerM,
+                            }
+                            const corridorVerticesM = corridor.points.map((p: any) => ({
+                                x: p.x / pxPerM,
+                                y: p.y / pxPerM,
+                            }))
+                            const fsaResult = runFsaPathfinding(startM, endM, corridorVerticesM)
+                            if (fsaResult) {
+                                const placedDistances: number[] = []
+                                for (const [dist, loc] of Object.entries(fsaResult.sensorLocations) as any) {
+                                    fsaPoints.push({
+                                        x: Math.round(loc.x * pxPerM),
+                                        y: Math.round(loc.y * pxPerM),
+                                        fsaDistance: Number(dist),
+                                    })
+                                    placedDistances.push(Number(dist))
+                                }
+                                const missedDistances = targetDistances.filter(d => !placedDistances.includes(d))
+                                setFsaStatus({
+                                    walkingDistance: fsaResult.maxDistance,
+                                    placed: placedDistances,
+                                    missed: missedDistances,
+                                })
+                            } else {
+                                setFsaStatus({ walkingDistance: 0, placed: [], missed: targetDistances })
+                            }
+                        } else {
+                            setFsaStatus(null)
+                        }
+                    } else {
+                        setFsaStatus(null)
+                    }
+
+                    setSensorTreeElements([...points, ...stairPoints, ...zonePoints], fsaPoints)
                 }}
             >
                 Compute Sensor Locations
@@ -695,6 +788,28 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     {/* @ts-ignore */}
                     {elements.filter(el => el.comments === 'sensorTree').length} sensors placed (corridor + stair)
                 </p>
+            )}
+            {fsaStatus && (
+                <div className="text-sm mb-4">
+                    <p className="text-gray-400">
+                        FSA walking distance: {fsaStatus.walkingDistance.toFixed(1)}m (apt door to stair door)
+                    </p>
+                    {fsaStatus.placed.length > 0 && (
+                        <p className="text-yellow-400">
+                            FSA sensors placed: {fsaStatus.placed.map(d => `${d}m`).join(', ')}
+                        </p>
+                    )}
+                    {fsaStatus.missed.length > 0 && fsaStatus.missed.length < 3 && (
+                        <p className="text-orange-400">
+                            Not placed (corridor too short): {fsaStatus.missed.map(d => `${d}m`).join(', ')}
+                        </p>
+                    )}
+                    {fsaStatus.missed.length === 3 && (
+                        <p className="text-red-400">
+                            No FSA sensors placed — corridor walking distance ({fsaStatus.walkingDistance.toFixed(1)}m) is shorter than 2m
+                        </p>
+                    )}
+                </div>
             )}
 
             <h2 className="text-lg font-bold mb-4 mt-4">Sprinkler Settings</h2>
@@ -1298,7 +1413,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
 
     return (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-            <div className="bg-white p-4 rounded-lg shadow-lg text-black max-h-[80vh] overflow-y-auto min-w-[400px]">
+            <div ref={scrollRef} className="bg-white p-4 rounded-lg shadow-lg text-black max-h-[80vh] overflow-y-auto min-w-[400px]">
                 <div className="mb-4 border-b flex flex-wrap">
                     <TabButton tab="general" label="General" />
                     <TabButton tab="fire" label="Fire" />
