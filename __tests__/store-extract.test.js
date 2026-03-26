@@ -100,6 +100,72 @@ describe('Store: extract shaft config', () => {
         })
     })
 
+    it('extractConfig includes openingHeight and openingBase', () => {
+        useStore.getState().setExtractConfig({
+            'extract-1': {
+                type: 'natural',
+                flowRate: 3.0,
+                shaftWidth: 0.9,
+                shaftDepth: 0.9,
+                openingHeight: 0.8,
+                openingBase: 1.5,
+                activation: 'always_open',
+                activationTime: null,
+            },
+        })
+
+        const config = useStore.getState().extractConfig
+        expect(config['extract-1'].openingHeight).toBe(0.8)
+        expect(config['extract-1'].openingBase).toBe(1.5)
+    })
+
+    it('openingHeight persists in buildSavePayload', () => {
+        useStore.getState().setExtractConfig({
+            'extract-1': {
+                type: 'natural',
+                flowRate: 3.0,
+                shaftWidth: 0.9,
+                shaftDepth: 0.9,
+                openingHeight: 0.8,
+                openingBase: 1.5,
+                activation: 'always_open',
+                activationTime: null,
+            },
+        })
+
+        const payload = useStore.getState().buildSavePayload()
+        const floorSettings = payload.floors[0].settings
+        expect(floorSettings.extractConfig['extract-1'].openingHeight).toBe(0.8)
+        expect(floorSettings.extractConfig['extract-1'].openingBase).toBe(1.5)
+    })
+
+    it('hydrateFromServer restores openingHeight and openingBase', () => {
+        const project = { id: 'proj-1', name: 'Test', settings: {} }
+        const floorDetail = {
+            id: 'floor-1',
+            settings: {
+                extractConfig: {
+                    'extract-1': {
+                        type: 'natural',
+                        flowRate: 3.0,
+                        shaftWidth: 0.9,
+                        shaftDepth: 0.9,
+                        openingHeight: 0.8,
+                        openingBase: 1.5,
+                        activation: 'always_open',
+                        activationTime: null,
+                    },
+                },
+            },
+            elements: [],
+        }
+
+        useStore.getState().hydrateFromServer(project, floorDetail)
+        const config = useStore.getState().extractConfig
+        expect(config['extract-1'].openingHeight).toBe(0.8)
+        expect(config['extract-1'].openingBase).toBe(1.5)
+    })
+
     it('resetProject clears extractConfig', () => {
         useStore.getState().setExtractConfig({
             'extract-1': {

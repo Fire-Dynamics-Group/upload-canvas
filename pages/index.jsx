@@ -136,8 +136,18 @@ export default function Home() {
         wallHeight: state.wallHeight,
         doorRoles: state.doorRoles,
         doorOpenings: state.doorOpenings,
+        doorLeakagesEnabled: state.doorLeakagesEnabled,
+        doorLeakageConfig: state.doorLeakageConfig,
         landingRoles: state.landingRoles,
+        landingUpSide: state.landingUpSide,
+        stairStyle: state.stairStyle,
         aovMode: state.aovMode,
+        aovActivationTime: state.aovActivationTime,
+        extractConfig: state.extractConfig,
+        inletConfig: state.inletConfig,
+        zoneConfig: state.zoneConfig,
+        obstructionTransparency: state.obstructionTransparency,
+        sliceZHeight: state.sliceZHeight,
       })
       if (snapshot !== prevSnapshot) {
         prevSnapshot = snapshot

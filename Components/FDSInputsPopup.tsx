@@ -131,7 +131,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
         setExtractConfig({
             ...extractConfig,
             [extractId]: {
-                ...(extractConfig[extractId] || { type: "natural", flowRate: 3.0, shaftWidth: 0.9, shaftDepth: 0.9, activation: "always_open", activationTime: null }),
+                ...(extractConfig[extractId] || { type: "natural", flowRate: 3.0, shaftWidth: 0.9, shaftDepth: 0.9, openingHeight: 0.8, openingBase: 0.0, activation: "always_open", activationTime: null }),
                 [field]: value
             }
         })
