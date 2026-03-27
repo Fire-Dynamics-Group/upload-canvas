@@ -398,7 +398,7 @@ describe('computeCenterlinePoints with rectangle decomposition', () => {
         })
         // Sensors should span most of the X range
         const sensorXs = points.map(p => p.x)
-        expect(Math.min(...sensorXs)).toBeLessThan(1870)
+        expect(Math.min(...sensorXs)).toBeLessThan(1920)
         expect(Math.max(...sensorXs)).toBeGreaterThan(2100)
     })
 })

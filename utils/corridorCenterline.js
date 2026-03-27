@@ -6,12 +6,37 @@
  * @returns {[number, number] | null} [min, max] of intersections, or null
  */
 export function findPerpendicularBounds(polyPoints, axisPos, isHorizontal) {
+    const intersections = collectRayIntersections(polyPoints, axisPos, isHorizontal)
+    if (intersections.length < 2) return null
+    return [Math.min(...intersections), Math.max(...intersections)]
+}
+
+/**
+ * Find all intersection segments of a perpendicular ray with the polygon.
+ * Returns paired entry/exit points so that for L/T-shaped polygons,
+ * each disconnected corridor section gets its own segment.
+ * @param {Array<{x: number, y: number}>} polyPoints - polygon vertices
+ * @param {number} axisPos - position along the corridor axis
+ * @param {boolean} isHorizontal - true if corridor runs along X (ray along Y)
+ * @returns {Array<[number, number]>} array of [min, max] segments
+ */
+export function findPerpendicularSegments(polyPoints, axisPos, isHorizontal) {
+    const intersections = collectRayIntersections(polyPoints, axisPos, isHorizontal)
+    intersections.sort((a, b) => a - b)
+    // Pair consecutive intersections: [entry, exit], [entry, exit], ...
+    const segments = []
+    for (let i = 0; i + 1 < intersections.length; i += 2) {
+        segments.push([intersections[i], intersections[i + 1]])
+    }
+    return segments
+}
+
+function collectRayIntersections(polyPoints, axisPos, isHorizontal) {
     const intersections = []
     for (let i = 0; i < polyPoints.length; i++) {
         const a = polyPoints[i]
         const b = polyPoints[(i + 1) % polyPoints.length]
         if (isHorizontal) {
-            // Corridor along X, ray along Y at x=axisPos
             const minX = Math.min(a.x, b.x)
             const maxX = Math.max(a.x, b.x)
             if (axisPos >= minX && axisPos <= maxX && a.x !== b.x) {
@@ -19,7 +44,6 @@ export function findPerpendicularBounds(polyPoints, axisPos, isHorizontal) {
                 intersections.push(a.y + t * (b.y - a.y))
             }
         } else {
-            // Corridor along Y, ray along X at y=axisPos
             const minY = Math.min(a.y, b.y)
             const maxY = Math.max(a.y, b.y)
             if (axisPos >= minY && axisPos <= maxY && a.y !== b.y) {
@@ -28,8 +52,7 @@ export function findPerpendicularBounds(polyPoints, axisPos, isHorizontal) {
             }
         }
     }
-    if (intersections.length < 2) return null
-    return [Math.min(...intersections), Math.max(...intersections)]
+    return intersections
 }
 
 /**
@@ -421,41 +444,75 @@ export function computeCenterlinePoints(
     inset = 0.4
 ) {
     const pxPerM = pixelsPerMesh * 10
+    const insetPx = inset * pxPerM
+    const stepPx = spacing * pxPerM
+    const polyX = obstructionPoints.map(p => p.x)
+    const polyY = obstructionPoints.map(p => p.y)
     const xs = obstructionPoints.map(p => p.x)
     const ys = obstructionPoints.map(p => p.y)
     const xMin = Math.min(...xs), xMax = Math.max(...xs)
     const yMin = Math.min(...ys), yMax = Math.max(...ys)
-    const insetPx = inset * pxPerM
-    const stepPx = spacing * pxPerM
 
     const points = []
     const seen = new Set()
 
-    // Scan horizontally: walk along X, cast vertical rays to find Y midpoint
+    // 1) Rectangle decomposition (EXE approach) — good for each arm of T/L shapes
+    const metrePoints = obstructionPoints.map(p => ({
+        x: Math.round(p.x / pxPerM * 10) / 10,
+        y: Math.round(p.y / pxPerM * 10) / 10,
+    }))
+    const rects = getBestRectangles(metrePoints)
+    const centrelines = returnCenterlines(rects, spacing)
+    for (const c of centrelines) {
+        const px = { x: Math.round(c.x * pxPerM), y: Math.round(c.y * pxPerM) }
+        const key = `${px.x},${px.y}`
+        if (!seen.has(key)) {
+            seen.add(key)
+            points.push(px)
+        }
+    }
+
+    // 2) Ray-scan fill — covers junction areas that rectangles may miss
     for (let x = xMin + insetPx; x <= xMax - insetPx; x += stepPx) {
-        const bounds = findPerpendicularBounds(obstructionPoints, x, true)
-        if (!bounds) continue
-        const midY = Math.round((bounds[0] + bounds[1]) / 2)
-        const key = `${Math.round(x)},${midY}`
-        if (!seen.has(key)) {
-            seen.add(key)
-            points.push({ x: Math.round(x), y: midY })
+        const segments = findPerpendicularSegments(obstructionPoints, x, true)
+        for (const [segMin, segMax] of segments) {
+            const midY = Math.round((segMin + segMax) / 2)
+            const key = `${Math.round(x)},${midY}`
+            if (!seen.has(key)) {
+                seen.add(key)
+                points.push({ x: Math.round(x), y: midY })
+            }
         }
     }
-
-    // Scan vertically: walk along Y, cast horizontal rays to find X midpoint
     for (let y = yMin + insetPx; y <= yMax - insetPx; y += stepPx) {
-        const bounds = findPerpendicularBounds(obstructionPoints, y, false)
-        if (!bounds) continue
-        const midX = Math.round((bounds[0] + bounds[1]) / 2)
-        const key = `${midX},${Math.round(y)}`
-        if (!seen.has(key)) {
-            seen.add(key)
-            points.push({ x: midX, y: Math.round(y) })
+        const segments = findPerpendicularSegments(obstructionPoints, y, false)
+        for (const [segMin, segMax] of segments) {
+            const midX = Math.round((segMin + segMax) / 2)
+            const key = `${midX},${Math.round(y)}`
+            if (!seen.has(key)) {
+                seen.add(key)
+                points.push({ x: midX, y: Math.round(y) })
+            }
         }
     }
 
-    return points
+    // Post-filter: reject sensors outside polygon or too close to walls
+    return points.filter(p => {
+        if (!pointInPolygon(p.x, p.y, polyX, polyY)) return false
+        for (let i = 0; i < obstructionPoints.length; i++) {
+            const a = obstructionPoints[i]
+            const b = obstructionPoints[(i + 1) % obstructionPoints.length]
+            const dx = b.x - a.x, dy = b.y - a.y
+            const lenSq = dx * dx + dy * dy
+            if (lenSq === 0) continue
+            let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq
+            t = Math.max(0, Math.min(1, t))
+            const px = a.x + t * dx, py = a.y + t * dy
+            const dist = Math.sqrt((p.x - px) ** 2 + (p.y - py) ** 2)
+            if (dist < insetPx) return false
+        }
+        return true
+    })
 }
 
 /**

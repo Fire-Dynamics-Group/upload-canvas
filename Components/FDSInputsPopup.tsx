@@ -131,7 +131,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
         setExtractConfig({
             ...extractConfig,
             [extractId]: {
-                ...(extractConfig[extractId] || { type: "natural", flowRate: 3.0, shaftWidth: 0.9, shaftDepth: 0.9, openingHeight: 0.8, openingBase: 0.0, activation: "always_open", activationTime: null }),
+                ...(extractConfig[extractId] || { type: "natural", flowRate: 3.0, tauV: -10, shaftWidth: 0.9, shaftDepth: 0.9, openingHeight: 0.8, openingBase: 0.0, activation: "always_open", activationTime: null }),
                 [field]: value
             }
         })
@@ -141,7 +141,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
         setInletConfig({
             ...inletConfig,
             [inletId]: {
-                ...(inletConfig[inletId] || { openingHeight: 0.8, openingBase: 0.0 }),
+                ...(inletConfig[inletId] || { type: "natural", flowRate: 3.0, tauV: -10, openingHeight: 0.8, openingBase: 0.0 }),
                 [field]: value
             }
         })
@@ -675,12 +675,26 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     const corridor = findCorridorObstruction(obstructions, doorElements, doorRoles)
                     if (!corridor) return
                     setDebugRects([]) // clear old debug rects
-                    const points = computeCenterlinePoints(
-                        corridor.points,
-                        doorElements,
-                        doorRoles,
-                        pixelsPerMesh
+
+                    // Use zone polygons for sensor placement when available (they
+                    // represent the full combined corridor shape including lobby).
+                    // Fall back to single obstruction if no zones configured.
+                    let points: Array<{x: number, y: number}> = []
+                    const corridorZones = Object.values(zoneConfig).filter(
+                        (z: any) => z.type === 'corridor' && z.points && z.points.length >= 3
                     )
+                    if (corridorZones.length > 0) {
+                        for (const zone of corridorZones as any) {
+                            const zoneSensors = computeCenterlinePoints(
+                                zone.points, doorElements, doorRoles, pixelsPerMesh
+                            )
+                            points.push(...zoneSensors)
+                        }
+                    } else {
+                        points = computeCenterlinePoints(
+                            corridor.points, doorElements, doorRoles, pixelsPerMesh
+                        )
+                    }
 
                     // Also compute stair sensor positions
                     const stairDoor = doorElements.find((d: any) => doorRoles[d.id] === 'stair')
@@ -699,37 +713,6 @@ const FDSInputsPopup = ({handleUserInput}) => {
                         )
                     }
 
-                    // Also compute zone sensor positions
-                    let zonePoints: Array<{x: number, y: number}> = []
-                    if (Object.keys(zoneConfig).length > 0) {
-                        const pxPerM = pixelsPerMesh * 10
-                        const spacingPx = 0.5 * pxPerM  // 0.5m spacing in pixels
-                        const insetPx = 0.3 * pxPerM
-
-                        for (const [, config] of Object.entries(zoneConfig) as any) {
-                            const pts = config.points
-                            if (!pts || pts.length < 3) continue
-
-                            const xs = pts.map((p: any) => p.x)
-                            const ys = pts.map((p: any) => p.y)
-                            const xmin = Math.min(...xs), xmax = Math.max(...xs)
-                            const ymin = Math.min(...ys), ymax = Math.max(...ys)
-                            const dx = xmax - xmin, dy = ymax - ymin
-
-                            if (dx > dy) {
-                                const yMid = (ymin + ymax) / 2
-                                for (let x = xmin + insetPx; x <= xmax - insetPx; x += spacingPx) {
-                                    zonePoints.push({ x, y: yMid })
-                                }
-                            } else {
-                                const xMid = (xmin + xmax) / 2
-                                for (let y = ymin + insetPx; y <= ymax - insetPx; y += spacingPx) {
-                                    zonePoints.push({ x: xMid, y })
-                                }
-                            }
-                        }
-                    }
-
                     // Compute FSA path sensors if scenario is FSA or Both
                     let fsaPoints: Array<{x: number, y: number, fsaDistance: number}> = []
                     const targetDistances = [2, 4, 15]
@@ -746,7 +729,11 @@ const FDSInputsPopup = ({handleUserInput}) => {
                                 x: (strDoor.points[0].x + strDoor.points[1].x) / 2 / pxPerM,
                                 y: (strDoor.points[0].y + strDoor.points[1].y) / 2 / pxPerM,
                             }
-                            const corridorVerticesM = corridor.points.map((p: any) => ({
+                            // Use zone polygon for FSA pathfinding when available
+                            const fsaPolyPx = corridorZones.length > 0
+                                ? (corridorZones[0] as any).points
+                                : corridor.points
+                            const corridorVerticesM = fsaPolyPx.map((p: any) => ({
                                 x: p.x / pxPerM,
                                 y: p.y / pxPerM,
                             }))
@@ -777,7 +764,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                         setFsaStatus(null)
                     }
 
-                    setSensorTreeElements([...points, ...stairPoints, ...zonePoints], fsaPoints)
+                    setSensorTreeElements([...points, ...stairPoints], fsaPoints)
                 }}
             >
                 Compute Sensor Locations
@@ -1092,7 +1079,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     <div className="mb-4">
                         {/* @ts-ignore */}
                         {extractElements.map((extract, idx) => {
-                            const config = extractConfig[extract.id] || { type: "natural", flowRate: 3.0, shaftWidth: 0.9, shaftDepth: 0.9, activation: "always_open", activationTime: null }
+                            const config = extractConfig[extract.id] || { type: "natural", flowRate: 3.0, tauV: -10, shaftWidth: 0.9, shaftDepth: 0.9, activation: "always_open", activationTime: null }
                             return (
                                 <div
                                     key={extract.id}
@@ -1116,12 +1103,20 @@ const FDSInputsPopup = ({handleUserInput}) => {
                                         </label>
 
                                         {config.type === 'mechanical' && (
-                                            <label className="text-sm">Flow Rate (m³/s):
-                                                <input type="number" step="0.1" className="ml-2 border px-2 py-1 rounded-md w-24"
-                                                    value={config.flowRate ?? 3.0}
-                                                    onChange={(e) => handleExtractConfigChange(extract.id, 'flowRate', Number(e.target.value))}
-                                                />
-                                            </label>
+                                            <>
+                                                <label className="text-sm">Flow Rate (m³/s):
+                                                    <input type="number" step="0.1" className="ml-2 border px-2 py-1 rounded-md w-24"
+                                                        value={config.flowRate ?? 3.0}
+                                                        onChange={(e) => handleExtractConfigChange(extract.id, 'flowRate', Number(e.target.value))}
+                                                    />
+                                                </label>
+                                                <label className="text-sm">TAU_V (s):
+                                                    <input type="number" step="1" className="ml-2 border px-2 py-1 rounded-md w-24"
+                                                        value={config.tauV ?? -10}
+                                                        onChange={(e) => handleExtractConfigChange(extract.id, 'tauV', Number(e.target.value))}
+                                                    />
+                                                </label>
+                                            </>
                                         )}
 
                                         <label className="text-sm">Shaft Width (m):
@@ -1194,7 +1189,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     <div className="mb-4">
                         {/* @ts-ignore */}
                         {inletElements.map((inlet, idx) => {
-                            const config = inletConfig[inlet.id] || { openingHeight: 3.0, openingBase: 0.0 }
+                            const config = inletConfig[inlet.id] || { type: "natural", flowRate: 3.0, tauV: -10, openingHeight: 3.0, openingBase: 0.0 }
                             return (
                                 <div
                                     key={inlet.id}
@@ -1206,6 +1201,34 @@ const FDSInputsPopup = ({handleUserInput}) => {
                                     <span className="font-bold text-sm">Inlet {idx + 1}</span>
 
                                     <div className="mt-2 flex flex-col gap-2">
+                                        <label className="text-sm">Type:
+                                            <select
+                                                className="ml-2 border border-gray-300 px-2 py-1 rounded-md text-sm"
+                                                value={config.type ?? 'natural'}
+                                                onChange={(e) => handleInletConfigChange(inlet.id, 'type', e.target.value)}
+                                            >
+                                                <option value="natural">Natural</option>
+                                                <option value="mechanical">Mechanical</option>
+                                            </select>
+                                        </label>
+
+                                        {config.type === 'mechanical' && (
+                                            <>
+                                                <label className="text-sm">Flow Rate (m³/s):
+                                                    <input type="number" step="0.1" className="ml-2 border px-2 py-1 rounded-md w-24"
+                                                        value={config.flowRate ?? 3.0}
+                                                        onChange={(e) => handleInletConfigChange(inlet.id, 'flowRate', Number(e.target.value))}
+                                                    />
+                                                </label>
+                                                <label className="text-sm">TAU_V (s):
+                                                    <input type="number" step="1" className="ml-2 border px-2 py-1 rounded-md w-24"
+                                                        value={config.tauV ?? -10}
+                                                        onChange={(e) => handleInletConfigChange(inlet.id, 'tauV', Number(e.target.value))}
+                                                    />
+                                                </label>
+                                            </>
+                                        )}
+
                                         <label className="text-sm">Opening Height (m):
                                             <input type="number" step="0.1" className="ml-2 border px-2 py-1 rounded-md w-24"
                                                 value={config.openingHeight ?? 0.8}
