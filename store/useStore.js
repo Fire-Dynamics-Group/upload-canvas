@@ -100,7 +100,7 @@ const useStore = create(persist((set, get) => {
         // Which half of the floor landing goes up: "left"|"right"|"top"|"bottom"
         landingUpSide: null,
         // Stair step style: "overlapping" (full landing width shifted) | "individual" (single tread width)
-        stairStyle: "overlapping",
+        stairStyle: "individual",
 
         // Extract shaft settings
         extractConfig: {}, // per-extract: { [extractId]: { type, flowRate, shaftWidth, shaftDepth, activation, activationTime } }
@@ -497,7 +497,7 @@ const useStore = create(persist((set, get) => {
                 doorLeakageConfig: fs.doorLeakageConfig ?? {},
                 landingRoles: fs.landingRoles ?? {},
                 landingUpSide: fs.landingUpSide ?? null,
-                stairStyle: fs.stairStyle ?? "overlapping",
+                stairStyle: fs.stairStyle ?? "individual",
                 extractConfig: fs.extractConfig ?? {},
                 inletConfig: fs.inletConfig ?? {},
                 zoneConfig: fs.zoneConfig ?? {},
@@ -564,7 +564,7 @@ const useStore = create(persist((set, get) => {
                 landingRoles: {},
                 highlightedLandingId: null,
                 landingUpSide: null,
-                stairStyle: "overlapping",
+                stairStyle: "individual",
                 extractConfig: {},
                 highlightedExtractId: null,
                 inletConfig: {},
