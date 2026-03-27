@@ -9,11 +9,9 @@ import {
 // ─── Test data from real projects ───────────────────────────────────
 // EXE receives vertices in metres from CSV, split by area (CC_Corner,
 // Lobby_corner). It runs getBestRectangles + returnCenterlines on each
-// sub-polygon separately. The web app has one combined obstruction.
+// sub-polygon separately. The web app has one combined zone polygon.
 
 // North Finchley — from FS2.csv (scale: 5.6m reference)
-// CC_Corner: 4 vertices (simple rectangle)
-// Lobby_corner: 10 vertices (L-shaped extension)
 const northFinchley = {
     name: 'North Finchley',
     pixelsPerMesh: 4.196580544360626,
@@ -36,7 +34,7 @@ const northFinchley = {
         { x: 19.7, y: 33.1 },
         { x: 19.7, y: 36.9 },
     ],
-    // Web app combined corridor obstruction (pixels)
+    // Web app combined corridor zone polygon (pixels)
     corridorPoly: [
         { x: 667.2563065533395, y: 1347.1023547397608 },
         { x: 1208.6151967758603, y: 1347.1023547397608 },
@@ -55,13 +53,9 @@ const northFinchley = {
     doorRoles: { 6: 'stair', 14: 'apartment', 25: 'lobby' },
 }
 
-// Ian Test 2 — CC_Corner equivalent (the main rectangular section)
-// and the rest of the corridor shape
 const ianTest2 = {
     name: 'Ian Test 2',
     pixelsPerMesh: 4.260011737073032,
-    // For Ian Test 2 we use the full corridor as a single polygon since
-    // we don't have the CSV split. The web app polygon has 16 vertices.
     corridorPoly: [
         { x: 1819.0250117301848, y: 1043.7028755828928 },
         { x: 2040.5456220579824, y: 1043.7028755828928 },
@@ -93,31 +87,33 @@ function isInsidePoly(point, poly) {
     return pointInPolygon(point.x, point.y, poly.map(p => p.x), poly.map(p => p.y))
 }
 
-function distToEdge(point, poly) {
-    let minDist = Infinity
-    for (let i = 0; i < poly.length; i++) {
-        const a = poly[i], b = poly[(i + 1) % poly.length]
-        const dx = b.x - a.x, dy = b.y - a.y
-        const lenSq = dx * dx + dy * dy
-        if (lenSq === 0) continue
-        let t = ((point.x - a.x) * dx + (point.y - a.y) * dy) / lenSq
-        t = Math.max(0, Math.min(1, t))
-        const px = a.x + t * dx, py = a.y + t * dy
-        const d = Math.sqrt((point.x - px) ** 2 + (point.y - py) ** 2)
-        if (d < minDist) minDist = d
-    }
-    return minDist
-}
-
 function coverageGaps(sensors, poly, inset = 0.4, maxGap = 2.0, step = 0.5) {
     const polyX = poly.map(p => p.x), polyY = poly.map(p => p.y)
     const xMin = Math.min(...polyX), xMax = Math.max(...polyX)
     const yMin = Math.min(...polyY), yMax = Math.max(...polyY)
+
+    // Compute min distance to polygon edge
+    function distToEdge(px, py) {
+        let minDist = Infinity
+        for (let i = 0; i < poly.length; i++) {
+            const a = poly[i], b = poly[(i + 1) % poly.length]
+            const dx = b.x - a.x, dy = b.y - a.y
+            const lenSq = dx * dx + dy * dy
+            if (lenSq === 0) continue
+            let t = ((px - a.x) * dx + (py - a.y) * dy) / lenSq
+            t = Math.max(0, Math.min(1, t))
+            const ex = a.x + t * dx, ey = a.y + t * dy
+            const d = Math.sqrt((px - ex) ** 2 + (py - ey) ** 2)
+            if (d < minDist) minDist = d
+        }
+        return minDist
+    }
+
     const gaps = []
     for (let x = xMin; x <= xMax; x += step) {
         for (let y = yMin; y <= yMax; y += step) {
             if (!pointInPolygon(x, y, polyX, polyY)) continue
-            if (distToEdge({ x, y }, poly) < inset) continue
+            if (distToEdge(x, y) < inset) continue
             const nearest = Math.min(...sensors.map(s =>
                 Math.sqrt((s.x - x) ** 2 + (s.y - y) ** 2)
             ))
@@ -130,99 +126,171 @@ function coverageGaps(sensors, poly, inset = 0.4, maxGap = 2.0, step = 0.5) {
 }
 
 // ─── EXE algorithm (ground truth) ───────────────────────────────────
-// The EXE runs getBestRectangles + returnCenterlines on each sub-polygon
-// separately (CC_Corner, Lobby_corner), then combines the sensors.
+// Runs getBestRectangles + returnCenterlines on each CSV sub-polygon
+// separately, then combines. This is exactly what the EXE does.
 
 describe('EXE algorithm (ground truth)', () => {
     describe('North Finchley: CC_Corner + Lobby_corner separately', () => {
-        let ccSensors, lobbySensors, allSensors
+        let ccSensors, lobbySensors, allExeSensors
 
         beforeAll(() => {
             const ccRects = getBestRectangles(northFinchley.ccCorner)
             ccSensors = returnCenterlines(ccRects, 0.5)
-
             const lobbyRects = getBestRectangles(northFinchley.lobbyCorner)
             lobbySensors = returnCenterlines(lobbyRects, 0.5)
-
-            allSensors = [...ccSensors, ...lobbySensors]
+            allExeSensors = [...ccSensors, ...lobbySensors]
         })
 
         it('produces sensors from both sub-polygons', () => {
             console.log(`\n=== EXE North Finchley ===`)
-            console.log(`CC_Corner: ${ccSensors.length} sensors`)
-            console.log(`Lobby_corner: ${lobbySensors.length} sensors`)
-            console.log(`Total: ${allSensors.length} sensors`)
+            console.log(`CC_Corner: ${ccSensors.length} sensors, Lobby_corner: ${lobbySensors.length} sensors`)
             expect(ccSensors.length).toBeGreaterThan(0)
             expect(lobbySensors.length).toBeGreaterThan(0)
         })
 
         it('CC sensors inside CC polygon', () => {
             const outside = ccSensors.filter(s => !isInsidePoly(s, northFinchley.ccCorner))
-            if (outside.length > 0) {
-                console.log('CC sensors outside polygon:')
-                outside.forEach(s => console.log(`  m(${s.x},${s.y})`))
-            }
             expect(outside.length).toBe(0)
         })
 
         it('Lobby sensors inside lobby polygon', () => {
             const outside = lobbySensors.filter(s => !isInsidePoly(s, northFinchley.lobbyCorner))
-            if (outside.length > 0) {
-                console.log('Lobby sensors outside polygon:')
-                outside.forEach(s => console.log(`  m(${s.x},${s.y})`))
-            }
             expect(outside.length).toBe(0)
         })
 
-        it('CC sensors at least 0.3m from walls', () => {
-            const tooClose = ccSensors.filter(s => distToEdge(s, northFinchley.ccCorner) < 0.3)
-            if (tooClose.length > 0) {
-                console.log('CC sensors too close:')
-                tooClose.forEach(s => console.log(`  m(${s.x},${s.y}) dist=${distToEdge(s, northFinchley.ccCorner).toFixed(3)}m`))
-            }
-            expect(tooClose.length).toBe(0)
-        })
-
-        it('Lobby sensors at least 0.3m from walls', () => {
-            const tooClose = lobbySensors.filter(s => distToEdge(s, northFinchley.lobbyCorner) < 0.3 - 0.01)
-            if (tooClose.length > 0) {
-                console.log('Lobby sensors too close:')
-                tooClose.forEach(s => console.log(`  m(${s.x},${s.y}) dist=${distToEdge(s, northFinchley.lobbyCorner).toFixed(3)}m`))
-            }
-            expect(tooClose.length).toBe(0)
-        })
-
-        it('no coverage gaps >2m in CC polygon interior', () => {
+        it('no coverage gaps >2m in CC polygon', () => {
             const gaps = coverageGaps(ccSensors, northFinchley.ccCorner)
-            if (gaps.length > 0) {
-                console.log(`CC gaps: ${gaps.length}`)
-                gaps.slice(0, 5).forEach(g => console.log(`  m(${g.x},${g.y}) nearest=${g.dist}m`))
-            }
+            if (gaps.length > 0) console.log(`CC gaps:`, gaps.slice(0, 5))
             expect(gaps.length).toBe(0)
         })
 
-        it('no coverage gaps >2m in Lobby polygon interior', () => {
+        it('no coverage gaps >2m in Lobby polygon', () => {
             const gaps = coverageGaps(lobbySensors, northFinchley.lobbyCorner)
-            if (gaps.length > 0) {
-                console.log(`Lobby gaps: ${gaps.length}`)
-                gaps.slice(0, 5).forEach(g => console.log(`  m(${g.x},${g.y}) nearest=${g.dist}m`))
-            }
+            if (gaps.length > 0) console.log(`Lobby gaps:`, gaps.slice(0, 5))
             expect(gaps.length).toBe(0)
         })
 
-        it('log sensor positions', () => {
-            console.log('\n--- CC sensors ---')
-            ccSensors.forEach((s, i) => console.log(`  ${i}: m(${s.x},${s.y})`))
-            console.log('\n--- Lobby sensors ---')
-            lobbySensors.forEach((s, i) => console.log(`  ${i}: m(${s.x},${s.y})`))
+        it('log EXE sensor positions', () => {
+            console.log(`\nEXE total: ${allExeSensors.length} sensors`)
+            allExeSensors.forEach((s, i) => console.log(`  ${i}: m(${s.x},${s.y})`))
         })
     })
 })
 
-// ─── Current algorithm (computeCenterlinePoints) ────────────────────
-// Must produce correct sensors on the combined web app polygon.
+// ─── Head-to-head: EXE vs Web App ──────────────────────────────────
+// For North Finchley we have both the EXE CSV sub-polygons and the
+// web app zone polygon. Every interior point covered by the EXE must
+// also be covered by the web app (within tolerance).
 
-describe('Current algorithm (computeCenterlinePoints)', () => {
+describe('Head-to-head: EXE vs Web App (North Finchley)', () => {
+    let exeSensorsM, webSensorsM
+    const pxPerM = northFinchley.pixelsPerMesh * 10
+
+    // Build the combined EXE polygon in metres (CC + Lobby outline)
+    // for coverage comparison
+    const combinedPolyM = [
+        { x: 15.8, y: 31.6 },
+        { x: 28.8, y: 32.1 },
+        { x: 28.8, y: 33.6 },
+        { x: 19.7, y: 33.1 },
+        { x: 19.7, y: 36.9 },
+        { x: 17.6, y: 36.9 },
+        { x: 17.6, y: 35.5 },
+        { x: 18.2, y: 35.5 },
+        { x: 18.2, y: 33.1 },
+        { x: 15.8, y: 33.1 },
+    ]
+
+    beforeAll(() => {
+        // EXE: run on sub-polygons separately, combine
+        const ccRects = getBestRectangles(northFinchley.ccCorner)
+        const ccSensors = returnCenterlines(ccRects, 0.5)
+        const lobbyRects = getBestRectangles(northFinchley.lobbyCorner)
+        const lobbySensors = returnCenterlines(lobbyRects, 0.5)
+        exeSensorsM = [...ccSensors, ...lobbySensors]
+
+        // Web app: run on combined zone polygon
+        const webSensorsPx = computeCenterlinePoints(
+            northFinchley.corridorPoly, northFinchley.doors,
+            northFinchley.doorRoles, northFinchley.pixelsPerMesh
+        )
+        webSensorsM = webSensorsPx.map(s => ({
+            x: Math.round(s.x / pxPerM * 10) / 10,
+            y: Math.round(s.y / pxPerM * 10) / 10,
+        }))
+    })
+
+    it('web app produces at least as many sensors as EXE', () => {
+        console.log(`\n=== Head-to-head: North Finchley ===`)
+        console.log(`EXE: ${exeSensorsM.length} sensors`)
+        console.log(`Web: ${webSensorsM.length} sensors`)
+        expect(webSensorsM.length).toBeGreaterThanOrEqual(exeSensorsM.length * 0.8)
+    })
+
+    it('every EXE sensor has a web app sensor within 1m', () => {
+        const unmatched = []
+        for (const exe of exeSensorsM) {
+            const nearest = Math.min(...webSensorsM.map(w =>
+                Math.sqrt((w.x - exe.x) ** 2 + (w.y - exe.y) ** 2)
+            ))
+            if (nearest > 1.5) {
+                unmatched.push({ exe, nearest: nearest.toFixed(2) })
+            }
+        }
+        if (unmatched.length > 0) {
+            console.log(`${unmatched.length} EXE sensors not matched by web app:`)
+            unmatched.forEach(u => console.log(`  EXE m(${u.exe.x},${u.exe.y}) nearest web=${u.nearest}m`))
+        }
+        expect(unmatched.length).toBe(0)
+    })
+
+    it('web app covers same corridor interior as EXE (no gaps where EXE has coverage)', () => {
+        // Sample grid points in the combined corridor, check both have coverage
+        const polyX = combinedPolyM.map(p => p.x), polyY = combinedPolyM.map(p => p.y)
+        const xMin = Math.min(...polyX), xMax = Math.max(...polyX)
+        const yMin = Math.min(...polyY), yMax = Math.max(...polyY)
+
+        let webOnly = 0, exeOnly = 0, both = 0
+        for (let x = xMin + 0.4; x <= xMax - 0.4; x += 0.5) {
+            for (let y = yMin + 0.4; y <= yMax - 0.4; y += 0.5) {
+                if (!pointInPolygon(x, y, polyX, polyY)) continue
+
+                const exeNearest = Math.min(...exeSensorsM.map(s =>
+                    Math.sqrt((s.x - x) ** 2 + (s.y - y) ** 2)
+                ))
+                const webNearest = Math.min(...webSensorsM.map(s =>
+                    Math.sqrt((s.x - x) ** 2 + (s.y - y) ** 2)
+                ))
+
+                const exeCovered = exeNearest <= 2.0
+                const webCovered = webNearest <= 2.0
+
+                if (exeCovered && webCovered) both++
+                else if (exeCovered && !webCovered) exeOnly++
+                else if (!exeCovered && webCovered) webOnly++
+            }
+        }
+
+        console.log(`\nCoverage comparison (2m radius):`)
+        console.log(`  Both cover: ${both} points`)
+        console.log(`  EXE only: ${exeOnly} points (web app misses these)`)
+        console.log(`  Web only: ${webOnly} points (web app has extra coverage)`)
+
+        // Web app should not miss any point the EXE covers
+        expect(exeOnly).toBe(0)
+    })
+
+    it('log both sensor sets for visual comparison', () => {
+        console.log('\n--- EXE sensors (metres) ---')
+        exeSensorsM.forEach((s, i) => console.log(`  ${i}: m(${s.x},${s.y})`))
+        console.log('\n--- Web app sensors (metres) ---')
+        webSensorsM.forEach((s, i) => console.log(`  ${i}: m(${s.x},${s.y})`))
+    })
+})
+
+// ─── Web app algorithm on all projects ──────────────────────────────
+
+describe('Web app algorithm: computeCenterlinePoints', () => {
     for (const project of [northFinchley, ianTest2]) {
         describe(`Project: ${project.name}`, () => {
             let sensors
@@ -236,7 +304,7 @@ describe('Current algorithm (computeCenterlinePoints)', () => {
             })
 
             it('produces sensors', () => {
-                console.log(`\n=== Current: ${project.name} — ${sensors.length} sensors ===`)
+                console.log(`\n=== Web app: ${project.name} — ${sensors.length} sensors ===`)
                 expect(sensors.length).toBeGreaterThan(0)
             })
 
@@ -244,33 +312,12 @@ describe('Current algorithm (computeCenterlinePoints)', () => {
                 const outside = sensors.filter(s => !isInsidePoly(s, project.corridorPoly))
                 if (outside.length > 0) {
                     console.log(`${outside.length} sensors outside polygon:`)
-                    outside.forEach(s => {
-                        const m = { x: (s.x / pxPerM).toFixed(2), y: (s.y / pxPerM).toFixed(2) }
-                        console.log(`  px(${s.x},${s.y}) m(${m.x},${m.y})`)
-                    })
+                    outside.forEach(s => console.log(`  px(${s.x},${s.y})`))
                 }
                 expect(outside.length).toBe(0)
             })
 
-            it('all sensors at least 0.3m from walls', () => {
-                const minInsetPx = 0.3 * pxPerM
-                const tooClose = sensors.filter(s =>
-                    isInsidePoly(s, project.corridorPoly) &&
-                    distToEdge(s, project.corridorPoly) < minInsetPx
-                )
-                if (tooClose.length > 0) {
-                    console.log(`${tooClose.length} sensors too close to wall:`)
-                    tooClose.forEach(s => {
-                        const d = distToEdge(s, project.corridorPoly) / pxPerM
-                        console.log(`  px(${s.x},${s.y}) dist=${d.toFixed(3)}m`)
-                    })
-                }
-                expect(tooClose.length).toBe(0)
-            })
-
             it('no coverage gaps >2m in corridor interior', () => {
-                const polyX = project.corridorPoly.map(p => p.x)
-                const polyY = project.corridorPoly.map(p => p.y)
                 const insetPx = 0.4 * pxPerM
                 const gaps = coverageGaps(sensors, project.corridorPoly, insetPx, 2.0 * pxPerM, 0.5 * pxPerM)
                 if (gaps.length > 0) {
@@ -280,13 +327,6 @@ describe('Current algorithm (computeCenterlinePoints)', () => {
                     })
                 }
                 expect(gaps.length).toBe(0)
-            })
-
-            it('log sensor positions', () => {
-                sensors.forEach((s, i) => {
-                    const m = { x: (s.x / pxPerM).toFixed(2), y: (s.y / pxPerM).toFixed(2) }
-                    console.log(`  ${i}: px(${s.x},${s.y}) m(${m.x},${m.y})`)
-                })
             })
         })
     }

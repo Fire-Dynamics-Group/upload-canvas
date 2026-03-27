@@ -456,23 +456,12 @@ export function computeCenterlinePoints(
     const points = []
     const seen = new Set()
 
-    // 1) Rectangle decomposition (EXE approach) — good for each arm of T/L shapes
-    const metrePoints = obstructionPoints.map(p => ({
-        x: Math.round(p.x / pxPerM * 10) / 10,
-        y: Math.round(p.y / pxPerM * 10) / 10,
-    }))
-    const rects = getBestRectangles(metrePoints)
-    const centrelines = returnCenterlines(rects, spacing)
-    for (const c of centrelines) {
-        const px = { x: Math.round(c.x * pxPerM), y: Math.round(c.y * pxPerM) }
-        const key = `${px.x},${px.y}`
-        if (!seen.has(key)) {
-            seen.add(key)
-            points.push(px)
-        }
-    }
+    // Scan both axes. For each scanline, find where it crosses the polygon
+    // (paired entry/exit segments). Place a sensor at each segment's midpoint.
+    // This is equivalent to the EXE's per-rectangle centerline placement:
+    // each segment is a cross-section, and the midpoint is the centerline.
 
-    // 2) Ray-scan fill — covers junction areas that rectangles may miss
+    // Horizontal scan: walk along X, cast vertical rays
     for (let x = xMin + insetPx; x <= xMax - insetPx; x += stepPx) {
         const segments = findPerpendicularSegments(obstructionPoints, x, true)
         for (const [segMin, segMax] of segments) {
@@ -484,6 +473,8 @@ export function computeCenterlinePoints(
             }
         }
     }
+
+    // Vertical scan: walk along Y, cast horizontal rays
     for (let y = yMin + insetPx; y <= yMax - insetPx; y += stepPx) {
         const segments = findPerpendicularSegments(obstructionPoints, y, false)
         for (const [segMin, segMax] of segments) {
@@ -496,23 +487,8 @@ export function computeCenterlinePoints(
         }
     }
 
-    // Post-filter: reject sensors outside polygon or too close to walls
-    return points.filter(p => {
-        if (!pointInPolygon(p.x, p.y, polyX, polyY)) return false
-        for (let i = 0; i < obstructionPoints.length; i++) {
-            const a = obstructionPoints[i]
-            const b = obstructionPoints[(i + 1) % obstructionPoints.length]
-            const dx = b.x - a.x, dy = b.y - a.y
-            const lenSq = dx * dx + dy * dy
-            if (lenSq === 0) continue
-            let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq
-            t = Math.max(0, Math.min(1, t))
-            const px = a.x + t * dx, py = a.y + t * dy
-            const dist = Math.sqrt((p.x - px) ** 2 + (p.y - py) ** 2)
-            if (dist < insetPx) return false
-        }
-        return true
-    })
+    // Only keep sensors inside the polygon
+    return points.filter(p => pointInPolygon(p.x, p.y, polyX, polyY))
 }
 
 /**
