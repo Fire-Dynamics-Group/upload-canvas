@@ -457,13 +457,90 @@ export function computeCenterlinePoints(
     const rects = getBestRectangles(metrePoints)
     const centrelines = returnCenterlines(rects, spacing)
 
+    // Junction extension: where two adjacent rectangles have perpendicular
+    // centerlines, extend each centerline into the adjacent rect up to its
+    // midpoint. This ensures both axes of sensors meet at T/L junctions.
+    const parsedRects = []
+    for (let i = 0; i < rects.length; i += 4) {
+        const xmin = rects[i], xmax = rects[i + 1], ymin = rects[i + 2], ymax = rects[i + 3]
+        const dx = (xmax - xmin) - 0.8 // after 0.4 inset each side
+        const dy = (ymax - ymin) - 0.8
+        const isHoriz = dx > dy
+        parsedRects.push({
+            xmin, xmax, ymin, ymax, isHoriz,
+            // Centerline position on the non-walk axis
+            centerVal: isHoriz ? (ymin + ymax) / 2 : (xmin + xmax) / 2,
+        })
+    }
+
+    const extraSensors = []
+    for (let i = 0; i < parsedRects.length; i++) {
+        for (let j = i + 1; j < parsedRects.length; j++) {
+            const a = parsedRects[i], b = parsedRects[j]
+            if (a.isHoriz === b.isHoriz) continue // same direction, skip
+
+            // Check if they share an edge (overlap on the shared boundary)
+            const xOverlap = Math.min(a.xmax, b.xmax) - Math.max(a.xmin, b.xmin)
+            const yOverlap = Math.min(a.ymax, b.ymax) - Math.max(a.ymin, b.ymin)
+            if (xOverlap < -0.01 || yOverlap < -0.01) continue // no adjacency
+
+            // They overlap — extend each into the other
+            // For the horizontal rect: extend its y-centerline across the vertical rect's x-range, stopping at vertical rect's x-midpoint
+            // For the vertical rect: extend its x-centerline across the horizontal rect's y-range, stopping at horizontal rect's y-midpoint
+            const horiz = a.isHoriz ? a : b
+            const vert = a.isHoriz ? b : a
+
+            const vertMidX = (vert.xmin + vert.xmax) / 2
+            const horizMidY = (horiz.ymin + horiz.ymax) / 2
+
+            // Extend horizontal centerline into the vertical rect
+            // From the shared edge to the vertical rect's x-midpoint
+            const hY = horiz.centerVal
+            const hXfrom = Math.min(vert.xmin, vertMidX)
+            const hXto = Math.max(vert.xmin, vertMidX)
+            for (let x = hXfrom; x <= hXto + 0.01; x += spacing) {
+                extraSensors.push({
+                    x: Math.round(x * 10) / 10,
+                    y: Math.round(hY * 10) / 10,
+                })
+            }
+            // Also extend from the other side of the vertical rect
+            const hXfrom2 = Math.min(vert.xmax, vertMidX)
+            const hXto2 = Math.max(vert.xmax, vertMidX)
+            for (let x = hXfrom2; x <= hXto2 + 0.01; x += spacing) {
+                extraSensors.push({
+                    x: Math.round(x * 10) / 10,
+                    y: Math.round(hY * 10) / 10,
+                })
+            }
+
+            // Extend vertical centerline into the horizontal rect
+            const vX = vert.centerVal
+            const vYfrom = Math.min(horiz.ymin, horizMidY)
+            const vYto = Math.max(horiz.ymin, horizMidY)
+            for (let y = vYfrom; y <= vYto + 0.01; y += spacing) {
+                extraSensors.push({
+                    x: Math.round(vX * 10) / 10,
+                    y: Math.round(y * 10) / 10,
+                })
+            }
+            const vYfrom2 = Math.min(horiz.ymax, horizMidY)
+            const vYto2 = Math.max(horiz.ymax, horizMidY)
+            for (let y = vYfrom2; y <= vYto2 + 0.01; y += spacing) {
+                extraSensors.push({
+                    x: Math.round(vX * 10) / 10,
+                    y: Math.round(y * 10) / 10,
+                })
+            }
+        }
+    }
+
+    const allSensors = [...centrelines, ...extraSensors]
+
     // Convert back to pixels and deduplicate.
-    // No polygon filter — the EXE doesn't filter either; sensors are placed
-    // on rectangle centerlines and the rectangles come from the polygon
-    // decomposition, so they're inherently in the right area.
     const seen = new Set()
     const points = []
-    for (const c of centrelines) {
+    for (const c of allSensors) {
         const px = { x: Math.round(c.x * pxPerM), y: Math.round(c.y * pxPerM) }
         const key = `${px.x},${px.y}`
         if (!seen.has(key)) {
