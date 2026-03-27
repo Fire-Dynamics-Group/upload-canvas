@@ -145,7 +145,7 @@ describe('computeCenterlinePoints', () => {
     // pixelsPerMesh=10 means pxPerM=100 (10*10)
     const pxPerMesh = 10
 
-    it('places sensors in both directions for horizontal corridor', () => {
+    it('places sensors along centerline of horizontal corridor', () => {
         // 10m wide, 2m tall corridor in pixels (1000px x 200px)
         const poly = makeRect(0, 0, 1000, 200)
         const doors = [
@@ -157,15 +157,12 @@ describe('computeCenterlinePoints', () => {
         const points = computeCenterlinePoints(poly, doors, roles, pxPerMesh, 0.5, 0.4)
 
         expect(points.length).toBeGreaterThan(0)
-        // Should have horizontal scan points (at y midpoint) AND vertical scan points (at x midpoint)
-        const horizontalPts = points.filter(p => p.y === 100) // y midpoint
-        const verticalPts = points.filter(p => p.x === 100) // x midpoint
-        expect(horizontalPts.length).toBeGreaterThan(0)
-        // Vertical scan of a 200px tall rect: after inset only ~1.2m, so a few points
-        expect(verticalPts.length).toBeGreaterThanOrEqual(0)
+        // Sensors should be near the Y-midpoint (100px) of the corridor
+        const nearCenterline = points.filter(p => Math.abs(p.y - 100) < 10)
+        expect(nearCenterline.length).toBeGreaterThan(0)
     })
 
-    it('places sensors in both directions for vertical corridor', () => {
+    it('places sensors along centerline of vertical corridor', () => {
         // 2m wide, 10m tall corridor
         const poly = makeRect(0, 0, 200, 1000)
         const doors = [
@@ -177,9 +174,9 @@ describe('computeCenterlinePoints', () => {
         const points = computeCenterlinePoints(poly, doors, roles, pxPerMesh, 0.5, 0.4)
 
         expect(points.length).toBeGreaterThan(0)
-        // Should have vertical scan points (at x midpoint)
-        const verticalPts = points.filter(p => p.x === 100)
-        expect(verticalPts.length).toBeGreaterThan(0)
+        // Sensors should be near the X-midpoint (100px) of the corridor
+        const nearCenterline = points.filter(p => Math.abs(p.x - 100) < 10)
+        expect(nearCenterline.length).toBeGreaterThan(0)
     })
 
     it('sensors cover full polygon even when doors are close together', () => {
@@ -224,7 +221,7 @@ describe('computeCenterlinePoints', () => {
         })
     })
 
-    it('falls back to obstruction bounds when no doors have roles', () => {
+    it('produces sensors even when no doors have corridor roles', () => {
         const poly = makeRect(0, 0, 1000, 200) // horizontal
         const doors = [makeDoor(1, 100, 0, 100, 200)]
         const roles = { 1: 'leakage' } // no corridor doors
@@ -232,8 +229,8 @@ describe('computeCenterlinePoints', () => {
         const points = computeCenterlinePoints(poly, doors, roles, pxPerMesh, 0.5, 0.4)
 
         expect(points.length).toBeGreaterThan(0)
-        // Should use full obstruction width minus insets
-        expect(points[0].x).toBe(40) // 0 + 0.4*100
+        // First sensor should be near the left edge with inset
+        expect(points[0].x).toBeLessThan(100)
     })
 })
 

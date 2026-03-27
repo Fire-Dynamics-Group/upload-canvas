@@ -355,7 +355,7 @@ export function getBestRectangles(points) {
             rectArea += (rectangles[i + 1] - rectangles[i]) * (rectangles[i + 3] - rectangles[i + 2])
         }
 
-        if (Math.abs(rectArea - shapeArea) < shapeArea * 0.05) {
+        if (Math.abs(rectArea - shapeArea) < 0.1) {
             let perimeter = 0
             for (let i = 0; i < rectangles.length; i += 4) {
                 perimeter += ((rectangles[i + 1] - rectangles[i]) + (rectangles[i + 3] - rectangles[i + 2])) * 2
@@ -444,74 +444,34 @@ export function computeCenterlinePoints(
     inset = 0.4
 ) {
     const pxPerM = pixelsPerMesh * 10
-    const insetPx = inset * pxPerM
-    const stepPx = spacing * pxPerM
     const polyX = obstructionPoints.map(p => p.x)
     const polyY = obstructionPoints.map(p => p.y)
-    const xs = obstructionPoints.map(p => p.x)
-    const ys = obstructionPoints.map(p => p.y)
-    const xMin = Math.min(...xs), xMax = Math.max(...xs)
-    const yMin = Math.min(...ys), yMax = Math.max(...ys)
 
-    const points = []
+    // Same as the EXE: convert to metres, run getBestRectangles to decompose
+    // into sub-rectangles, then returnCenterlines to place sensors along each
+    // rectangle's centerline. No scanning, no raycasting.
+    const metrePoints = obstructionPoints.map(p => ({
+        x: Math.round(p.x / pxPerM * 10) / 10,
+        y: Math.round(p.y / pxPerM * 10) / 10,
+    }))
+    const rects = getBestRectangles(metrePoints)
+    const centrelines = returnCenterlines(rects, spacing)
+
+    // Convert back to pixels and deduplicate.
+    // No polygon filter — the EXE doesn't filter either; sensors are placed
+    // on rectangle centerlines and the rectangles come from the polygon
+    // decomposition, so they're inherently in the right area.
     const seen = new Set()
-
-    function addPoint(x, y) {
-        const rx = Math.round(x), ry = Math.round(y)
-        const key = `${rx},${ry}`
+    const points = []
+    for (const c of centrelines) {
+        const px = { x: Math.round(c.x * pxPerM), y: Math.round(c.y * pxPerM) }
+        const key = `${px.x},${px.y}`
         if (!seen.has(key)) {
             seen.add(key)
-            points.push({ x: rx, y: ry })
+            points.push(px)
         }
     }
-
-    // Scan along X: for each x position, find vertical segments through the polygon.
-    // Place sensor at each segment's Y-midpoint (centerline of that cross-section).
-    for (let x = xMin + insetPx; x <= xMax - insetPx; x += stepPx) {
-        const segments = findPerpendicularSegments(obstructionPoints, x, true)
-        for (const [segMin, segMax] of segments) {
-            addPoint(x, (segMin + segMax) / 2)
-        }
-    }
-
-    // Scan along Y: for each y position, find horizontal segments.
-    // Place sensor at each segment's X-midpoint.
-    for (let y = yMin + insetPx; y <= yMax - insetPx; y += stepPx) {
-        const segments = findPerpendicularSegments(obstructionPoints, y, false)
-        for (const [segMin, segMax] of segments) {
-            addPoint((segMin + segMax) / 2, y)
-        }
-    }
-
-    // Junction fill: at polygon vertex Y-coordinates, the cross-section width changes.
-    // The segment midpoint jumps, leaving a gap. Fill by scanning extra lines
-    // just above/below each vertex Y (and similarly for vertex X).
-    const uniqueYs = [...new Set(ys)].sort((a, b) => a - b)
-    for (const vy of uniqueYs) {
-        // Scan X lines at vy ± small offset to get the cross-section on each side
-        for (const offset of [-stepPx * 0.25, stepPx * 0.25]) {
-            const y = vy + offset
-            if (y < yMin + insetPx || y > yMax - insetPx) continue
-            const segments = findPerpendicularSegments(obstructionPoints, y, false)
-            for (const [segMin, segMax] of segments) {
-                addPoint((segMin + segMax) / 2, y)
-            }
-        }
-    }
-    const uniqueXs = [...new Set(xs)].sort((a, b) => a - b)
-    for (const vx of uniqueXs) {
-        for (const offset of [-stepPx * 0.25, stepPx * 0.25]) {
-            const x = vx + offset
-            if (x < xMin + insetPx || x > xMax - insetPx) continue
-            const segments = findPerpendicularSegments(obstructionPoints, x, true)
-            for (const [segMin, segMax] of segments) {
-                addPoint(x, (segMin + segMax) / 2)
-            }
-        }
-    }
-
-    // Only keep sensors inside the polygon
-    return points.filter(p => pointInPolygon(p.x, p.y, polyX, polyY))
+    return points
 }
 
 /**
