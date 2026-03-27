@@ -456,33 +456,56 @@ export function computeCenterlinePoints(
     const points = []
     const seen = new Set()
 
-    // Scan both axes. For each scanline, find where it crosses the polygon
-    // (paired entry/exit segments). Place a sensor at each segment's midpoint.
-    // This is equivalent to the EXE's per-rectangle centerline placement:
-    // each segment is a cross-section, and the midpoint is the centerline.
-
-    // Horizontal scan: walk along X, cast vertical rays
-    for (let x = xMin + insetPx; x <= xMax - insetPx; x += stepPx) {
-        const segments = findPerpendicularSegments(obstructionPoints, x, true)
-        for (const [segMin, segMax] of segments) {
-            const midY = Math.round((segMin + segMax) / 2)
-            const key = `${Math.round(x)},${midY}`
-            if (!seen.has(key)) {
-                seen.add(key)
-                points.push({ x: Math.round(x), y: midY })
-            }
+    function addPoint(x, y) {
+        const rx = Math.round(x), ry = Math.round(y)
+        const key = `${rx},${ry}`
+        if (!seen.has(key)) {
+            seen.add(key)
+            points.push({ x: rx, y: ry })
         }
     }
 
-    // Vertical scan: walk along Y, cast horizontal rays
+    // Scan along X: for each x position, find vertical segments through the polygon.
+    // Place sensor at each segment's Y-midpoint (centerline of that cross-section).
+    for (let x = xMin + insetPx; x <= xMax - insetPx; x += stepPx) {
+        const segments = findPerpendicularSegments(obstructionPoints, x, true)
+        for (const [segMin, segMax] of segments) {
+            addPoint(x, (segMin + segMax) / 2)
+        }
+    }
+
+    // Scan along Y: for each y position, find horizontal segments.
+    // Place sensor at each segment's X-midpoint.
     for (let y = yMin + insetPx; y <= yMax - insetPx; y += stepPx) {
         const segments = findPerpendicularSegments(obstructionPoints, y, false)
         for (const [segMin, segMax] of segments) {
-            const midX = Math.round((segMin + segMax) / 2)
-            const key = `${midX},${Math.round(y)}`
-            if (!seen.has(key)) {
-                seen.add(key)
-                points.push({ x: midX, y: Math.round(y) })
+            addPoint((segMin + segMax) / 2, y)
+        }
+    }
+
+    // Junction fill: at polygon vertex Y-coordinates, the cross-section width changes.
+    // The segment midpoint jumps, leaving a gap. Fill by scanning extra lines
+    // just above/below each vertex Y (and similarly for vertex X).
+    const uniqueYs = [...new Set(ys)].sort((a, b) => a - b)
+    for (const vy of uniqueYs) {
+        // Scan X lines at vy ± small offset to get the cross-section on each side
+        for (const offset of [-stepPx * 0.25, stepPx * 0.25]) {
+            const y = vy + offset
+            if (y < yMin + insetPx || y > yMax - insetPx) continue
+            const segments = findPerpendicularSegments(obstructionPoints, y, false)
+            for (const [segMin, segMax] of segments) {
+                addPoint((segMin + segMax) / 2, y)
+            }
+        }
+    }
+    const uniqueXs = [...new Set(xs)].sort((a, b) => a - b)
+    for (const vx of uniqueXs) {
+        for (const offset of [-stepPx * 0.25, stepPx * 0.25]) {
+            const x = vx + offset
+            if (x < xMin + insetPx || x > xMax - insetPx) continue
+            const segments = findPerpendicularSegments(obstructionPoints, x, true)
+            for (const [segMin, segMax] of segments) {
+                addPoint(x, (segMin + segMax) / 2)
             }
         }
     }
