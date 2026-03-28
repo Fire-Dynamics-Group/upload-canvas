@@ -680,7 +680,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     // Use zone polygons for sensor placement when available.
                     // All zones with sensors enabled get centerline sensors.
                     // Fall back to single obstruction if no zones configured.
-                    let points: Array<{x: number, y: number}> = []
+                    let points: Array<{x: number, y: number, zoneName?: string}> = []
                     const sensorsEnabledZones = Object.values(zoneConfig).filter(
                         (z: any) => z.sensors !== false && z.points && z.points.length >= 3
                     )
@@ -689,7 +689,9 @@ const FDSInputsPopup = ({handleUserInput}) => {
                             const zoneSensors = computeCenterlinePoints(
                                 zone.points, doorElements, doorRoles, pixelsPerMesh
                             )
-                            points.push(...zoneSensors)
+                            // Tag each sensor with its zone name for backend labelling
+                            const tagged = zoneSensors.map((s: any) => ({ ...s, zoneName: zone.name }))
+                            points.push(...tagged)
                         }
                     } else {
                         points = computeCenterlinePoints(

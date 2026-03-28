@@ -157,6 +157,7 @@ const useStore = create(persist((set, get) => {
                 points: [pt],
                 comments: 'sensorTree',
                 id: maxId + 1 + i,
+                ...(pt.zoneName ? { zoneName: pt.zoneName } : {}),
             }))
             const newFsa = fsaPoints.map((pt, i) => ({
                 type: 'point',
