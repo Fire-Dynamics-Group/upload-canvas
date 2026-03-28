@@ -1276,12 +1276,23 @@ const FDSInputsPopup = ({handleUserInput}) => {
         internal_corridor: { slices: true, sensors: true },
         other: { slices: false, sensors: false },
     }
+    const zoneTypeLabels: Record<string, string> = {
+        corridor: 'Corridor',
+        lobby: 'Lobby',
+        fire_room: 'Fire Room',
+        internal_corridor: 'Internal Corridor',
+        other: 'Zone',
+    }
     const handleZoneChange = useCallback((id: string, field: string, value: any) => {
         const existing = zoneConfig[id] || { type: 'corridor', name: 'Corridor 1' }
         const updated = { ...existing, [field]: value }
         if (field === 'type' && zoneTypeDefaults[value]) {
             updated.slices = zoneTypeDefaults[value].slices
             updated.sensors = zoneTypeDefaults[value].sensors
+            // Auto-update name to match new type (count zones of this type)
+            const sameTypeCount = Object.values(zoneConfig).filter((z: any) => z.type === value).length
+            const label = zoneTypeLabels[value] || 'Zone'
+            updated.name = `${label} ${sameTypeCount + 1}`
         }
         setZoneConfig({ ...zoneConfig, [id]: updated })
     }, [zoneConfig, setZoneConfig])
