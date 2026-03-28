@@ -80,6 +80,45 @@ describe('FDSInputsPopup: extract shaft config', () => {
         expect(optionTexts).toContain('Sprinkler')
     })
 
+    it('when type is "mechanical", TAU_V input appears', () => {
+        setupStoreWithExtract('extract-1')
+        useStore.setState({
+            extractConfig: {
+                'extract-1': {
+                    type: 'mechanical',
+                    flowRate: 3.0,
+                    tauV: -10,
+                    shaftWidth: 0.9,
+                    shaftDepth: 0.9,
+                    activation: 'always_open',
+                    activationTime: null,
+                },
+            },
+        })
+        renderAndSwitchToExtractsTab()
+
+        expect(screen.getByText('TAU_V (s):')).toBeInTheDocument()
+    })
+
+    it('when type is "natural", TAU_V input does not appear', () => {
+        setupStoreWithExtract('extract-1')
+        useStore.setState({
+            extractConfig: {
+                'extract-1': {
+                    type: 'natural',
+                    flowRate: 3.0,
+                    shaftWidth: 0.9,
+                    shaftDepth: 0.9,
+                    activation: 'always_open',
+                    activationTime: null,
+                },
+            },
+        })
+        renderAndSwitchToExtractsTab()
+
+        expect(screen.queryByText('TAU_V (s):')).not.toBeInTheDocument()
+    })
+
     it('when activation is "timed", activation time input appears', () => {
         setupStoreWithExtract('extract-1')
         useStore.setState({

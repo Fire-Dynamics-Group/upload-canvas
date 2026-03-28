@@ -1257,7 +1257,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
     const ZoneInputs = () => {
         const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
 
-        // Auto-detect enclosed regions from all obstruction wall segments
+        // Auto-detect enclosed regions from obstruction and door wall segments
         // @ts-ignore
         const regions = useMemo(() => findEnclosedRegions(elements), [elements])
 

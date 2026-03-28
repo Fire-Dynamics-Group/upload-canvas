@@ -103,11 +103,11 @@ const useStore = create(persist((set, get) => {
         stairStyle: "individual",
 
         // Extract shaft settings
-        extractConfig: {}, // per-extract: { [extractId]: { type, flowRate, shaftWidth, shaftDepth, activation, activationTime } }
+        extractConfig: {}, // per-extract: { [extractId]: { type, flowRate, tauV, shaftWidth, shaftDepth, activation, activationTime } }
         highlightedExtractId: null,
 
         // Inlet settings
-        inletConfig: {}, // per-inlet: { [inletId]: { openingHeight, openingBase } }
+        inletConfig: {}, // per-inlet: { [inletId]: { type, flowRate, tauV, openingHeight, openingBase } }
         highlightedInletId: null,
 
         // Zone assignment: { [elementId]: { type, name, slices, sensors, points } }
