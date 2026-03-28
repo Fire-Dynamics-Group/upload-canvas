@@ -677,15 +677,15 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     if (!corridor) return
                     setDebugRects([]) // clear old debug rects
 
-                    // Use zone polygons for sensor placement when available (they
-                    // represent the full combined corridor shape including lobby).
+                    // Use zone polygons for sensor placement when available.
+                    // All zones with sensors enabled get centerline sensors.
                     // Fall back to single obstruction if no zones configured.
                     let points: Array<{x: number, y: number}> = []
-                    const corridorZones = Object.values(zoneConfig).filter(
-                        (z: any) => z.type === 'corridor' && z.points && z.points.length >= 3
+                    const sensorsEnabledZones = Object.values(zoneConfig).filter(
+                        (z: any) => z.sensors !== false && z.points && z.points.length >= 3
                     )
-                    if (corridorZones.length > 0) {
-                        for (const zone of corridorZones as any) {
+                    if (sensorsEnabledZones.length > 0) {
+                        for (const zone of sensorsEnabledZones as any) {
                             const zoneSensors = computeCenterlinePoints(
                                 zone.points, doorElements, doorRoles, pixelsPerMesh
                             )
@@ -765,22 +765,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                         setFsaStatus(null)
                     }
 
-                    // Compute zone sensor positions for non-corridor zones with sensors enabled
-                    let zonePoints: Array<{x: number, y: number}> = []
-                    if (Object.keys(zoneConfig).length > 0) {
-                        for (const [, config] of Object.entries(zoneConfig) as any) {
-                            if (config.sensors === false) continue
-                            if (config.type === 'corridor') continue // already handled above
-                            const pts = config.points
-                            if (!pts || pts.length < 3) continue
-                            const zoneSensors = computeCenterlinePoints(
-                                pts, doorElements, doorRoles, pixelsPerMesh
-                            )
-                            zonePoints.push(...zoneSensors)
-                        }
-                    }
-
-                    setSensorTreeElements([...points, ...stairPoints, ...zonePoints], fsaPoints)
+                    setSensorTreeElements([...points, ...stairPoints], fsaPoints)
                 }}
             >
                 Compute Sensor Locations
