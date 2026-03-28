@@ -181,6 +181,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
     type TabType = 'general' | 'scenario' | 'fire' | 'doors' | 'devices' | 'stairs' | 'extracts' | 'zones' | 'display'
     const [activeTab, setActiveTab] = useState<TabType>('general')
     const [fsaStatus, setFsaStatus] = useState<{walkingDistance: number, placed: number[], missed: number[]} | null>(null)
+    const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const scrollRef = useRef<HTMLDivElement>(null)
     const scrollTop = useRef(0)
 
@@ -764,7 +765,22 @@ const FDSInputsPopup = ({handleUserInput}) => {
                         setFsaStatus(null)
                     }
 
-                    setSensorTreeElements([...points, ...stairPoints], fsaPoints)
+                    // Compute zone sensor positions for non-corridor zones with sensors enabled
+                    let zonePoints: Array<{x: number, y: number}> = []
+                    if (Object.keys(zoneConfig).length > 0) {
+                        for (const [, config] of Object.entries(zoneConfig) as any) {
+                            if (config.sensors === false) continue
+                            if (config.type === 'corridor') continue // already handled above
+                            const pts = config.points
+                            if (!pts || pts.length < 3) continue
+                            const zoneSensors = computeCenterlinePoints(
+                                pts, doorElements, doorRoles, pixelsPerMesh
+                            )
+                            zonePoints.push(...zoneSensors)
+                        }
+                    }
+
+                    setSensorTreeElements([...points, ...stairPoints, ...zonePoints], fsaPoints)
                 }}
             >
                 Compute Sensor Locations
@@ -1254,86 +1270,93 @@ const FDSInputsPopup = ({handleUserInput}) => {
         </>
     )
 
-    const ZoneInputs = () => {
-        const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
+    // @ts-ignore — region detection at parent scope (not inside inline component)
+    const detectedRegions = useMemo(() => {
+        try { return findEnclosedRegions(elements) }
+        catch (e) { return [] }
+    }, [elements])
 
-        // Auto-detect enclosed regions from obstruction and door wall segments
-        // @ts-ignore
-        const regions = useMemo(() => findEnclosedRegions(elements), [elements])
-
-        // Point-in-polygon (ray casting)
-        const pointInPoly = (px: number, py: number, poly: any[]) => {
-            let inside = false
-            for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-                const xi = poly[i].x, yi = poly[i].y
-                const xj = poly[j].x, yj = poly[j].y
-                if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
-                    inside = !inside
-                }
-            }
-            return inside
+    // Zone helpers at parent scope (not recreated on each render)
+    const zoneColors: Record<string, string> = {
+        corridor: 'rgba(59, 130, 246, 0.3)',
+        lobby: 'rgba(168, 85, 247, 0.3)',
+        fire_room: 'rgba(239, 68, 68, 0.3)',
+        internal_corridor: 'rgba(251, 191, 36, 0.3)',
+        other: 'rgba(34, 197, 94, 0.3)',
+    }
+    const zoneTypeDefaults: Record<string, { slices: boolean, sensors: boolean }> = {
+        corridor: { slices: true, sensors: true },
+        lobby: { slices: true, sensors: true },
+        fire_room: { slices: true, sensors: false },
+        internal_corridor: { slices: true, sensors: true },
+        other: { slices: false, sensors: false },
+    }
+    const handleZoneChange = useCallback((id: string, field: string, value: any) => {
+        const existing = zoneConfig[id] || { type: 'corridor', name: 'Corridor 1' }
+        const updated = { ...existing, [field]: value }
+        if (field === 'type' && zoneTypeDefaults[value]) {
+            updated.slices = zoneTypeDefaults[value].slices
+            updated.sensors = zoneTypeDefaults[value].sensors
         }
+        setZoneConfig({ ...zoneConfig, [id]: updated })
+    }, [zoneConfig, setZoneConfig])
 
-        // Compute bounding box for scaling
+    const removeZone = useCallback((id: string) => {
+        const newConfig = { ...zoneConfig }
+        delete newConfig[id]
+        setZoneConfig(newConfig)
+        if (selectedZoneId === id) setSelectedZoneId(null)
+    }, [zoneConfig, setZoneConfig, selectedZoneId])
+
+    // Zone map geometry (computed once, not inside inline component)
+    const zoneMapGeo = useMemo(() => {
         let allPts: any[] = []
         elements.forEach((el: any) => el.points?.forEach((p: any) => allPts.push(p)))
-        if (allPts.length === 0) {
-            return <p className="text-sm text-amber-600">Draw obstructions on the canvas first.</p>
-        }
+        if (allPts.length === 0) return null
         const minX = Math.min(...allPts.map((p: any) => p.x))
         const maxX = Math.max(...allPts.map((p: any) => p.x))
         const minY = Math.min(...allPts.map((p: any) => p.y))
         const maxY = Math.max(...allPts.map((p: any) => p.y))
-        const pad = 20
-        const mapW = 360
-        const rangeX = maxX - minX || 1
-        const rangeY = maxY - minY || 1
+        const pad = 20, mapW = 360
+        const rangeX = maxX - minX || 1, rangeY = maxY - minY || 1
         const scale = Math.min((mapW - pad * 2) / rangeX, (mapW - pad * 2) / rangeY)
         const mapH = rangeY * scale + pad * 2
-
         const toMapX = (x: number) => pad + (x - minX) * scale
         const toMapY = (y: number) => pad + (y - minY) * scale
+        return { minX, maxX, minY, maxY, pad, mapW, mapH, scale, toMapX, toMapY }
+    }, [elements])
+
+    // Inline zone content (NOT a component — no remount issues)
+    const zoneContent = (() => {
+        const regions = detectedRegions
+        if (!zoneMapGeo) return <p className="text-sm text-amber-600">Draw obstructions on the canvas first.</p>
+        const { minX, pad, mapW, mapH, scale, toMapX, toMapY } = zoneMapGeo
+
+        const pointInPoly = (px: number, py: number, poly: any[]) => {
+            let inside = false
+            for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y
+                if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside
+            }
+            return inside
+        }
 
         const handleMapClick = (e: React.MouseEvent<SVGSVGElement>) => {
             const rect = e.currentTarget.getBoundingClientRect()
-            const mx = e.clientX - rect.left
-            const my = e.clientY - rect.top
-            const ex = (mx - pad) / scale + minX
-            const ey = (my - pad) / scale + minY
-
-            // Find which detected region contains the click
+            const ex = (e.clientX - rect.left - pad) / scale + minX
+            const ey = (e.clientY - rect.top - pad) / scale + zoneMapGeo.minY
             for (const region of regions) {
                 if (pointInPoly(ex, ey, region.points)) {
                     setSelectedZoneId(region.id)
                     if (!zoneConfig[region.id]) {
                         setZoneConfig({
                             ...zoneConfig,
-                            [region.id]: { type: 'corridor', name: `Corridor ${Object.keys(zoneConfig).length + 1}`, points: region.points }
+                            [region.id]: { type: 'corridor', name: `Corridor ${Object.keys(zoneConfig).length + 1}`, points: region.points, slices: true, sensors: true }
                         })
                     }
                     return
                 }
             }
-        }
-
-        const handleZoneChange = (id: string, field: string, value: string) => {
-            setZoneConfig({
-                ...zoneConfig,
-                [id]: { ...(zoneConfig[id] || { type: 'corridor', name: 'Corridor 1' }), [field]: value }
-            })
-        }
-
-        const removeZone = (id: string) => {
-            const newConfig = { ...zoneConfig }
-            delete newConfig[id]
-            setZoneConfig(newConfig)
-            if (selectedZoneId === id) setSelectedZoneId(null)
-        }
-
-        const zoneColors: Record<string, string> = {
-            corridor: 'rgba(59, 130, 246, 0.3)',
-            lobby: 'rgba(168, 85, 247, 0.3)',
-            other: 'rgba(34, 197, 94, 0.3)',
         }
 
         return (
@@ -1344,7 +1367,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     {regions.length > 0 ? ` ${regions.length} region${regions.length > 1 ? 's' : ''} detected.` : ' No enclosed regions detected.'}
                 </p>
 
-                <svg width={mapW} height={mapH} className="border rounded bg-gray-100 cursor-pointer mb-4" onClick={handleMapClick}>
+                <svg width={mapW} height={mapH} className="border rounded bg-gray-100 cursor-pointer mb-4 select-none" style={{ userSelect: 'none' }} onClick={handleMapClick}>
                     {/* Draw detected regions as clickable filled polygons */}
                     {regions.map((region: any) => {
                         const zone = zoneConfig[region.id]
@@ -1359,17 +1382,29 @@ const FDSInputsPopup = ({handleUserInput}) => {
                                     fill={zone ? zoneColors[zone.type] || 'rgba(156,163,175,0.15)' : 'rgba(156,163,175,0.15)'}
                                     stroke={isSelected ? '#f59e0b' : zone ? '#3b82f6' : '#9ca3af'}
                                     strokeWidth={isSelected ? 3 : 1}
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        setSelectedZoneId(region.id)
+                                        if (!zoneConfig[region.id]) {
+                                            setZoneConfig({
+                                                ...zoneConfig,
+                                                [region.id]: { type: 'corridor', name: `Corridor ${Object.keys(zoneConfig).length + 1}`, points: region.points, slices: true, sensors: true }
+                                            })
+                                        }
+                                    }}
                                 />
                                 {zone && (
                                     <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
-                                        fontSize={10} fontWeight="bold" fill="#1e3a5f">
+                                        fontSize={10} fontWeight="bold" fill="#1e3a5f"
+                                        style={{ pointerEvents: 'none', userSelect: 'none' }}>
                                         {zone.name}
                                     </text>
                                 )}
                             </g>
                         )
                     })}
-                    {/* Draw wall segments on top */}
+                    {/* Draw wall segments on top — pointer events disabled so clicks pass through to regions */}
                     {elements.filter((el: any) => el.comments === 'obstruction').map((obs: any, oi: number) => {
                         const pts = obs.points
                         return pts.slice(0, -1).map((_: any, i: number) => (
@@ -1377,6 +1412,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                                 x1={toMapX(pts[i].x)} y1={toMapY(pts[i].y)}
                                 x2={toMapX(pts[i + 1].x)} y2={toMapY(pts[i + 1].y)}
                                 stroke="#374151" strokeWidth={2}
+                                style={{ pointerEvents: 'none' }}
                             />
                         ))
                     })}
@@ -1387,6 +1423,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                             x2={toMapX(el.points[1]?.x ?? el.points[0].x)} y2={toMapY(el.points[1]?.y ?? el.points[0].y)}
                             stroke={el.comments === 'door' ? 'red' : el.comments === 'extract' ? 'cyan' : 'purple'}
                             strokeWidth={2}
+                            style={{ pointerEvents: 'none' }}
                         />
                     ))}
                 </svg>
@@ -1407,14 +1444,28 @@ const FDSInputsPopup = ({handleUserInput}) => {
                                     >
                                         <option value="corridor">Corridor</option>
                                         <option value="lobby">Lobby</option>
+                                        <option value="fire_room">Fire Room</option>
+                                        <option value="internal_corridor">Internal Corridor</option>
                                         <option value="other">Other</option>
                                     </select>
-                                    <input type="text" className="border border-gray-300 px-2 py-1 rounded-md text-sm flex-1"
+                                    <BlurInput type="text" className="border border-gray-300 px-2 py-1 rounded-md text-sm flex-1"
                                         value={zone.name}
-                                        onChange={(e) => handleZoneChange(id, 'name', e.target.value)}
+                                        onChange={(v: string) => handleZoneChange(id, 'name', v)}
                                         placeholder="Zone name"
                                     />
                                     <button className="text-red-500 text-sm px-2" onClick={() => removeZone(id)}>Remove</button>
+                                </div>
+                                <div className="flex items-center gap-4 mt-1 ml-1">
+                                    <label className="flex items-center gap-1 text-xs text-gray-600">
+                                        <input type="checkbox" checked={zone.sensors ?? false}
+                                            onChange={(e) => handleZoneChange(id, 'sensors', e.target.checked)} />
+                                        Sensors
+                                    </label>
+                                    <label className="flex items-center gap-1 text-xs text-gray-600">
+                                        <input type="checkbox" checked={zone.slices ?? false}
+                                            onChange={(e) => handleZoneChange(id, 'slices', e.target.checked)} />
+                                        Slices
+                                    </label>
                                 </div>
                             </div>
                         ))}
@@ -1422,7 +1473,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                 )}
             </>
         )
-    }
+    })()
 
     function handleClick() {
         let object = {
@@ -1457,7 +1508,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     {activeTab === 'devices' && <DeviceInputs />}
                     {activeTab === 'stairs' && <StairInputs />}
                     {activeTab === 'extracts' && <><ExtractInputs /><InletInputs /></>}
-                    {activeTab === 'zones' && <ZoneInputs />}
+                    {activeTab === 'zones' && zoneContent}
                     {activeTab === 'display' && <DisplayInputs />}
                 </div>
 
