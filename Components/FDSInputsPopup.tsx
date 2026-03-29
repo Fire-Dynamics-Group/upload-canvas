@@ -704,17 +704,21 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     const stairDoor = doorElements.find((d: any) => doorRoles[d.id] === 'stair')
                     // @ts-ignore
                     const stairObstructions = elements.filter(el => el.comments === 'stairObstruction')
-                    let stairPoints: Array<{x: number, y: number}> = []
+                    let stairPoints: Array<{x: number, y: number, zoneName?: string}> = []
                     if (stairDoor && stairObstructions.length > 0 && landingElements.length > 0) {
-                        // Use the floor landing if available, otherwise first landing
-                        const floorLanding = landingElements.find((el: any) => landingRoles[el.id] === 'floor')
-                        const landing = floorLanding || landingElements[0]
-                        stairPoints = computeStairSensorPositions(
-                            stairDoor,
-                            stairObstructions[0].points,
-                            landing,
-                            pixelsPerMesh
-                        )
+                        stairObstructions.forEach((stairObs: any, stairIdx: number) => {
+                            const floorLanding = landingElements.find((el: any) => landingRoles[el.id] === 'floor')
+                            const landing = floorLanding || landingElements[stairIdx] || landingElements[0]
+                            const pts = computeStairSensorPositions(
+                                stairDoor,
+                                stairObs.points,
+                                landing,
+                                pixelsPerMesh
+                            )
+                            const stairName = stairObstructions.length > 1 ? `Stair ${stairIdx + 1}` : 'Stair'
+                            const tagged = pts.map((s: any) => ({ ...s, zoneName: stairName }))
+                            stairPoints.push(...tagged)
+                        })
                     }
 
                     // Compute FSA path sensors if scenario is FSA or Both
