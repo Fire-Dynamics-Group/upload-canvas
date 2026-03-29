@@ -680,6 +680,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     // Use zone polygons for sensor placement when available.
                     // All zones with sensors enabled get centerline sensors.
                     // Fall back to single obstruction if no zones configured.
+                    console.log('[COMPUTE] zoneConfig:', JSON.stringify(zoneConfig))
                     let points: Array<{x: number, y: number, zoneName?: string}> = []
                     const sensorsEnabledZones = Object.values(zoneConfig).filter(
                         (z: any) => z.sensors !== false && z.points && z.points.length >= 3
@@ -767,7 +768,12 @@ const FDSInputsPopup = ({handleUserInput}) => {
                         setFsaStatus(null)
                     }
 
-                    setSensorTreeElements([...points, ...stairPoints], fsaPoints)
+                    const allPts = [...points, ...stairPoints]
+                    const withZone = allPts.filter((p: any) => p.zoneName)
+                    const withoutZone = allPts.filter((p: any) => !p.zoneName)
+                    console.log(`[COMPUTE] Total sensors: ${allPts.length}, with zoneName: ${withZone.length}, without: ${withoutZone.length}`)
+                    if (withZone.length > 0) console.log('[COMPUTE] First tagged:', JSON.stringify(withZone[0]))
+                    setSensorTreeElements(allPts, fsaPoints)
                 }}
             >
                 Compute Sensor Locations
