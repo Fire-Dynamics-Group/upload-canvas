@@ -186,7 +186,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                     totalFloors,
                     stairRoofZ,
                     0.2, // wall_thickness
-                    33.6, // px_per_m
+                    pixelsPerMesh * 10, // px_per_m — derived from scale calibration
                     commonCorridorMode ? scenarioType : null,
                     simEndTime,
                     includeSensors,

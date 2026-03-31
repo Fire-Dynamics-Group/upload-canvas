@@ -102,6 +102,36 @@ test('zone sensors: lobby and corridor get different prefixes in FDS output', as
 
         expect(hasLobby).toBe(true)
         expect(hasCorridor).toBe(true)
+
+        // Verify sensors are grouped by quantity (all TEMPERATURE before PRESSURE, etc.)
+        const fdsLines = fdsResponseText.split('\\n')
+        const devcLines = fdsLines.filter((l: string) => l.includes("&DEVC") && l.includes("QUANTITY='"))
+        // Extract quantity from each DEVC line in order
+        const quantities = devcLines.map((l: string) => {
+            const m = l.match(/QUANTITY='([^']+)'/)
+            return m ? m[1] : '?'
+        })
+        // Filter to the 4 sensor quantities only
+        const sensorQtys = quantities.filter((q: string) =>
+            ['TEMPERATURE', 'PRESSURE', 'VISIBILITY', 'VELOCITY'].includes(q)
+        )
+        // Verify grouping: once we leave a quantity, we should never return to it
+        const seen = new Set<string>()
+        let prev = ''
+        let isGrouped = true
+        for (const q of sensorQtys) {
+            if (q !== prev) {
+                if (seen.has(q)) {
+                    isGrouped = false
+                    console.log(`GROUPING VIOLATION: ${q} appeared again after leaving it`)
+                    break
+                }
+                seen.add(q)
+                prev = q
+            }
+        }
+        console.log(`=== QUANTITY GROUPING: ${isGrouped ? 'PASS' : 'FAIL'} (order: ${[...new Set(sensorQtys)].join(' → ')}) ===`)
+        expect(isGrouped).toBe(true)
     } else {
         // If route interception didn't fire, check the downloaded file
         const files = await page.evaluate(() => {

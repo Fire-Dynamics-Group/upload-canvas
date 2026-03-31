@@ -82,6 +82,7 @@ function Canvas({dimensions, isDevMode}) {
     // TODO: if drawing have line between penultimate point and cursor
     // have state that is true when drawing is true and mouse moving -> store mouse
     const [guideLine, setGuideLine] = useState(null)
+    const [snapGuides, setSnapGuides] = useState([])
     const [currentId, setCurrentId] = useState(() => {
         if (elements.length === 0) return 0
         return Math.max(...elements.map(el => el.id)) + 1
@@ -211,9 +212,22 @@ function Canvas({dimensions, isDevMode}) {
             // currentElement should have type and can include scale
             if (selectedElement || isDrawing && currentPoly.length > 0 || tool === 'scale' && scalePoints.length == 1 || tool === 'rect' && currentRect.length == 1) { // and tool == polyline
                 event.preventDefault();
-                setGuideLine({x: event.pageX, y: event.pageY})
+                if (tool === 'rect' && currentRect.length === 1 && comment && comment.toLowerCase().includes('mesh')) {
+                    const raw = { x: event.pageX, y: event.pageY }
+                    const { snapped, guides } = snapToMeshEdges(raw)
+                    const hasXSnap = guides.some(g => g.type === 'vertical')
+                    const hasYSnap = guides.some(g => g.type === 'horizontal')
+                    const finalX = hasXSnap ? snapped.x : (Math.round(raw.x / pixelsPerMesh)) * pixelsPerMesh
+                    const finalY = hasYSnap ? snapped.y : (Math.round(raw.y / pixelsPerMesh)) * pixelsPerMesh
+                    setGuideLine({ x: finalX, y: finalY })
+                    setSnapGuides(guides)
+                } else {
+                    setGuideLine({x: event.pageX, y: event.pageY})
+                    setSnapGuides([])
+                }
             } else {
                 setGuideLine(null)
+                setSnapGuides([])
             }
         };
 
@@ -222,7 +236,7 @@ function Canvas({dimensions, isDevMode}) {
         return () => {
             window.removeEventListener("mousemove", handleMouseMove)
         }
-    }, [isDrawing, currentPoly, scalePoints.length, tool, currentRect, selectedElement])
+    }, [isDrawing, currentPoly, scalePoints.length, tool, currentRect, selectedElement, comment, pixelsPerMesh, elements])
 
     function deltaGridlines(pxPerMesh, tool) { // actioned if debug mode and after scale set normally
         setPixelsPerMesh(pxPerMesh)
@@ -928,7 +942,27 @@ function Canvas({dimensions, isDevMode}) {
             }
         }
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, debugRects])
+        // Draw mesh snap guide lines
+        if (snapGuides.length > 0) {
+            context.save()
+            context.setLineDash([4, 4])
+            context.strokeStyle = '#ff00ff'
+            context.lineWidth = 1
+            for (const guide of snapGuides) {
+                context.beginPath()
+                if (guide.type === 'vertical') {
+                    context.moveTo(guide.x, 0)
+                    context.lineTo(guide.x, canvas.height)
+                } else if (guide.type === 'horizontal') {
+                    context.moveTo(0, guide.y)
+                    context.lineTo(canvas.width, guide.y)
+                }
+                context.stroke()
+            }
+            context.restore()
+        }
+
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, debugRects, snapGuides])
 
     // Generate thumbnail by compositing PDF + drawing canvases
     const thumbnailTimerRef = useRef(null)
@@ -1028,6 +1062,65 @@ function Canvas({dimensions, isDevMode}) {
 
         return vertex
     }
+
+    const MESH_SNAP_THRESHOLD = 15 // pixels
+
+    function collectMeshEdgeCoordinates(excludeId = null) {
+        const xCoords = []
+        const yCoords = []
+        for (const el of elements) {
+            if (!isMesh(el)) continue
+            if (excludeId !== null && el.id === excludeId) continue
+            const corners = getRectCorners(el.points)
+            const minX = Math.min(corners[0].x, corners[2].x)
+            const maxX = Math.max(corners[0].x, corners[2].x)
+            const minY = Math.min(corners[0].y, corners[2].y)
+            const maxY = Math.max(corners[0].y, corners[2].y)
+            xCoords.push(minX, maxX)
+            yCoords.push(minY, maxY)
+        }
+        return { xCoords, yCoords }
+    }
+
+    function snapToMeshEdges(vertex, excludeId = null) {
+        const { xCoords, yCoords } = collectMeshEdgeCoordinates(excludeId)
+        const guides = []
+        let snappedX = vertex.x
+        let snappedY = vertex.y
+        let bestDx = MESH_SNAP_THRESHOLD + 1
+        let bestDy = MESH_SNAP_THRESHOLD + 1
+
+        for (const x of xCoords) {
+            const dx = Math.abs(vertex.x - x)
+            if (dx < bestDx && dx <= MESH_SNAP_THRESHOLD) {
+                bestDx = dx
+                snappedX = x
+            }
+        }
+        for (const y of yCoords) {
+            const dy = Math.abs(vertex.y - y)
+            if (dy < bestDy && dy <= MESH_SNAP_THRESHOLD) {
+                bestDy = dy
+                snappedY = y
+            }
+        }
+
+        if (bestDx <= MESH_SNAP_THRESHOLD) guides.push({ type: 'vertical', x: snappedX })
+        if (bestDy <= MESH_SNAP_THRESHOLD) guides.push({ type: 'horizontal', y: snappedY })
+
+        return { snapped: { x: snappedX, y: snappedY }, guides }
+    }
+
+    function snapVertexWithMeshPriority(vertex, excludeId = null) {
+        const { snapped, guides } = snapToMeshEdges(vertex, excludeId)
+        const hasXSnap = guides.some(g => g.type === 'vertical')
+        const hasYSnap = guides.some(g => g.type === 'horizontal')
+        if (!hasXSnap) snapped.x = (Math.round(snapped.x / pixelsPerMesh)) * pixelsPerMesh
+        if (!hasYSnap) snapped.y = (Math.round(snapped.y / pixelsPerMesh)) * pixelsPerMesh
+        setSnapGuides(guides)
+        return snapped
+    }
+
     //   TODO: polyline and mark point tools
     function handlePointerDown(event) { // should this be handle mouse down?
         // event.preventDefault(); 
@@ -1094,8 +1187,9 @@ function Canvas({dimensions, isDevMode}) {
             let dimension = 5
 
             let newP = {x: event.pageX, y: event.pageY}
+            const isMeshRect = comment && comment.toLowerCase().includes('mesh')
             if (currentRect.length == 0) {
-                newP = snapVertexToGrid(newP)
+                newP = isMeshRect ? snapVertexWithMeshPriority(newP) : snapVertexToGrid(newP)
 
                 // on first point
                     // add first point to state
@@ -1105,7 +1199,7 @@ function Canvas({dimensions, isDevMode}) {
             // on second point
             // newP = snapVertexOrtho(newP, currentRect[0])
                 // snap to grid
-                newP = snapVertexToGrid(newP)
+                newP = isMeshRect ? snapVertexWithMeshPriority(newP) : snapVertexToGrid(newP)
 
                 let pointsArray = [currentRect[0], newP]
                 // add to elements state
@@ -1113,6 +1207,7 @@ function Canvas({dimensions, isDevMode}) {
                 addElement(currentEl)
                 // set current rect to []
                 setCurrentRect([])
+                setSnapGuides([])
                 setIsDrawing(false)
             }
 
@@ -1273,9 +1368,10 @@ function Canvas({dimensions, isDevMode}) {
             }
             changeElement(el)
             setSelectedElement(null)
+            setSnapGuides([])
             setXCounter(0)
             setYCounter(0)
-        } 
+        }
         // if element selected -> move from previous to new position
         // need previous pointer down point
         // apply offset to all points
