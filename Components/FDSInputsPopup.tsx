@@ -151,7 +151,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
         setDoorLeakageConfig({
             ...doorLeakageConfig,
             [doorId]: {
-                ...(doorLeakageConfig[doorId] || { enabled: true, sealType: "non-smoke-sealed" }),
+                ...(doorLeakageConfig[doorId] || { enabled: true, doorType: "single_smoke_sealed", bothSides: false }),
                 [field]: value
             }
         })
@@ -551,16 +551,24 @@ const FDSInputsPopup = ({handleUserInput}) => {
                                 <div className="ml-2 mt-1">
                                     {doorRoles[door.id] === 'leakage' ? (
                                         <>
-                                            <p className="text-xs text-gray-500 mb-1">Leakage-only: wall stays solid, HVAC leak vents generated.</p>
+                                            <p className="text-xs text-gray-500 mb-1">Leakage-only: wall stays solid, bottom HVAC leak vent generated.</p>
                                             <select
                                                 className="border border-gray-300 px-2 py-1 rounded-md text-sm"
-                                                value={doorLeakageConfig[door.id]?.sealType || 'non-smoke-sealed'}
-                                                onChange={(e) => handleLeakageConfigChange(door.id, 'sealType', e.target.value)}
+                                                value={doorLeakageConfig[door.id]?.doorType || 'single_smoke_sealed'}
+                                                onChange={(e) => handleLeakageConfigChange(door.id, 'doorType', e.target.value)}
                                             >
-                                                <option value="smoke-sealed">Smoke Sealed</option>
-                                                <option value="non-smoke-sealed">Non-Smoke Sealed</option>
-                                                <option value="custom">Custom</option>
+                                                <option value="single_smoke_sealed">Single Smoke Sealed (0.01 m²)</option>
+                                                <option value="double_smoke_sealed">Double Smoke Sealed (0.03 m²)</option>
+                                                <option value="lift">Lift (0.06 m²)</option>
                                             </select>
+                                            <label className="flex items-center gap-2 mt-1">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={doorLeakageConfig[door.id]?.bothSides || false}
+                                                    onChange={(e) => handleLeakageConfigChange(door.id, 'bothSides', e.target.checked)}
+                                                />
+                                                <span className="text-sm">Both sides (two vents)</span>
+                                            </label>
                                         </>
                                     ) : (
                                         <>
@@ -573,33 +581,27 @@ const FDSInputsPopup = ({handleUserInput}) => {
                                                 <span className="text-sm">Include leakage</span>
                                             </label>
                                             {doorLeakageConfig[door.id]?.enabled !== false && (
-                                                <select
-                                                    className="border border-gray-300 px-2 py-1 rounded-md text-sm"
-                                                    value={doorLeakageConfig[door.id]?.sealType || 'non-smoke-sealed'}
-                                                    onChange={(e) => handleLeakageConfigChange(door.id, 'sealType', e.target.value)}
-                                                >
-                                                    <option value="smoke-sealed">Smoke Sealed</option>
-                                                    <option value="non-smoke-sealed">Non-Smoke Sealed</option>
-                                                    <option value="custom">Custom</option>
-                                                </select>
+                                                <>
+                                                    <select
+                                                        className="border border-gray-300 px-2 py-1 rounded-md text-sm"
+                                                        value={doorLeakageConfig[door.id]?.doorType || 'single_smoke_sealed'}
+                                                        onChange={(e) => handleLeakageConfigChange(door.id, 'doorType', e.target.value)}
+                                                    >
+                                                        <option value="single_smoke_sealed">Single Smoke Sealed (0.01 m²)</option>
+                                                        <option value="double_smoke_sealed">Double Smoke Sealed (0.03 m²)</option>
+                                                        <option value="lift">Lift (0.06 m²)</option>
+                                                    </select>
+                                                    <label className="flex items-center gap-2 mt-1">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={doorLeakageConfig[door.id]?.bothSides || false}
+                                                            onChange={(e) => handleLeakageConfigChange(door.id, 'bothSides', e.target.checked)}
+                                                        />
+                                                        <span className="text-sm">Both sides (two vents)</span>
+                                                    </label>
+                                                </>
                                             )}
                                         </>
-                                    )}
-                                    {(doorLeakageConfig[door.id]?.sealType === 'custom') && (doorRoles[door.id] === 'leakage' || doorLeakageConfig[door.id]?.enabled !== false) && (
-                                        <div className="mt-2 flex flex-col gap-1">
-                                            <label className="text-sm">Bottom Gap (m):
-                                                <input type="number" step="0.001" className="ml-2 border px-2 py-1 rounded-md w-24"
-                                                    value={doorLeakageConfig[door.id]?.bottomGap || 0.01}
-                                                    onChange={(e) => handleLeakageConfigChange(door.id, 'bottomGap', Number(e.target.value))}
-                                                />
-                                            </label>
-                                            <label className="text-sm">Other Gaps (m):
-                                                <input type="number" step="0.001" className="ml-2 border px-2 py-1 rounded-md w-24"
-                                                    value={doorLeakageConfig[door.id]?.otherGap || 0.004}
-                                                    onChange={(e) => handleLeakageConfigChange(door.id, 'otherGap', Number(e.target.value))}
-                                                />
-                                            </label>
-                                        </div>
                                     )}
                                 </div>
                                 )}

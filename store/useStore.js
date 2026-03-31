@@ -89,7 +89,7 @@ const useStore = create(persist((set, get) => {
 
         // Door leakage settings
         doorLeakagesEnabled: true,
-        doorLeakageConfig: {}, // per-door: { [doorId]: { enabled: true, sealType: "non-smoke-sealed" } }
+        doorLeakageConfig: {}, // per-door: { [doorId]: { enabled: true, doorType: "single_smoke_sealed", bothSides: false } }
 
         // Door openings - defaults per scenario type
         doorOpenings: { ...defaultDoorTimings.MOE },
