@@ -131,7 +131,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
         setExtractConfig({
             ...extractConfig,
             [extractId]: {
-                ...(extractConfig[extractId] || { type: "natural", flowRate: 3.0, tauV: -10, shaftWidth: 0.9, shaftDepth: 0.9, openingHeight: 0.8, openingBase: 0.0, activation: "always_open", activationTime: null }),
+                ...(extractConfig[extractId] || { type: "natural", flowRate: 3.0, tauV: -10, shaftWidth: 0.9, shaftDepth: 0.9, openingHeight: 1.3, openingBase: 0.9, activation: "always_open", activationTime: null }),
                 [field]: value
             }
         })
@@ -1163,7 +1163,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     <div className="mb-4">
                         {/* @ts-ignore */}
                         {extractElements.map((extract, idx) => {
-                            const config = extractConfig[extract.id] || { type: "natural", flowRate: 3.0, tauV: -10, shaftWidth: 0.9, shaftDepth: 0.9, activation: "always_open", activationTime: null }
+                            const config = extractConfig[extract.id] || { type: "natural", flowRate: 3.0, tauV: -10, shaftWidth: 0.9, shaftDepth: 0.9, openingHeight: 1.3, openingBase: 0.9, activation: "always_open", activationTime: null }
                             return (
                                 <div
                                     key={extract.id}
@@ -1219,14 +1219,14 @@ const FDSInputsPopup = ({handleUserInput}) => {
 
                                         <label className="text-sm">Opening Height (m):
                                             <input type="number" step="0.1" className="ml-2 border px-2 py-1 rounded-md w-24"
-                                                value={config.openingHeight ?? 0.8}
+                                                value={config.openingHeight ?? 1.3}
                                                 onChange={(e) => handleExtractConfigChange(extract.id, 'openingHeight', Number(e.target.value))}
                                             />
                                         </label>
 
                                         <label className="text-sm">Opening Base (m above floor):
                                             <input type="number" step="0.1" className="ml-2 border px-2 py-1 rounded-md w-24"
-                                                value={config.openingBase ?? 0.0}
+                                                value={config.openingBase ?? 0.9}
                                                 onChange={(e) => handleExtractConfigChange(extract.id, 'openingBase', Number(e.target.value))}
                                             />
                                         </label>
