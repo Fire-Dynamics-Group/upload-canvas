@@ -305,9 +305,37 @@ const FDSInputsPopup = ({handleUserInput}) => {
     ]
 
     const [customHRR, setCustomHRR] = useState(!fireHRRPresets.some(p => p.value === fireHRR))
+    const [fireInputMode, setFireInputMode] = useState<"hrr_dimension" | "mw_hrrpua">("hrr_dimension")
+    const [fireMW, setFireMW] = useState(fireHRR / 1000)
+    const [targetHRRPUA, setTargetHRRPUA] = useState(445)
 
     const FireInputs = () => (
         <>
+            <div className="flex gap-4 mb-4">
+                {[
+                    { value: "hrr_dimension" as const, label: "HRR + Dimension" },
+                    { value: "mw_hrrpua" as const, label: "MW + HRRPUA" },
+                ].map((option) => (
+                    <label key={option.value} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="fireInputMode"
+                            value={option.value}
+                            checked={fireInputMode === option.value}
+                            onChange={() => {
+                                setFireInputMode(option.value)
+                                if (option.value === "mw_hrrpua") {
+                                    setFireMW(fireHRR / 1000)
+                                }
+                            }}
+                        />
+                        <span className="text-sm">{option.label}</span>
+                    </label>
+                ))}
+            </div>
+
+            {fireInputMode === "hrr_dimension" ? (
+            <>
             <h2 className="text-lg font-bold mb-2">Fire HRR (kW)</h2>
             <select
                 className="w-full border border-gray-300 px-3 py-2 rounded-md mb-2"
@@ -346,6 +374,47 @@ const FDSInputsPopup = ({handleUserInput}) => {
             />
 
             <p className="text-sm text-gray-500 mb-1">HRRPUA: {(fireHRR / (fireDimension * fireDimension)).toFixed(1)} kW/m²</p>
+            </>
+            ) : (
+            <>
+            <h2 className="text-lg font-bold mb-2">Total HRR (MW)</h2>
+            <input
+                type="number"
+                step="0.1"
+                className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                value={fireMW}
+                placeholder="e.g. 2.5"
+                onChange={(e) => {
+                    const mw = Number(e.target.value)
+                    setFireMW(mw)
+                    const hrrKW = mw * 1000
+                    setFireHRR(hrrKW)
+                    if (targetHRRPUA > 0) {
+                        setFireDimension(parseFloat(Math.sqrt(hrrKW / targetHRRPUA).toFixed(2)))
+                    }
+                }}
+            />
+
+            <h2 className="text-lg font-bold mb-2">Target HRRPUA (kW/m²)</h2>
+            <input
+                type="number"
+                step="1"
+                className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4"
+                value={targetHRRPUA}
+                placeholder="e.g. 445"
+                onChange={(e) => {
+                    const hrrpua = Number(e.target.value)
+                    setTargetHRRPUA(hrrpua)
+                    if (hrrpua > 0) {
+                        setFireDimension(parseFloat(Math.sqrt(fireHRR / hrrpua).toFixed(2)))
+                    }
+                }}
+            />
+
+            <p className="text-sm text-gray-500 mb-1">Calculated dimension: {fireDimension} m (area: {(fireDimension * fireDimension).toFixed(2)} m²)</p>
+            <p className="text-sm text-gray-500 mb-1">Actual HRRPUA: {(fireHRR / (fireDimension * fireDimension)).toFixed(1)} kW/m²</p>
+            </>
+            )}
 
             <h2 className="text-lg font-bold mb-2">Fire Height Above Floor (m)</h2>
             <input
