@@ -56,8 +56,12 @@ export function findEnclosedRegions(elements, tolerance = 5) {
                     const dist = Math.sqrt((pt.x - projX) ** 2 + (pt.y - projY) ** 2)
                     if (dist > tolerance) continue
 
-                    // Split: replace other with two segments at the projected point
-                    const splitPt = { x: pt.x, y: pt.y } // use the endpoint coords for exact snapping
+                    // Split: replace other with two segments at the projected point.
+                    // Snap the endpoint to the projection on the segment so both
+                    // the split point and the original endpoint share exact coords.
+                    pt.x = projX
+                    pt.y = projY
+                    const splitPt = { x: projX, y: projY }
                     segments.splice(j, 1,
                         { p1: other.p1, p2: splitPt },
                         { p1: splitPt, p2: other.p2 }
@@ -172,7 +176,10 @@ export function findEnclosedRegions(elements, tolerance = 5) {
         }
     }
 
-    // 6. Convert faces from node indices to point arrays, filter out the outer boundary
+    // 6. Convert faces to regions. In pixel space (y=down), interior face
+    //    traversals produce negative signed area; outer/aggregate faces (true
+    //    outer boundary and outer faces of disconnected components) produce
+    //    positive signed area. Keep only the interior faces.
     const regions = []
     for (let i = 0; i < faces.length; i++) {
         const faceNodes = faces[i]
@@ -180,32 +187,25 @@ export function findEnclosedRegions(elements, tolerance = 5) {
 
         const points = faceNodes.map(ni => ({ x: nodes[ni].x, y: nodes[ni].y }))
 
-        // Compute signed area to determine winding — skip the outer face (largest area, usually negative)
-        let area = 0
+        let signedArea = 0
         for (let j = 0; j < points.length; j++) {
             const p1 = points[j]
             const p2 = points[(j + 1) % points.length]
-            area += (p1.x * p2.y - p2.x * p1.y)
+            signedArea += (p1.x * p2.y - p2.x * p1.y)
         }
-        area /= 2
+        signedArea /= 2
 
-        // Skip very small faces (degenerate) and the outer boundary (negative/largest area)
-        if (Math.abs(area) < 100) continue // too small (in pixel space)
+        if (Math.abs(signedArea) < 100) continue // degenerate
+        if (signedArea > 0) continue // outer / aggregated face
 
         regions.push({
             points,
-            area: Math.abs(area),
+            area: Math.abs(signedArea),
             id: `region_${i}`,
         })
     }
 
-    // Sort by area ascending — smaller rooms first, outer boundary last
     regions.sort((a, b) => a.area - b.area)
-
-    // Remove the largest region (outer boundary)
-    if (regions.length > 1) {
-        regions.pop()
-    }
 
     return regions
 }

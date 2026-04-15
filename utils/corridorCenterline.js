@@ -1,4 +1,77 @@
 /**
+ * Sort orthogonal polygon vertices into perimeter (winding) order.
+ * Builds an edge adjacency graph: vertices sharing the same x form vertical
+ * edges, vertices sharing the same y form horizontal edges. Then walks the
+ * graph to produce a properly ordered polygon.
+ *
+ * @param {Array<{x: number, y: number}>} points - unordered polygon vertices
+ * @param {number} [tol=0.5] - tolerance for grouping coordinates
+ * @returns {Array<{x: number, y: number}>} vertices in perimeter order
+ */
+export function sortVerticesIntoWindingOrder(points, tol = 0.5) {
+    if (points.length <= 3) return points
+
+    // Deduplicate closing vertex (first == last), but keep at least 5 points
+    // so the Monte Carlo path is used (the 4-point slicing path creates thin
+    // sub-rects that confuse centerline direction).
+    let pts = points
+    const first = points[0], last = points[points.length - 1]
+    if (points.length > 5 && Math.abs(first.x - last.x) < tol && Math.abs(first.y - last.y) < tol) {
+        pts = points.slice(0, -1)
+    }
+    if (pts.length <= 3) return pts
+
+    const n = pts.length
+    const adj = Array.from({ length: n }, () => [])
+
+    // Group vertices by x coordinate (vertical edges)
+    const byX = new Map()
+    for (let i = 0; i < n; i++) {
+        const key = Math.round(pts[i].x / tol) * tol
+        if (!byX.has(key)) byX.set(key, [])
+        byX.get(key).push(i)
+    }
+    for (const indices of byX.values()) {
+        indices.sort((a, b) => pts[a].y - pts[b].y)
+        for (let i = 0; i < indices.length - 1; i += 2) {
+            adj[indices[i]].push(indices[i + 1])
+            adj[indices[i + 1]].push(indices[i])
+        }
+    }
+
+    // Group vertices by y coordinate (horizontal edges)
+    const byY = new Map()
+    for (let i = 0; i < n; i++) {
+        const key = Math.round(pts[i].y / tol) * tol
+        if (!byY.has(key)) byY.set(key, [])
+        byY.get(key).push(i)
+    }
+    for (const indices of byY.values()) {
+        indices.sort((a, b) => pts[a].x - pts[b].x)
+        for (let i = 0; i < indices.length - 1; i += 2) {
+            adj[indices[i]].push(indices[i + 1])
+            adj[indices[i + 1]].push(indices[i])
+        }
+    }
+
+    // Walk the adjacency graph from vertex 0
+    const visited = new Set()
+    const result = []
+    let current = 0
+    while (result.length < n) {
+        result.push(pts[current])
+        visited.add(current)
+        const next = adj[current].find(i => !visited.has(i))
+        if (next === undefined) break
+        current = next
+    }
+
+    // If walk didn't visit all vertices, return original (non-orthogonal polygon)
+    if (result.length < n) return pts
+    return result
+}
+
+/**
  * Find intersections of a perpendicular ray with polygon edges.
  * @param {Array<{x: number, y: number}>} polyPoints - polygon vertices
  * @param {number} axisPos - position along the corridor axis to cast the ray
@@ -443,17 +516,47 @@ export function computeCenterlinePoints(
     spacing = 0.5,
     inset = 0.4
 ) {
+    // Sort vertices into winding order so getBestRectangles picks valid
+    // consecutive-vertex rectangles (matching the EXE's Bluebeam constraint).
+    const orderedPoints = sortVerticesIntoWindingOrder(obstructionPoints)
     const pxPerM = pixelsPerMesh * 10
-    const polyX = obstructionPoints.map(p => p.x)
-    const polyY = obstructionPoints.map(p => p.y)
+    const polyX = orderedPoints.map(p => p.x)
+    const polyY = orderedPoints.map(p => p.y)
 
     // Same as the EXE: convert to metres, run getBestRectangles to decompose
     // into sub-rectangles, then returnCenterlines to place sensors along each
     // rectangle's centerline. No scanning, no raycasting.
-    const metrePoints = obstructionPoints.map(p => ({
+    const metrePoints = orderedPoints.map(p => ({
         x: Math.round(p.x / pxPerM * 10) / 10,
         y: Math.round(p.y / pxPerM * 10) / 10,
     }))
+
+    // Snap nearly-equal x/y values together so the orthogonal-rectangle
+    // decomposition inside getBestRectangles can match axes. Without this,
+    // sub-pixel drawing quirks (e.g. 31.7m vs 31.8m for the same wall line)
+    // leave the Monte Carlo search unable to close any rectangle.
+    const snapAxis = (vals, tol = 0.2) => {
+        const sorted = [...new Set(vals)].sort((a, b) => a - b)
+        const clusters = []
+        for (const v of sorted) {
+            const last = clusters[clusters.length - 1]
+            if (last && v - last[last.length - 1] <= tol) last.push(v)
+            else clusters.push([v])
+        }
+        const mapping = new Map()
+        for (const c of clusters) {
+            const rep = Math.round((c.reduce((a, b) => a + b, 0) / c.length) * 10) / 10
+            for (const v of c) mapping.set(v, rep)
+        }
+        return mapping
+    }
+    const xMap = snapAxis(metrePoints.map(p => p.x))
+    const yMap = snapAxis(metrePoints.map(p => p.y))
+    for (const p of metrePoints) {
+        p.x = xMap.get(p.x)
+        p.y = yMap.get(p.y)
+    }
+
     const rects = getBestRectangles(metrePoints)
     const centrelines = returnCenterlines(rects, spacing)
 
