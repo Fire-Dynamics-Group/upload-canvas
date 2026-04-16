@@ -9,7 +9,9 @@ import {
     returnCenterlines,
     pointInPolygon,
     computeStairSensorPositions,
+    sortVerticesIntoWindingOrder,
 } from '../utils/corridorCenterline'
+import { findEnclosedRegions } from '../utils/findEnclosedRegions'
 
 // Helper: simple rectangle polygon (clockwise)
 const makeRect = (x1, y1, x2, y2) => [
@@ -261,37 +263,24 @@ const realRoles = { 6: 'stair', 7: 'apartment' }
 const realPxPerMesh = 4.260011737073032
 
 describe('getBestRectangles', () => {
-    it('decomposes a simple rectangle into 1m segments along the long axis', () => {
-        // 5m x 2m rectangle in metres
+    it('returns a single rect for a perfect 4-point rectangle (long axis X)', () => {
+        // 5m x 2m — return one rect so returnCenterlines places sensors along
+        // the long-axis centerline, not a column grid.
         const points = [
             { x: 0, y: 0 }, { x: 5, y: 0 },
             { x: 5, y: 2 }, { x: 0, y: 2 },
         ]
         const rects = getBestRectangles(points)
-        // Should produce 5 segments of 1m each: [0,1,0,2, 1,2,0,2, ...]
-        expect(rects.length).toBe(5 * 4) // 5 rects, 4 values each
-        // First rect
-        expect(rects[0]).toBe(0)  // xmin
-        expect(rects[1]).toBe(1)  // xmax
-        expect(rects[2]).toBe(0)  // ymin
-        expect(rects[3]).toBe(2)  // ymax
-        // Last rect
-        expect(rects[16]).toBe(4) // xmin
-        expect(rects[17]).toBe(5) // xmax
+        expect(rects).toEqual([0, 5, 0, 2])
     })
 
-    it('decomposes a tall rectangle into 1m segments along Y', () => {
+    it('returns a single rect for a perfect 4-point rectangle (long axis Y)', () => {
         const points = [
             { x: 0, y: 0 }, { x: 2, y: 0 },
             { x: 2, y: 4 }, { x: 0, y: 4 },
         ]
         const rects = getBestRectangles(points)
-        expect(rects.length).toBe(4 * 4) // 4 rects
-        // First rect along Y
-        expect(rects[0]).toBe(0)  // xmin
-        expect(rects[1]).toBe(2)  // xmax
-        expect(rects[2]).toBe(0)  // ymin
-        expect(rects[3]).toBe(1)  // ymax
+        expect(rects).toEqual([0, 2, 0, 4])
     })
 
     it('decomposes an L-shaped polygon into rectangles that cover the area', () => {
@@ -393,12 +382,204 @@ describe('computeCenterlinePoints with rectangle decomposition', () => {
             expect(p.y).toBeGreaterThanOrEqual(1035)
             expect(p.y).toBeLessThanOrEqual(1340)
         })
-        // Sensors should span most of the X range
+        // Sensors should span most of the X range (polygon X: 1819–2156)
         const sensorXs = points.map(p => p.x)
-        expect(Math.min(...sensorXs)).toBeLessThan(1920)
+        expect(Math.min(...sensorXs)).toBeLessThan(1980)
         expect(Math.max(...sensorXs)).toBeGreaterThan(2100)
     })
 })
+
+describe('sortVerticesIntoWindingOrder', () => {
+    it('sorts shuffled rectangle vertices into perimeter order', () => {
+        // Rectangle vertices in random order
+        const shuffled = [
+            { x: 100, y: 200 },
+            { x: 0, y: 0 },
+            { x: 100, y: 0 },
+            { x: 0, y: 200 },
+        ]
+        const sorted = sortVerticesIntoWindingOrder(shuffled)
+        expect(sorted.length).toBe(4)
+        // Check that consecutive vertices share either x or y (valid edges)
+        for (let i = 0; i < sorted.length; i++) {
+            const a = sorted[i], b = sorted[(i + 1) % sorted.length]
+            const sharedX = Math.abs(a.x - b.x) < 1
+            const sharedY = Math.abs(a.y - b.y) < 1
+            expect(sharedX || sharedY).toBe(true)
+        }
+    })
+
+    it('sorts shuffled L-shape vertices into perimeter order', () => {
+        // L-shape: corridor + lobby junction (8 vertices)
+        // Correct order traces the perimeter
+        const ordered = [
+            { x: 0, y: 0 }, { x: 100, y: 0 },
+            { x: 100, y: 20 }, { x: 40, y: 20 },
+            { x: 40, y: 60 }, { x: 20, y: 60 },
+            { x: 20, y: 20 }, { x: 0, y: 20 },
+        ]
+        // Shuffle them
+        const shuffled = [ordered[5], ordered[1], ordered[7], ordered[3], ordered[0], ordered[6], ordered[2], ordered[4]]
+        const sorted = sortVerticesIntoWindingOrder(shuffled)
+        expect(sorted.length).toBe(8)
+        // Every consecutive pair must share x or y
+        for (let i = 0; i < sorted.length; i++) {
+            const a = sorted[i], b = sorted[(i + 1) % sorted.length]
+            const sharedX = Math.abs(a.x - b.x) < 1
+            const sharedY = Math.abs(a.y - b.y) < 1
+            expect(sharedX || sharedY).toBe(true)
+        }
+    })
+
+    it('returns original points for non-orthogonal polygons', () => {
+        const nonOrtho = [
+            { x: 0, y: 0 }, { x: 100, y: 50 },
+            { x: 100, y: 150 }, { x: 0, y: 200 },
+        ]
+        const result = sortVerticesIntoWindingOrder(nonOrtho)
+        expect(result).toEqual(nonOrtho)
+    })
+
+    it('handles closing duplicate vertex', () => {
+        const withClose = [
+            { x: 0, y: 0 }, { x: 100, y: 0 },
+            { x: 100, y: 200 }, { x: 0, y: 200 },
+            { x: 0, y: 0 }, // duplicate closing
+            { x: 0, y: 0 }, // extra duplicate
+        ]
+        const sorted = sortVerticesIntoWindingOrder(withClose)
+        // Should handle gracefully without crashing
+        expect(sorted.length).toBeGreaterThanOrEqual(4)
+    })
+})
+
+describe('sensors from enclosed regions (multi-element walls)', () => {
+    // Layout similar to live project: corridor + lobby as separate
+    // obstruction polylines forming a T-shape
+    //
+    //    Corridor (horizontal): x=[100,900], y=[100,200]
+    //    Lobby (vertical):      x=[400,500], y=[200,500]
+    //    Lobby wall element connects corridor to lobby
+    //
+    //    +-------------------------------------------+
+    //    |              Corridor                      |
+    //    +-----+---+-----------------------------+---+
+    //          |   |
+    //          | L |
+    //          | o |
+    //          | b |
+    //          | b |
+    //          | y |
+    //          +---+
+
+    const corridorWall = {
+        type: 'polyline', comments: 'obstruction', id: 'obs1',
+        points: [
+            { x: 100, y: 100 }, { x: 900, y: 100 },
+            { x: 900, y: 200 }, { x: 500, y: 200 },
+        ]
+    }
+    const lobbyWall = {
+        type: 'polyline', comments: 'obstruction', id: 'obs2',
+        points: [
+            { x: 500, y: 200 }, { x: 500, y: 500 },
+            { x: 400, y: 500 }, { x: 400, y: 200 },
+        ]
+    }
+    const corridorWall2 = {
+        type: 'polyline', comments: 'obstruction', id: 'obs3',
+        points: [
+            { x: 400, y: 200 }, { x: 100, y: 200 },
+            { x: 100, y: 100 },
+        ]
+    }
+    const corridorDoors = [
+        { type: 'polyline', comments: 'door', id: 'door1', points: [{ x: 200, y: 100 }, { x: 250, y: 100 }] },
+        { type: 'polyline', comments: 'door', id: 'door2', points: [{ x: 800, y: 100 }, { x: 850, y: 100 }] },
+        { type: 'polyline', comments: 'door', id: 'door3', points: [{ x: 450, y: 200 }, { x: 450, y: 200 }] },
+    ]
+    const doorRoles = { door1: 'stair', door2: 'apartment', door3: 'lobby' }
+    const allElements = [corridorWall, lobbyWall, corridorWall2, ...corridorDoors]
+
+    it('findEnclosedRegions detects corridor and lobby regions', () => {
+        const regions = findEnclosedRegions(allElements)
+        // Should find at least 1 region (may merge corridor+lobby into one L-shape
+        // or find them as separate regions depending on wall connectivity)
+        expect(regions.length).toBeGreaterThanOrEqual(1)
+        // Total area should cover corridor (800*100) + lobby (100*300) = 110000 px²
+        const totalArea = regions.reduce((sum, r) => sum + r.area, 0)
+        expect(totalArea).toBeGreaterThan(50000)
+    })
+
+    it('enclosed region vertices are in winding order', () => {
+        const regions = findEnclosedRegions(allElements)
+        for (const region of regions) {
+            // Every consecutive pair of vertices must share x or y (orthogonal edges)
+            for (let i = 0; i < region.points.length; i++) {
+                const a = region.points[i]
+                const b = region.points[(i + 1) % region.points.length]
+                const sharedX = Math.abs(a.x - b.x) < 6
+                const sharedY = Math.abs(a.y - b.y) < 6
+                expect(sharedX || sharedY).toBe(true)
+            }
+        }
+    })
+
+    it('sensors from enclosed regions stay within polygon bounds', () => {
+        const regions = findEnclosedRegions(allElements)
+        expect(regions.length).toBeGreaterThanOrEqual(1)
+
+        const pxPerMesh = 10
+        for (const region of regions) {
+            const sensors = computeCenterlinePoints(
+                region.points, corridorDoors, doorRoles, pxPerMesh
+            )
+            const polyX = region.points.map(p => p.x)
+            const polyY = region.points.map(p => p.y)
+            const xMin = Math.min(...polyX)
+            const xMax = Math.max(...polyX)
+            const yMin = Math.min(...polyY)
+            const yMax = Math.max(...polyY)
+
+            // All sensors must be within the bounding box of their region
+            for (const s of sensors) {
+                expect(s.x).toBeGreaterThanOrEqual(xMin - 1)
+                expect(s.x).toBeLessThanOrEqual(xMax + 1)
+                expect(s.y).toBeGreaterThanOrEqual(yMin - 1)
+                expect(s.y).toBeLessThanOrEqual(yMax + 1)
+            }
+        }
+    })
+
+    it('sensors follow centrelines, not grid fill', () => {
+        const regions = findEnclosedRegions(allElements)
+        const pxPerMesh = 10
+
+        for (const region of regions) {
+            const sensors = computeCenterlinePoints(
+                region.points, corridorDoors, doorRoles, pxPerMesh
+            )
+            if (sensors.length === 0) continue
+
+            const polyX = region.points.map(p => p.x)
+            const polyY = region.points.map(p => p.y)
+            const xRange = Math.max(...polyX) - Math.min(...polyX)
+            const yRange = Math.max(...polyY) - Math.min(...polyY)
+
+            // For a narrow corridor/lobby, sensors should cluster near the
+            // midline of the narrow dimension, not spread across the full width.
+            // Count unique positions on the narrow axis — should be << width
+            const narrowAxis = xRange < yRange ? 'x' : 'y'
+            const uniqueNarrow = new Set(sensors.map(s => s[narrowAxis]))
+            const narrowDim = Math.min(xRange, yRange)
+            // Sensor positions on narrow axis should be much fewer than the
+            // number of sensor positions on the long axis (centreline pattern)
+            const uniqueLong = new Set(sensors.map(s => s[narrowAxis === 'x' ? 'y' : 'x']))
+            expect(uniqueNarrow.size).toBeLessThan(uniqueLong.size)
+        }
+    })
+})
+
 
 describe('findCorridorObstruction', () => {
     it('picks the obstruction closest to both corridor doors', () => {

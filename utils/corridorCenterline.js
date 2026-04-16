@@ -11,12 +11,9 @@
 export function sortVerticesIntoWindingOrder(points, tol = 0.5) {
     if (points.length <= 3) return points
 
-    // Deduplicate closing vertex (first == last), but keep at least 5 points
-    // so the Monte Carlo path is used (the 4-point slicing path creates thin
-    // sub-rects that confuse centerline direction).
     let pts = points
     const first = points[0], last = points[points.length - 1]
-    if (points.length > 5 && Math.abs(first.x - last.x) < tol && Math.abs(first.y - last.y) < tol) {
+    if (Math.abs(first.x - last.x) < tol && Math.abs(first.y - last.y) < tol) {
         pts = points.slice(0, -1)
     }
     if (pts.length <= 3) return pts
@@ -328,32 +325,15 @@ export function getBestRectangles(points) {
     const rawXs = points.map(p => p.x)
     const rawYs = points.map(p => p.y)
 
-    // Simple 4-point rectangle: slice into 1m segments
+    // Perfect rectangle: a single rect whose centerline runs along the long axis.
+    // The old EXE path sliced into 1m strips which then produced a sensor grid
+    // rather than one centerline — we just want the centerline.
     if (rawXs.length === 4) {
         const xMin = Math.min(...rawXs)
         const xMax = Math.max(...rawXs)
         const yMin = Math.min(...rawYs)
         const yMax = Math.max(...rawYs)
-        const deltaX = xMax - xMin
-        const deltaY = yMax - yMin
-        const rectangles = []
-
-        if (deltaX > deltaY) {
-            const numSegments = Math.floor(deltaX)
-            for (let i = 0; i < numSegments; i++) {
-                const startX = xMin + i
-                const endX = Math.min(startX + 1, xMax)
-                rectangles.push(startX, endX, yMin, yMax)
-            }
-        } else {
-            const numSegments = Math.floor(deltaY)
-            for (let i = 0; i < numSegments; i++) {
-                const startY = yMin + i
-                const endY = Math.min(startY + 1, yMax)
-                rectangles.push(xMin, xMax, startY, endY)
-            }
-        }
-        return rectangles
+        return [xMin, xMax, yMin, yMax]
     }
 
     // Round coordinates to 1 decimal place so Counter-style matching works
