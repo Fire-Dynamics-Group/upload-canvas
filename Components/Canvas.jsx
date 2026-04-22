@@ -437,6 +437,23 @@ function Canvas({dimensions, isDevMode}) {
                     const finalY = hasYSnap ? snapped.y : (Math.round(raw.y / pixelsPerMesh)) * pixelsPerMesh
                     setGuideLine({ x: finalX, y: finalY })
                     setSnapGuides(guides)
+                } else if (tool === 'rect' && currentRect.length === 1) {
+                    // Live alignment guide for non-mesh rect drag (stair landings, stair
+                    // obstructions, sensor boxes). Mirrors polyline hover — full waterfall.
+                    const raw = { x: event.pageX, y: event.pageY }
+                    if (isShiftPressed || currentMode === 'radiation') {
+                        setGuideLine(raw)
+                        setSnapGuides([])
+                    } else {
+                        const coords = collectPointAlignmentCoordinates(elements, null, currentRect)
+                        const { snapped, guides } = snapToPointAlignment(raw, coords, MESH_SNAP_THRESHOLD)
+                        const hasXSnap = guides.some(g => g.type === 'vertical')
+                        const hasYSnap = guides.some(g => g.type === 'horizontal')
+                        const finalX = hasXSnap ? snapped.x : (Math.round(raw.x / pixelsPerMesh)) * pixelsPerMesh
+                        const finalY = hasYSnap ? snapped.y : (Math.round(raw.y / pixelsPerMesh)) * pixelsPerMesh
+                        setGuideLine({ x: finalX, y: finalY })
+                        setSnapGuides(guides)
+                    }
                 } else if (isPolylineHover) {
                     // Live alignment guide preview for polyline draw (walls, doors, etc.)
                     const raw = { x: event.pageX, y: event.pageY }
