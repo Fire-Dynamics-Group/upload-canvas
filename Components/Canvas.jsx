@@ -1761,7 +1761,7 @@ function Canvas({dimensions, isDevMode}) {
     </>
     }
     
-      <canvas 
+      <canvas
       ref={canvasRef}
       width={canvasWidth} // pass in width and height as props
       height={canvasHeight}
@@ -1770,6 +1770,64 @@ function Canvas({dimensions, isDevMode}) {
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       />
+      {candidateCycleState && candidateCycleState.candidates.length > 1 && (
+        <div
+          data-testid="selection-chip-list"
+          style={{
+            position: 'fixed',
+            left:
+              candidateCycleState.anchor.x -
+              (typeof window !== 'undefined' ? window.scrollX : 0) +
+              20,
+            top:
+              candidateCycleState.anchor.y -
+              (typeof window !== 'undefined' ? window.scrollY : 0) +
+              20,
+            zIndex: 20,
+            display: 'flex',
+            gap: 4,
+            padding: 4,
+            background: 'white',
+            border: '1px solid #ccc',
+            borderRadius: 4,
+            boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+            fontSize: 12,
+          }}
+        >
+          {candidateCycleState.candidates.map((c, i) => {
+            const raw = c.element.comments || c.element.type || 'Element'
+            const label = raw.charAt(0).toUpperCase() + raw.slice(1)
+            const active = i === candidateCycleState.index
+            return (
+              <button
+                key={c.element.id}
+                data-testid={`selection-chip-${i}`}
+                onClick={() => {
+                  setSelectedElement({
+                    element: c.element,
+                    pointerDown: c.pointerDown,
+                  })
+                  setCandidateCycleState({
+                    ...candidateCycleState,
+                    index: i,
+                  })
+                }}
+                style={{
+                  padding: '2px 8px',
+                  background: active ? '#ff6600' : '#f5f5f5',
+                  color: active ? 'white' : 'black',
+                  border: '1px solid #ccc',
+                  borderRadius: 3,
+                  cursor: 'pointer',
+                  font: 'inherit',
+                }}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+      )}
   </>
   )
 }
