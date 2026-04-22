@@ -487,6 +487,12 @@ function Canvas({dimensions, isDevMode}) {
                     setSnapGuides(guides)
                     setGuideLine(null)
                 }
+            } else if (tool === 'scale') {
+                // Full-canvas crosshair follows the cursor from the moment the tool
+                // is picked, so the user can align clicks to distant features.
+                // Bluebeam / AutoCAD convention.
+                setGuideLine({ x: event.pageX, y: event.pageY })
+                setSnapGuides([])
             } else {
                 setGuideLine(null)
                 setSnapGuides([])
@@ -1310,6 +1316,56 @@ function Canvas({dimensions, isDevMode}) {
                     context.lineTo(canvas.width, guide.y)
                 }
                 context.stroke()
+            }
+            context.restore()
+        }
+
+        // Scale-tool crosshair: full-canvas horizontal + vertical lines through
+        // the cursor + live px distance from the first click. Bluebeam/AutoCAD
+        // convention for precise calibration pointing.
+        if (tool === 'scale' && guideLine) {
+            context.save()
+            context.setLineDash([6, 4])
+            context.strokeStyle = 'rgba(0, 150, 200, 0.6)'
+            context.lineWidth = 1
+            context.beginPath()
+            context.moveTo(guideLine.x, 0)
+            context.lineTo(guideLine.x, canvas.height)
+            context.moveTo(0, guideLine.y)
+            context.lineTo(canvas.width, guideLine.y)
+            context.stroke()
+            context.setLineDash([])
+
+            if (scalePoints.length === 1) {
+                const p0 = scalePoints[0]
+                const dx = guideLine.x - p0.x
+                const dy = guideLine.y - p0.y
+                const dist = Math.sqrt(dx * dx + dy * dy)
+                const label = `${dist.toFixed(0)} px`
+                context.font = '12px sans-serif'
+                const metrics = context.measureText(label)
+                const padX = 6, padY = 4
+                const boxW = metrics.width + padX * 2
+                const boxH = 18
+                const boxX = guideLine.x + 14
+                const boxY = guideLine.y + 14
+                context.fillStyle = 'rgba(255, 255, 255, 0.95)'
+                context.strokeStyle = 'rgba(0, 150, 200, 0.8)'
+                context.lineWidth = 1
+                context.fillRect(boxX, boxY, boxW, boxH)
+                context.strokeRect(boxX, boxY, boxW, boxH)
+                context.fillStyle = '#222'
+                context.fillText(label, boxX + padX, boxY + padY + 10)
+
+                // Dashed line from first click to cursor so the user sees the
+                // measured segment as a live preview.
+                context.setLineDash([4, 4])
+                context.strokeStyle = 'rgba(0, 150, 200, 0.8)'
+                context.beginPath()
+                context.moveTo(p0.x, p0.y)
+                context.lineTo(guideLine.x, guideLine.y)
+                context.stroke()
+                context.setLineDash([])
             }
             context.restore()
         }
