@@ -52,8 +52,39 @@ When a 0.1m mesh abuts a 0.2m mesh, the interface coordinate must be on a 0.2m m
 
 ### Frontend (Canvas.jsx)
 
-- **Snap-to-mesh-edge**: When drawing a new mesh near an existing one, the edge snaps to the existing mesh's edge within a 15px threshold. Magenta guide lines show when snapping is active.
-- **Grid snap fallback**: If no mesh edge is nearby, vertices snap to the pixelsPerMesh grid (0.1m equivalent).
+#### Mesh-to-mesh alignment (isolated)
+
+- **Meshes align only to other meshes. Full stop.** Mesh rect drawing uses `snapVertexWithMeshPriority` → `snapToMeshEdges` → `collectMeshEdgeCoordinates`. The candidate source is strictly `isMesh(el)` elements. Walls, stair landings, sensors, and other non-mesh elements are invisible to mesh-drawing snap.
+- **Why the isolation matters.** Mesh alignment is tied to the integer cell-ratio and cell-size-multiple rules above — it has to be tight and deterministic. Letting meshes snap to arbitrary element edges would pull them off cell boundaries and produce invalid `align_meshes()` input. This is a deliberate hard rule, not a convenience default.
+- **Threshold and visual.** 15 px screen threshold, magenta dashed full-canvas guide line.
+- **Grid fallback.** If no mesh edge is within threshold on an axis, that axis falls back to `pixelsPerMesh` grid (0.1 m equivalent).
+
+#### Everything-else alignment (waterfall)
+
+Applied to polylines (walls, doors, inlets, extracts), single points (sensors, devices), and **non-mesh rects** (stair landings, stair obstructions, sensor boxes). Implemented via `snapVertexWithPointPriority` → `collectPointAlignmentCoordinates`.
+
+Waterfall in priority order:
+
+1. **Point snap** — nearest existing vertex within threshold wins. Sources: every polyline vertex, every point element, every rect's 4 corners (mesh AND non-mesh), and the in-progress drawing points (`currentPoly` / `currentRect[0]`) so the next click aligns to the previous one of the same element.
+2. **Alignment extension** — if no point wins on an axis, the nearest X/Y coordinate from the candidate set snaps the cursor on that axis independently (H and Y handled separately so a cursor can snap to point A's X and point B's Y simultaneously).
+3. **Grid fallback** — any axis not snapped above quantizes to the `pixelsPerMesh` grid.
+
+User overrides:
+
+- **Shift held** during the action suppresses the alignment layer entirely: goes straight to grid snap. Use this to place a point near an existing edge without magnetising to it.
+- The waterfall does not require flushness — if the cursor is outside the 15 px threshold from any candidate, the element lands on the nearest grid cell. Users can therefore draw near but not on existing elements without fighting the snap.
+
+#### Summary: which source sees what
+
+| Drawing tool / element | Sees mesh edges? | Sees walls / points / non-mesh rects? | Sees in-progress points? | Grid fallback? | Shift override? |
+|---|---|---|---|---|---|
+| Mesh rect | ✓ | ✗ (deliberately isolated) | ✗ | ✓ | (not wired — mesh path is minimal) |
+| Wall polyline | ✓ (mesh corners) | ✓ | ✓ (`currentPoly`) | ✓ | ✓ |
+| Door / inlet / extract (2-point polyline) | ✓ | ✓ | ✓ (`currentPoly`) | ✓ | ✓ |
+| Single point (sensor, device) | ✓ | ✓ | — | ✓ | ✓ |
+| Non-mesh rect (stair landing, stair obstruction, sensor box) | ✓ | ✓ | ✓ (`currentRect[0]`) | ✓ | ✓ |
+
+The only row with an asymmetric "✗" is mesh drawing. All other rows use the same waterfall; they differ only in whether an in-progress-points state exists and what it's called.
 
 ### Backend (fds.py)
 
