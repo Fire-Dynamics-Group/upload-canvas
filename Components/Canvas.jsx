@@ -68,13 +68,14 @@ function _getRectCornersModule(rectPoints) {
 
 /**
  * Collect X/Y coordinates from existing elements + in-progress vertices that
- * can act as alignment candidates for the point/polyline tools.
+ * can act as alignment candidates for the point/polyline/rect tools.
  *
  * Candidate sources:
  *   - polyline vertices (walls, doors, inlets, extracts, openings, etc.)
  *   - single-point elements (sensors, devices)
- *   - all 4 corners of mesh rectangles
- *   - in-progress vertices (currentPoly during polyline draw)
+ *   - all 4 corners of rectangles (mesh AND non-mesh: stair landings,
+ *     stair obstructions, sensor boxes, etc.)
+ *   - in-progress vertices (currentPoly / currentRect during drawing)
  *
  * `excludeId` filters out the element currently being drawn (if already
  * committed, which normally it's not, but kept as symmetric with mesh snap).
@@ -94,7 +95,12 @@ export function collectPointAlignmentCoordinates(elements, excludeId = null, inP
                 xCoords.push(p.x)
                 yCoords.push(p.y)
             }
-        } else if (el.type === 'rect' && _isMeshEl(el)) {
+        } else if (el.type === 'rect') {
+            // All rects contribute 4 corners — mesh rects AND non-mesh rects
+            // (stair landings, stair obstructions, sensor boxes, etc.) so the
+            // waterfall alignment can guide toward them. Mesh-exclusive edge
+            // snapping is handled separately by snapToMeshEdges.
+            if (!el.points || el.points.length < 2) continue
             const corners = _getRectCornersModule(el.points)
             for (const c of corners) {
                 xCoords.push(c.x)
