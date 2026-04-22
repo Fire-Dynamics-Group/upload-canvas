@@ -818,6 +818,14 @@ function Canvas({dimensions, isDevMode}) {
             // draw intermediate for selected shape
             // let selectedType = selectedElement["element"]["type"]
 
+            // Bolder selection stroke: save the context, force contrasting
+            // selection-orange stroke + fat width, redraw the element, then
+            // restore so the rest of the scene renders as usual.
+            context.save()
+            context.strokeStyle = '#ff6600'
+            context.fillStyle = '#ff6600'
+            context.lineWidth = 3
+
             // need to setComment when selection
             if (selectedType === 'polyline') {
                 drawPolyAndGuide(selectedPoints, comment, context)
@@ -829,11 +837,63 @@ function Canvas({dimensions, isDevMode}) {
 
                 drawRectAndGuide(selectedPoints, context, comment)
 
-                
+
         //     if (selectedElement["element"]["type"] === 'polyline') {
         //         drawPolyAndGuide(currentPoly, comment)
         //     // later have contrasting colour
         }
+            context.restore()
+
+            // Floating label near the click anchor so the user can read what
+            // the Escape key will delete. Title-cases the comment (or falls
+            // back to the element type) and appends a "(1 of N)" suffix when
+            // multiple candidates are stacked under the cursor.
+            const anchor = selectedElement["pointerDown"]
+            if (anchor && typeof anchor.x === 'number') {
+                const rawLabel =
+                    selectedElement["element"]["comments"] ||
+                    selectedElement["element"]["type"] ||
+                    'Element'
+                const titleCased =
+                    rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1)
+                let suffix = ''
+                if (
+                    candidateCycleState &&
+                    candidateCycleState.candidates &&
+                    candidateCycleState.candidates.length > 1
+                ) {
+                    suffix = ` (${candidateCycleState.index + 1} of ${candidateCycleState.candidates.length})`
+                }
+                const labelText = titleCased + suffix
+
+                context.save()
+                context.font = '12px sans-serif'
+                const textMetrics = context.measureText(labelText)
+                const padX = 8
+                const padY = 4
+                const boxW = textMetrics.width + padX * 2
+                const boxH = 12 + padY * 2
+                const boxX = anchor.x + 14
+                const boxY = anchor.y - 14 - boxH
+                // White background with dark border
+                context.fillStyle = 'white'
+                context.strokeStyle = '#333'
+                context.lineWidth = 1
+                if (typeof context.roundRect === 'function') {
+                    context.beginPath()
+                    context.roundRect(boxX, boxY, boxW, boxH, 4)
+                    context.fill()
+                    context.stroke()
+                } else {
+                    context.fillRect(boxX, boxY, boxW, boxH)
+                    context.strokeRect(boxX, boxY, boxW, boxH)
+                }
+                // Dark label text
+                context.fillStyle = '#222'
+                context.textBaseline = 'top'
+                context.fillText(labelText, boxX + padX, boxY + padY)
+                context.restore()
+            }
     }
 
         // loop through current polypoints
@@ -1231,7 +1291,7 @@ function Canvas({dimensions, isDevMode}) {
             context.restore()
         }
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, debugRects, snapGuides])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, debugRects, snapGuides, candidateCycleState])
 
     // Generate thumbnail by compositing PDF + drawing canvases
     const thumbnailTimerRef = useRef(null)
