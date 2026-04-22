@@ -45,7 +45,9 @@ async function bootstrap(page: import('@playwright/test').Page) {
 }
 
 function getCanvasBox(page: import('@playwright/test').Page) {
-    return page.locator('canvas').last().boundingBox()
+    // The drawing canvas (z-10) is the first <canvas> in DOM; the PDF canvas (z-1) is the last.
+    // Clicks land on the drawing canvas, so measure from it.
+    return page.locator('canvas').first().boundingBox()
 }
 
 async function setTool(page: import('@playwright/test').Page, tool: string, comment: string) {
