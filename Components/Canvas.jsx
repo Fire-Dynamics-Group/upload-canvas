@@ -112,6 +112,85 @@ export function collectPointAlignmentCoordinates(elements, excludeId = null, inP
 }
 
 /**
+ * Collect all elements whose closest vertex to `pointer` is within `threshold`
+ * pixels. Returns a sorted list of candidates — nearest first, with bbox
+ * diagonal as the tie-breaker so smaller (more specific) elements outrank
+ * larger ones at the same cursor distance.
+ *
+ * Returned shape per candidate:
+ *   {
+ *     element: <the element itself, reference-equal to input>,
+ *     pointerDown: {x, y}  // the closest vertex on the element to the cursor
+ *     distance: number,    // px distance from cursor to that vertex
+ *     bboxDiagonal: number // px length of the element's axis-aligned bbox diag
+ *   }
+ *
+ * For mesh rects (`type === 'rect'` and comment contains 'mesh') the bbox is
+ * computed from all four expanded corners, not the raw two-point diagonal.
+ *
+ * Sort key: (distance ascending, bboxDiagonal ascending). Stable Array#sort in
+ * modern JS means equal-keyed entries keep their input order — so repeated
+ * calls with the same inputs return an identical list (cycling needs this).
+ */
+export function collectSelectionCandidates(pointer, elements, threshold = 40) {
+    const candidates = []
+    for (const el of elements || []) {
+        if (!el || !el.points || el.points.length === 0) continue
+        const comments = (el.comments || '').toLowerCase()
+        const isMeshRect = el.type === 'rect' && comments.includes('mesh')
+
+        // Build the set of vertices to hit-test against for this element.
+        const vertices = isMeshRect
+            ? _getRectCornersModule(el.points)
+            : el.points
+
+        // Find this element's closest vertex to the pointer.
+        let bestVertex = null
+        let bestDistance = Infinity
+        for (const v of vertices) {
+            const dx = pointer.x - v.x
+            const dy = pointer.y - v.y
+            const d = Math.sqrt(dx * dx + dy * dy)
+            if (d < bestDistance) {
+                bestDistance = d
+                bestVertex = v
+            }
+        }
+
+        if (bestVertex === null || bestDistance > threshold) continue
+
+        // Compute bbox diagonal from the full set of vertices (expanded for
+        // mesh rects). For a mesh this gives the true rect diagonal rather
+        // than whatever diagonal the two stored points happen to describe.
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+        for (const v of vertices) {
+            if (v.x < minX) minX = v.x
+            if (v.y < minY) minY = v.y
+            if (v.x > maxX) maxX = v.x
+            if (v.y > maxY) maxY = v.y
+        }
+        const bboxDiagonal = Math.sqrt(
+            (maxX - minX) * (maxX - minX) + (maxY - minY) * (maxY - minY)
+        )
+
+        candidates.push({
+            element: el,
+            pointerDown: bestVertex,
+            distance: bestDistance,
+            bboxDiagonal,
+        })
+    }
+
+    // Primary sort: distance. Secondary: bbox diagonal. Both ascending.
+    candidates.sort((a, b) => {
+        if (a.distance !== b.distance) return a.distance - b.distance
+        return a.bboxDiagonal - b.bboxDiagonal
+    })
+
+    return candidates
+}
+
+/**
  * Mirror of snapToMeshEdges: picks nearest candidate per-axis within
  * threshold, emits vertical/horizontal guides of the same shape the
  * canvas render block already understands.
