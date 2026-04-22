@@ -825,7 +825,7 @@ const FDSInputsPopup = ({handleUserInput}) => {
                             // Use zone polygon for FSA pathfinding when available
                             const fsaPolyPx = sensorsEnabledZones.length > 0
                                 ? (sensorsEnabledZones[0] as any).points
-                                : corridor.points
+                                : (corridor as any).points
                             const corridorVerticesM = fsaPolyPx.map((p: any) => ({
                                 x: p.x / pxPerM,
                                 y: p.y / pxPerM,
