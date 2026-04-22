@@ -249,3 +249,41 @@ describe('integration: collect + snap together', () => {
         expect(result.guides).toEqual([])
     })
 })
+
+// When drawing a non-mesh rect, the 2nd corner should align to (a) any
+// existing element's X/Y and (b) the 1st corner already stored in
+// currentRect. This is exactly the same composition the rect draw call-
+// site uses at runtime.
+describe('non-mesh rect drawing: 2nd-corner alignment', () => {
+    it('2nd corner of a stair landing aligns to an existing rect X', () => {
+        const existing = makeStairLanding(1, { x: 200, y: 200 }, { x: 400, y: 300 })
+        const firstCorner = { x: 600, y: 500 }
+        const inProgress = [firstCorner]
+        const coords = collectPointAlignmentCoordinates([existing], null, inProgress)
+        // Cursor 4 px off existing X=400
+        const result = snapToPointAlignment({ x: 404, y: 800 }, coords, MESH_SNAP_THRESHOLD)
+        expect(result.snapped.x).toBe(400)
+        expect(result.guides).toContainEqual({ type: 'vertical', x: 400 })
+    })
+
+    it('2nd corner aligns to the 1st corner of the in-progress rect', () => {
+        const firstCorner = { x: 600, y: 500 }
+        const inProgress = [firstCorner]
+        const coords = collectPointAlignmentCoordinates([], null, inProgress)
+        // Cursor 5 px off the first corner's Y
+        const result = snapToPointAlignment({ x: 900, y: 505 }, coords, MESH_SNAP_THRESHOLD)
+        expect(result.snapped.y).toBe(500)
+        expect(result.guides).toContainEqual({ type: 'horizontal', y: 500 })
+    })
+
+    it('alignment over an existing wall polyline still works from the rect draw path', () => {
+        const wall = makeWall(1, [{ x: 150, y: 100 }, { x: 150, y: 400 }])
+        const firstCorner = { x: 600, y: 500 }
+        const inProgress = [firstCorner]
+        const coords = collectPointAlignmentCoordinates([wall], null, inProgress)
+        // Cursor 3 px off wall X=150
+        const result = snapToPointAlignment({ x: 153, y: 700 }, coords, MESH_SNAP_THRESHOLD)
+        expect(result.snapped.x).toBe(150)
+        expect(result.guides).toContainEqual({ type: 'vertical', x: 150 })
+    })
+})

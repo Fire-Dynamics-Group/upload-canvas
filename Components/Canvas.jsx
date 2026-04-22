@@ -1566,7 +1566,13 @@ function Canvas({dimensions, isDevMode}) {
             let newP = {x: event.pageX, y: event.pageY}
             const isMeshRect = comment && comment.toLowerCase().includes('mesh')
             if (currentRect.length == 0) {
-                newP = isMeshRect ? snapVertexWithMeshPriority(newP) : snapVertexToGrid(newP)
+                // Mesh rects keep their mesh-only edge priority (byte-identical).
+                // Non-mesh rects go through the full waterfall: point/vertex
+                // alignment -> in-progress alignment -> grid fallback,
+                // with shift suppressing alignment (grid-only).
+                newP = isMeshRect
+                    ? snapVertexWithMeshPriority(newP)
+                    : snapVertexWithPointPriority(newP, null, currentRect, isShiftPressed)
 
                 // on first point
                     // add first point to state
@@ -1575,8 +1581,11 @@ function Canvas({dimensions, isDevMode}) {
             } else if (currentRect.length > 0){
             // on second point
             // newP = snapVertexOrtho(newP, currentRect[0])
-                // snap to grid
-                newP = isMeshRect ? snapVertexWithMeshPriority(newP) : snapVertexToGrid(newP)
+                // Same waterfall for the 2nd corner of a non-mesh rect;
+                // currentRect carries the 1st corner so the 2nd snaps to it.
+                newP = isMeshRect
+                    ? snapVertexWithMeshPriority(newP)
+                    : snapVertexWithPointPriority(newP, null, currentRect, isShiftPressed)
 
                 let pointsArray = [currentRect[0], newP]
                 // add to elements state
