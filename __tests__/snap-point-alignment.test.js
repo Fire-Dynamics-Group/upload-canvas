@@ -35,6 +35,20 @@ const makeMesh = (id, tl, br) => ({
     points: [tl, br],
 })
 
+const makeStairLanding = (id, tl, br) => ({
+    id,
+    type: 'rect',
+    comments: 'stair landing',
+    points: [tl, br],
+})
+
+const makeSensorBox = (id, tl, br) => ({
+    id,
+    type: 'rect',
+    comments: 'fsaSensor',
+    points: [tl, br],
+})
+
 describe('collectPointAlignmentCoordinates', () => {
     it('collects wall polyline vertex x/y', () => {
         const wall = makeWall(1, [{ x: 100, y: 200 }, { x: 300, y: 400 }])
@@ -60,6 +74,31 @@ describe('collectPointAlignmentCoordinates', () => {
     it('collects all four mesh corner x/y', () => {
         const mesh = makeMesh(1, { x: 100, y: 100 }, { x: 300, y: 200 })
         const { xCoords, yCoords } = collectPointAlignmentCoordinates([mesh])
+        expect(xCoords.sort((a, b) => a - b)).toEqual([100, 100, 300, 300])
+        expect(yCoords.sort((a, b) => a - b)).toEqual([100, 100, 200, 200])
+    })
+
+    it('collects all four corners of a non-mesh rect (stair landing)', () => {
+        const landing = makeStairLanding(1, { x: 100, y: 100 }, { x: 300, y: 200 })
+        const { xCoords, yCoords } = collectPointAlignmentCoordinates([landing])
+        expect(xCoords.sort((a, b) => a - b)).toEqual([100, 100, 300, 300])
+        expect(yCoords.sort((a, b) => a - b)).toEqual([100, 100, 200, 200])
+    })
+
+    it('collects 4 corners from both a mesh rect and a stair landing (8 total)', () => {
+        const mesh = makeMesh(1, { x: 0, y: 0 }, { x: 50, y: 40 })
+        const landing = makeStairLanding(2, { x: 100, y: 100 }, { x: 300, y: 200 })
+        const { xCoords, yCoords } = collectPointAlignmentCoordinates([mesh, landing])
+        expect(xCoords.length).toBe(8)
+        expect(yCoords.length).toBe(8)
+        expect(xCoords.sort((a, b) => a - b)).toEqual([0, 0, 50, 50, 100, 100, 300, 300])
+        expect(yCoords.sort((a, b) => a - b)).toEqual([0, 0, 40, 40, 100, 100, 200, 200])
+    })
+
+    it('collects 4 corners from a non-mesh rect stored with out-of-order points', () => {
+        // User drags from bottom-right (300,200) to top-left (100,100)
+        const landing = makeStairLanding(1, { x: 300, y: 200 }, { x: 100, y: 100 })
+        const { xCoords, yCoords } = collectPointAlignmentCoordinates([landing])
         expect(xCoords.sort((a, b) => a - b)).toEqual([100, 100, 300, 300])
         expect(yCoords.sort((a, b) => a - b)).toEqual([100, 100, 200, 200])
     })
@@ -164,6 +203,25 @@ describe('integration: collect + snap together', () => {
         // cursor near bottom-right corner (300, 200)
         const result = snapToPointAlignment({ x: 304, y: 203 }, coords, MESH_SNAP_THRESHOLD)
         expect(result.snapped).toEqual({ x: 300, y: 200 })
+    })
+
+    it('polyline vertex snaps to a stair landing corner (X) while drawing a wall', () => {
+        // Stair landing at (100,100)-(300,200) is already placed.
+        const landing = makeStairLanding(1, { x: 100, y: 100 }, { x: 300, y: 200 })
+        const coords = collectPointAlignmentCoordinates([landing])
+        // Wall cursor is 5 px off the landing's right edge X=300.
+        const result = snapToPointAlignment({ x: 305, y: 800 }, coords, MESH_SNAP_THRESHOLD)
+        expect(result.snapped.x).toBe(300)
+        expect(result.guides).toContainEqual({ type: 'vertical', x: 300 })
+    })
+
+    it('sensor box corners contribute as candidates', () => {
+        const sensorBox = makeSensorBox(1, { x: 400, y: 400 }, { x: 500, y: 460 })
+        const coords = collectPointAlignmentCoordinates([sensorBox])
+        // Cursor 3 px off the top-left Y=400
+        const result = snapToPointAlignment({ x: 800, y: 403 }, coords, MESH_SNAP_THRESHOLD)
+        expect(result.snapped.y).toBe(400)
+        expect(result.guides).toContainEqual({ type: 'horizontal', y: 400 })
     })
 
     it('point element contributes a candidate', () => {
