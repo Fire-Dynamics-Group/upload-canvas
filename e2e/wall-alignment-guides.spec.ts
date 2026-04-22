@@ -16,8 +16,9 @@ async function bootstrap(page: import('@playwright/test').Page) {
         await page.waitForTimeout(1000)
     }
 
-    const projectCard = page.locator(`button:has-text("${PROJECT_NAME}")`)
-    await projectCard.waitFor({ timeout: 20000 })
+    const projectCard = page.getByRole('heading', { name: PROJECT_NAME, exact: true })
+    await projectCard.waitFor({ state: 'attached', timeout: 60000 })
+    await projectCard.scrollIntoViewIfNeeded()
     await projectCard.click()
 
     // Wait for canvas to be ready
