@@ -36,6 +36,115 @@ const elementConfig = {
     "fsaSensor": "#ff9900"
 }
 
+// --- module-level pure helpers for point-alignment snap (testable from tests) ---
+// These are additive siblings of the mesh-snap helpers inside the component.
+// Do not merge with the mesh-snap path — that's a hard constraint.
+
+function _isMeshEl(el) {
+    return !!(el && el.comments && el.comments.toLowerCase().includes('mesh'))
+}
+
+function _getRectCornersModule(rectPoints) {
+    const p1 = rectPoints[0]
+    const p3 = rectPoints[1]
+    const p2 = { x: p1.x, y: p3.y }
+    const p4 = { x: p3.x, y: p1.y }
+    let topLeft, bottomLeft, bottomRight, topRight
+    if (p1.x > p3.x) {
+        if (p1.y > p3.y) {
+            topLeft = p1; bottomRight = p3; topRight = p4; bottomLeft = p2
+        } else {
+            topLeft = p2; bottomRight = p4; topRight = p3; bottomLeft = p1
+        }
+    } else {
+        if (p1.y > p3.y) {
+            topLeft = p4; bottomRight = p2; topRight = p1; bottomLeft = p3
+        } else {
+            topLeft = p3; bottomRight = p1; topRight = p2; bottomLeft = p4
+        }
+    }
+    return [topLeft, bottomLeft, bottomRight, topRight]
+}
+
+/**
+ * Collect X/Y coordinates from existing elements + in-progress vertices that
+ * can act as alignment candidates for the point/polyline tools.
+ *
+ * Candidate sources:
+ *   - polyline vertices (walls, doors, inlets, extracts, openings, etc.)
+ *   - single-point elements (sensors, devices)
+ *   - all 4 corners of mesh rectangles
+ *   - in-progress vertices (currentPoly during polyline draw)
+ *
+ * `excludeId` filters out the element currently being drawn (if already
+ * committed, which normally it's not, but kept as symmetric with mesh snap).
+ */
+export function collectPointAlignmentCoordinates(elements, excludeId = null, inProgressPoints = []) {
+    const xCoords = []
+    const yCoords = []
+    for (const el of elements || []) {
+        if (excludeId !== null && el.id === excludeId) continue
+        if (el.type === 'polyline') {
+            for (const p of el.points || []) {
+                xCoords.push(p.x)
+                yCoords.push(p.y)
+            }
+        } else if (el.type === 'point') {
+            for (const p of el.points || []) {
+                xCoords.push(p.x)
+                yCoords.push(p.y)
+            }
+        } else if (el.type === 'rect' && _isMeshEl(el)) {
+            const corners = _getRectCornersModule(el.points)
+            for (const c of corners) {
+                xCoords.push(c.x)
+                yCoords.push(c.y)
+            }
+        }
+    }
+    for (const p of inProgressPoints || []) {
+        if (p && typeof p.x === 'number' && typeof p.y === 'number') {
+            xCoords.push(p.x)
+            yCoords.push(p.y)
+        }
+    }
+    return { xCoords, yCoords }
+}
+
+/**
+ * Mirror of snapToMeshEdges: picks nearest candidate per-axis within
+ * threshold, emits vertical/horizontal guides of the same shape the
+ * canvas render block already understands.
+ */
+export function snapToPointAlignment(vertex, coordsResult, threshold) {
+    const { xCoords, yCoords } = coordsResult
+    const guides = []
+    let snappedX = vertex.x
+    let snappedY = vertex.y
+    let bestDx = threshold + 1
+    let bestDy = threshold + 1
+
+    for (const x of xCoords) {
+        const dx = Math.abs(vertex.x - x)
+        if (dx < bestDx && dx <= threshold) {
+            bestDx = dx
+            snappedX = x
+        }
+    }
+    for (const y of yCoords) {
+        const dy = Math.abs(vertex.y - y)
+        if (dy < bestDy && dy <= threshold) {
+            bestDy = dy
+            snappedY = y
+        }
+    }
+
+    if (bestDx <= threshold) guides.push({ type: 'vertical', x: snappedX })
+    if (bestDy <= threshold) guides.push({ type: 'horizontal', y: snappedY })
+
+    return { snapped: { x: snappedX, y: snappedY }, guides }
+}
+
 // eslint-disable-next-line react/prop-types
 function Canvas({dimensions, isDevMode}) {
     // TODO: have currentElement array with {} including type etc like elements
@@ -488,6 +597,15 @@ function Canvas({dimensions, isDevMode}) {
             } else {
                 drawPolyline(poly, context, comment)
 
+                // Draw a larger circle on the first point when >= 3 points
+                // to indicate the close target
+                if (poly.length >= 3) {
+                    context.beginPath()
+                    context.arc(poly[0].x, poly[0].y, 6, 0, Math.PI * 2)
+                    context.fillStyle = '#00ff00'
+                    context.fill()
+                }
+
                 if (guideLine != null) {
                     // line from last polypoint to guideline
                     let prev = poly[poly.length-1]
@@ -497,7 +615,28 @@ function Canvas({dimensions, isDevMode}) {
                     }
                     context.moveTo(prev.x, prev.y)
                     context.lineTo(current.x, current.y)
-                    context.stroke()            
+                    context.stroke()
+
+                    // Snap-to-close indicator: when cursor is near the first
+                    // point with >= 3 points drawn, show a green circle and
+                    // dashed line to signal the polygon will close on click
+                    const CLOSE_SNAP_PX = 15
+                    if (poly.length >= 3 && calcDistance(current, poly[0]) < CLOSE_SNAP_PX) {
+                        // Highlight the start point with a snap circle
+                        context.beginPath()
+                        context.arc(poly[0].x, poly[0].y, 8, 0, Math.PI * 2)
+                        context.strokeStyle = '#00ff00'
+                        context.lineWidth = 2
+                        context.stroke()
+                        // Dashed line from last point to start
+                        context.beginPath()
+                        context.setLineDash([4, 4])
+                        context.moveTo(prev.x, prev.y)
+                        context.lineTo(poly[0].x, poly[0].y)
+                        context.strokeStyle = '#00ff00'
+                        context.stroke()
+                        context.setLineDash([])
+                    }
                 }
 
             }
@@ -1165,7 +1304,7 @@ function Canvas({dimensions, isDevMode}) {
                     }    
                 }
             } else {
-                setIsDrawing(true) 
+                setIsDrawing(true)
                 // draw vertex
                 let dimension = 10
                 context.fillStyle = 'green'
@@ -1175,10 +1314,22 @@ function Canvas({dimensions, isDevMode}) {
                     newP = snapVertexOrtho(newP, currentPoly[currentPoly.length-1])
                 }
                 newP = snapVertexToGrid(newP)
-                context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)  
-                // add point to currentPoly
-                setCurrentPoly((prev) => [...prev, newP])
-                // 
+
+                // Snap-to-close: if clicking near the first point with >= 3 points,
+                // close the polygon and finalize (like Figma/Bluebeam)
+                const CLOSE_SNAP_PX = 15
+                if (currentPoly.length >= 3 && calcDistance(newP, currentPoly[0]) < CLOSE_SNAP_PX) {
+                    // Close by adding first point, finalize the element
+                    const closedPoly = [...currentPoly, currentPoly[0]]
+                    let current_el = returnElementObject(tool, closedPoly, comment)
+                    addElement(current_el)
+                    setIsDrawing(false)
+                    setCurrentPoly([])
+                } else {
+                    context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)
+                    // add point to currentPoly
+                    setCurrentPoly((prev) => [...prev, newP])
+                }
             }
         } else if(tool === 'rect') {
             setIsDrawing(true)
