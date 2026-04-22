@@ -6,6 +6,8 @@ import FDSInputsPopup from './FDSInputsPopup.tsx'
 import TimeEquivalenceInputPopup from './TimeEquivalenceInputPopup'
 import {sendFdsData} from './ApiCalls'
 import { computeAutoSprinklerPositions } from '@/utils/autoSprinklers'
+import { computeCenterlinePoints, findCorridorObstruction, computeStairSensorPositions } from '@/utils/corridorCenterline'
+import { runFsaPathfinding } from '@/utils/fsaPathfinding'
 
 import { useState } from 'react';
 import ErrorPopup from './ErrorPopup';
@@ -55,6 +57,7 @@ const Toolbar = ({setShowModePopup}) => {
     const extractConfig = useStore((state) => state.extractConfig)
     const inletConfig = useStore((state) => state.inletConfig)
     const zoneConfig = useStore((state) => state.zoneConfig)
+    const setSensorTreeElements = useStore((state) => state.setSensorTreeElements)
     const sliceZHeight = useStore((state) => state.sliceZHeight)
     const obstructionTransparency = useStore((state) => state.obstructionTransparency)
     const fireHRR = useStore((state) => state.fireHRR)
@@ -140,8 +143,6 @@ const [errorList, setErrorList] = useState(defaultErrorList)
       function handleWalkingInput(userInput) {
         // use user input
         let doorOpeningDuration = (userInput.length > 1 ) ? userInput[1] : 11 
-        console.log("handleWalkingInput", userInput[0], convertedPoints, doorOpeningDuration)
-
         prepForRadiationTable(userInput[0], convertedPoints, doorOpeningDuration, totalHeatFlux, heatEndPoint)
         setShowWalkingPopup(false)
         // 
@@ -159,32 +160,93 @@ const [errorList, setErrorList] = useState(defaultErrorList)
         
       }
 
+      function handleRegenSensors() {
+        const obstructions = elements.filter(el => el.comments === 'obstruction')
+        const doorElements = elements.filter(el => el.comments && el.comments.includes('door'))
+        const landingElements = elements.filter(el => el.comments === 'landing')
+        const stairObstructions = elements.filter(el => el.comments === 'stairObstruction')
+        const corridor = findCorridorObstruction(obstructions, doorElements, doorRoles)
+
+        if (corridor) {
+            let sensorPoints = []
+            const sensorsEnabledZones = Object.values(zoneConfig).filter(
+                (z) => z.sensors !== false && z.points && z.points.length >= 3
+            )
+            if (sensorsEnabledZones.length > 0) {
+                for (const zone of sensorsEnabledZones) {
+                    const zoneSensors = computeCenterlinePoints(zone.points, doorElements, doorRoles, pixelsPerMesh)
+                    sensorPoints.push(...zoneSensors.map(s => ({ ...s, zoneName: zone.name })))
+                }
+            } else {
+                sensorPoints = computeCenterlinePoints(corridor.points, doorElements, doorRoles, pixelsPerMesh)
+            }
+
+            // Stair sensors
+            const stairDoor = doorElements.find(d => doorRoles[d.id] === 'stair')
+            let stairPoints = []
+            if (stairDoor && stairObstructions.length > 0 && landingElements.length > 0) {
+                stairObstructions.forEach((stairObs, stairIdx) => {
+                    const floorLanding = landingElements.find(el => landingRoles[el.id] === 'floor')
+                    const landing = floorLanding || landingElements[stairIdx] || landingElements[0]
+                    const pts = computeStairSensorPositions(stairDoor, stairObs.points, landing, pixelsPerMesh)
+                    const stairName = stairObstructions.length > 1 ? `Stair ${stairIdx + 1}` : 'Stair'
+                    stairPoints.push(...pts.map(s => ({ ...s, zoneName: stairName })))
+                })
+            }
+
+            // FSA sensors
+            let fsaPoints = []
+            if ((scenarioType === "FSA" || scenarioType === "Both") && corridor) {
+                const aptDoor = doorElements.find(d => doorRoles[d.id] === 'apartment')
+                const strDoor = doorElements.find(d => doorRoles[d.id] === 'stair')
+                if (aptDoor && strDoor) {
+                    const pxPerM = pixelsPerMesh * 10
+                    const startM = { x: (aptDoor.points[0].x + aptDoor.points[1].x) / 2 / pxPerM, y: (aptDoor.points[0].y + aptDoor.points[1].y) / 2 / pxPerM }
+                    const endM = { x: (strDoor.points[0].x + strDoor.points[1].x) / 2 / pxPerM, y: (strDoor.points[0].y + strDoor.points[1].y) / 2 / pxPerM }
+                    const fsaPolyPx = sensorsEnabledZones.length > 0 ? sensorsEnabledZones[0].points : corridor.points
+                    const corridorVerticesM = fsaPolyPx.map(p => ({ x: p.x / pxPerM, y: p.y / pxPerM }))
+                    const fsaResult = runFsaPathfinding(startM, endM, corridorVerticesM)
+                    if (fsaResult) {
+                        for (const [dist, loc] of Object.entries(fsaResult.sensorLocations)) {
+                            fsaPoints.push({ x: Math.round(loc.x * pxPerM), y: Math.round(loc.y * pxPerM), fsaDistance: Number(dist) })
+                        }
+                    }
+                }
+            }
+
+            setSensorTreeElements([...sensorPoints, ...stairPoints], fsaPoints)
+            console.log(`[FDS] Recomputed sensors: ${sensorPoints.length} corridor/lobby, ${stairPoints.length} stair, ${fsaPoints.length} FSA`)
+        }
+      }
+
       function handleFDSClick() {
-        console.log("handleFDSClick elements: ", elements)
+        // Refresh elements (sensors should already be computed via Regen Sensors button)
+        const freshElements = useStore.getState().elements
+
         // Inject auto-placed sprinklers as elements so backend uses frontend-computed positions
-        let elementsToSend = elements
-        const hasManualSprinklers = elements.some(el => el.comments === 'sprinkler')
+        let elementsToSend = freshElements
+        const hasManualSprinklers = freshElements.some(el => el.comments === 'sprinkler')
         if (isSprinklered && !hasManualSprinklers) {
-            const autoPositions = computeAutoSprinklerPositions(elements, pixelsPerMesh)
+            const autoPositions = computeAutoSprinklerPositions(freshElements, pixelsPerMesh)
             if (autoPositions.length > 0) {
-                const maxId = Math.max(0, ...elements.map(el => el.id || 0))
+                const maxId = Math.max(0, ...freshElements.map(el => el.id || 0))
                 const sprinklerEls = autoPositions.map((pos, i) => ({
                     id: maxId + 1 + i,
                     type: 'point',
                     comments: 'sprinkler',
                     points: [{ x: pos.x, y: pos.y }]
                 }))
-                elementsToSend = [...elements, ...sprinklerEls]
+                elementsToSend = [...freshElements, ...sprinklerEls]
             }
         }
         sendFdsData(
                     elementsToSend,
-                    fireFloorZ,
-                    wallHeight,
-                    topStoreyHeight,
-                    fireFloorNumber,
-                    totalFloors,
-                    stairRoofZ,
+                    Number(fireFloorZ),
+                    Number(wallHeight),
+                    Number(topStoreyHeight),
+                    Number(fireFloorNumber),
+                    Number(totalFloors),
+                    Number(stairRoofZ),
                     0.2, // wall_thickness
                     pixelsPerMesh * 10, // px_per_m — derived from scale calibration
                     commonCorridorMode ? scenarioType : null,
@@ -454,9 +516,16 @@ const [errorList, setErrorList] = useState(defaultErrorList)
             >
             Inputs
           </button>
-          <button 
+          <button
+            onClick={handleRegenSensors}
+            className="text-white bg-yellow-600 hover:bg-yellow-700 focus:ring-4 focus:ring-yellow-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 focus:outline-none"
+            type="button"
+            >
+            Regen Sensors
+          </button>
+          <button
             onClick={handleFDSClick}
-            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
+            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
             type="button"
             >
             Generate FDS code

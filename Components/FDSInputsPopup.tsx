@@ -751,7 +751,6 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     // Use zone polygons for sensor placement when available.
                     // All zones with sensors enabled get centerline sensors.
                     // Fall back to single obstruction if no zones configured.
-                    console.log('[COMPUTE] zoneConfig:', JSON.stringify(zoneConfig))
                     let points: Array<{x: number, y: number, zoneName?: string}> = []
                     const sensorsEnabledZones = Object.values(zoneConfig).filter(
                         (z: any) => z.sensors !== false && z.points && z.points.length >= 3
@@ -766,9 +765,24 @@ const FDSInputsPopup = ({handleUserInput}) => {
                             points.push(...tagged)
                         }
                     } else {
-                        points = computeCenterlinePoints(
-                            corridor.points, doorElements, doorRoles, pixelsPerMesh
-                        )
+                        // Use enclosed regions (vertices in winding order from face traversal)
+                        // rather than raw obstruction points. Each region gets its own
+                        // centerline decomposition, matching how the EXE processes
+                        // corridor and lobby separately.
+                        // @ts-ignore
+                        const regions = findEnclosedRegions(elements)
+                        if (regions.length > 0) {
+                            for (const region of regions) {
+                                const regionSensors = computeCenterlinePoints(
+                                    region.points, doorElements, doorRoles, pixelsPerMesh
+                                )
+                                points.push(...regionSensors)
+                            }
+                        } else {
+                            points = computeCenterlinePoints(
+                                corridor.points, doorElements, doorRoles, pixelsPerMesh
+                            )
+                        }
                     }
 
                     // Also compute stair sensor positions
@@ -846,8 +860,6 @@ const FDSInputsPopup = ({handleUserInput}) => {
                     const allPts = [...points, ...stairPoints]
                     const withZone = allPts.filter((p: any) => p.zoneName)
                     const withoutZone = allPts.filter((p: any) => !p.zoneName)
-                    console.log(`[COMPUTE] Total sensors: ${allPts.length}, with zoneName: ${withZone.length}, without: ${withoutZone.length}`)
-                    if (withZone.length > 0) console.log('[COMPUTE] First tagged:', JSON.stringify(withZone[0]))
                     setSensorTreeElements(allPts, fsaPoints)
                 }}
             >

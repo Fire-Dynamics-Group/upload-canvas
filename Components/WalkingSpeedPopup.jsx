@@ -5,7 +5,7 @@ const WalkingSpeedPopup = ({handleUserInput}) => {
     const userWalkingInput = useRef()
     const userDoorInput = useRef()
     const hasDoor = useStore((state) => state.hasDoor)
-    console.log("hasDoor", hasDoor)
+
     //  has door when one placed
 
     const walkingSpeedObject = [
@@ -32,7 +32,6 @@ const WalkingSpeedPopup = ({handleUserInput}) => {
             if (input.length === requiredLength) {
 
               handleUserInput(input)
-              console.log("input: ", input)
             }
         }
 

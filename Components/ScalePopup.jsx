@@ -3,7 +3,6 @@ import { useRef } from "react";
 const ScalePopup = ({handleScaleInput}) => {
     const scaleInput = useRef()
     function handleScale() {
-        console.log("scaleInput", scaleInput.current.value, handleScaleInput)
         // handleScaleInput(scaleInput.text)
         handleScaleInput(scaleInput.current.value)
 

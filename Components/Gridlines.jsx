@@ -5,7 +5,6 @@ import useStore from '../store/useStore'
 // eslint-disable-next-line react/prop-types
 function Gridlines({pixelsPerMesh, dimensions, hasScale}) {
     let showGrid = true // later control via toggle
-    console.log(dimensions, "grid")
     const canvasRef = useRef(null)
     const currentMode = useStore((state) => state.currentMode)
 
@@ -13,7 +12,6 @@ function Gridlines({pixelsPerMesh, dimensions, hasScale}) {
     const canvasHeight = dimensions.height
 
     useEffect(() => {
-        console.log("gridlines check: ", hasScale, currentMode, pixelsPerMesh, dimensions)
         // TODO: needs to redraw all elements each frame
         // TODO: need to add finished polygon or points to object array
         const canvas = canvasRef.current

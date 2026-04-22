@@ -16,7 +16,6 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
     if (mockData) {
         obstructions = mockData.filter(el => el.comments === 'obstruction')
         openings = mockData.filter(el => el.comments === 'opening')
-        console.log("obs openings: ",mockData, obstructions, openings, mockData)
     } else {
         obstructions = convertedPoints.filter(el => el.comments === 'obstruction')
         openings = convertedPoints.filter(el => el.comments === 'opening')        
@@ -61,8 +60,6 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
 
     //  has door when one placed
     function handleClick(e) {
-        console.log("wallProperties: ", wallProperties)
-        console.log("mockData: ", mockData, convertedPoints)
         // bring floor, wall and ceiling properties together
         let roomComposition = wallProperties
         roomComposition.unshift(floorAndCeilingMaterials[0])

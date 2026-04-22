@@ -445,6 +445,8 @@ const useStore = create(persist((set, get) => {
                             type: el.type,
                             points: el.points,
                             comments: el.comments,
+                            ...(el.zoneName ? { zoneName: el.zoneName } : {}),
+                            ...(el.fsaDistance != null ? { fsaDistance: el.fsaDistance } : {}),
                         })),
                     },
                 ],
@@ -509,6 +511,8 @@ const useStore = create(persist((set, get) => {
                     type: el.type,
                     points: el.points,
                     comments: el.comments,
+                    ...(el.zoneName ? { zoneName: el.zoneName } : {}),
+                    ...(el.fsaDistance != null ? { fsaDistance: el.fsaDistance } : {}),
                 })),
             }))
         },
