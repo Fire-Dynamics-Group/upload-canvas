@@ -779,9 +779,8 @@ const FDSInputsPopup = ({handleUserInput}) => {
                                 points.push(...regionSensors)
                             }
                         } else {
-                            // @ts-ignore - corridor typed from .js util
                             points = computeCenterlinePoints(
-                                corridor.points, doorElements, doorRoles, pixelsPerMesh
+                                (corridor as any).points, doorElements, doorRoles, pixelsPerMesh
                             )
                         }
                     }
