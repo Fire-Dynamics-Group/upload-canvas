@@ -234,6 +234,14 @@ function Canvas({dimensions, isDevMode}) {
         setHasScale(pixelsPerMesh !== 1)
     }, [pixelsPerMesh])
 
+    // Test hook: expose the zustand store on window in non-production builds so
+    // e2e tests can inspect committed elements directly. No-op in prod bundle.
+    useEffect(() => {
+        if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+            window.__store = useStore
+        }
+    }, [])
+
     useEffect(() => {
         if (elements.length > 0) {
             const maxId = Math.max(...elements.map(el => el.id))
