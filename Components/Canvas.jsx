@@ -272,6 +272,10 @@ function Canvas({dimensions, isDevMode}) {
     // have state that is true when drawing is true and mouse moving -> store mouse
     const [guideLine, setGuideLine] = useState(null)
     const [snapGuides, setSnapGuides] = useState([])
+    // Selection disambiguation: when a click finds multiple candidates
+    // under the cursor, keep the full sorted list around so the user can
+    // Alt+click to cycle or click a chip in the picker overlay.
+    const [candidateCycleState, setCandidateCycleState] = useState(null)
     const [currentId, setCurrentId] = useState(() => {
         if (elements.length === 0) return 0
         return Math.max(...elements.map(el => el.id)) + 1
@@ -355,6 +359,7 @@ function Canvas({dimensions, isDevMode}) {
                     // console.log("filtered element: ", elements.filter(element => element.id !== selectedId))
                     removeElement(selectedId); // filter returns array of all items meeting condition
                     setSelectedElement(null)
+                    setCandidateCycleState(null)
                 }
             }
             // "Enter"
@@ -1519,59 +1524,55 @@ function Canvas({dimensions, isDevMode}) {
 
             context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)        
         } else if (tool === 'selection') {
-            // need mouse location
-            let pointer = {x: event.pageX, y: event.pageY}
-            // find closest point of all elements
-            let closestPoint = null
-            let closestDistance = null
-            let closestElement = null
-            for (let i = 0; i < elements.length; i++) {
-                let currentEl = elements[i]
-                // loop through elements
-                // initially allow movement of entire shape only
-                let currentPoints = currentEl.points
-                
-                // requires to loop through all points in element 
-                if (currentPoints) {
-                    // needs further points for rect
-                    if (currentEl["comments"].toLowerCase().includes("mesh")) {                       
-                        currentPoints = getRectCorners(currentPoints)
-                    }
-                    for (let j = 0; j < currentPoints.length; j++) {
-                        let currentP = currentPoints[j]
-                        let currentDistance = calcDistance(pointer, currentP)
-                        //-> check what is closest shape and 
-                        // find distance
-                        // TODO: add threshold of certain pixels
-                        // check within certain threshold close enough
-                        if (currentDistance < 40 && closestDistance === null || currentDistance < closestDistance) {
-                            closestDistance = currentDistance
-                            closestPoint = currentP
-                            closestElement = currentEl    
-                        }
-    
-                        // LATER: allow manipulation of corners for mesh and individual points for polyline
-                        // returns closest element to mouse pointer
-                        
-                    }
+            const pointer = {x: event.pageX, y: event.pageY}
+
+            // Alt+click near the previous selection anchor cycles through
+            // stacked candidates without rebuilding the list. Matches
+            // Figma / Illustrator / Inkscape muscle memory.
+            const ALT_CYCLE_TOLERANCE_PX = 4
+            if (
+                event.altKey &&
+                candidateCycleState &&
+                candidateCycleState.candidates.length > 1
+            ) {
+                const anchor = candidateCycleState.anchor
+                const dx = pointer.x - anchor.x
+                const dy = pointer.y - anchor.y
+                if (Math.sqrt(dx * dx + dy * dy) <= ALT_CYCLE_TOLERANCE_PX) {
+                    const nextIndex =
+                        (candidateCycleState.index + 1) %
+                        candidateCycleState.candidates.length
+                    const picked = candidateCycleState.candidates[nextIndex]
+                    setSelectedElement({
+                        element: picked.element,
+                        pointerDown: picked.pointerDown,
+                    })
+                    setCandidateCycleState({
+                        ...candidateCycleState,
+                        index: nextIndex,
+                    })
+                    event.preventDefault()
+                    return
                 }
-            if (closestDistance) {
-                // TO be user tested if pointerDown location or location of closestPoint more useful
-                // TODO: moving rect should resize shape, not move shape
-                setSelectedElement({"element": closestElement, "pointerDown": closestPoint})
-                // setComment(closestElement["type"]) 
-                // add to current - directly render from useLayout effect
-                // let elType = closestElement["type"]
-                
-                
+            }
+
+            const candidates = collectSelectionCandidates(pointer, elements, 40)
+            if (candidates.length > 0) {
+                const picked = candidates[0]
+                setSelectedElement({
+                    element: picked.element,
+                    pointerDown: picked.pointerDown,
+                })
+                setCandidateCycleState({
+                    anchor: pointer,
+                    candidates,
+                    index: 0,
+                })
             } else {
                 setSelectedElement(null)
-                // setComment(null)
+                setCandidateCycleState(null)
             }
-            event.preventDefault();
-            }
-
-
+            event.preventDefault()
 
         } else if (tool === 'scale') {
             if (scalePoints.length < 2) {
@@ -1674,6 +1675,7 @@ function Canvas({dimensions, isDevMode}) {
             }
             changeElement(el)
             setSelectedElement(null)
+            setCandidateCycleState(null)
             setSnapGuides([])
             setXCounter(0)
             setYCounter(0)
