@@ -178,6 +178,7 @@ function Canvas({dimensions, isDevMode}) {
     const [isUpPressed, setIsUpPressed] = useState(false)
 
     const [isCtrlPressed, setIsCtrlPressed] = useState(false)
+    const [isShiftPressed, setIsShiftPressed] = useState(false)
     const [isEscapePressed, setIsEscapePressed] = useState(false)
     // on enter -> isDrawing = false
     // add polyline to state
@@ -255,6 +256,9 @@ function Canvas({dimensions, isDevMode}) {
             if (key == 'Control') {
                 setIsCtrlPressed(true)
             }
+            if (key == 'Shift') {
+                setIsShiftPressed(true)
+            }
             if (key == 'Escape') {
                 setIsEscapePressed(true)
                 
@@ -296,6 +300,9 @@ function Canvas({dimensions, isDevMode}) {
             if (key == 'Control') {
                 setIsCtrlPressed(false)
             }
+            if (key == 'Shift') {
+                setIsShiftPressed(false)
+            }
             if (key == 'Escape') {
                 setIsEscapePressed(false)
             }
@@ -319,6 +326,8 @@ function Canvas({dimensions, isDevMode}) {
         // TODO: guide rect for meshes
         const handleMouseMove = (event) => {
             // currentElement should have type and can include scale
+            const isPolylineHover = tool === 'polyline' && (isDrawing && currentPoly.length > 0)
+            const isPointHover = tool === 'point' && hasScale
             if (selectedElement || isDrawing && currentPoly.length > 0 || tool === 'scale' && scalePoints.length == 1 || tool === 'rect' && currentRect.length == 1) { // and tool == polyline
                 event.preventDefault();
                 if (tool === 'rect' && currentRect.length === 1 && comment && comment.toLowerCase().includes('mesh')) {
@@ -330,9 +339,38 @@ function Canvas({dimensions, isDevMode}) {
                     const finalY = hasYSnap ? snapped.y : (Math.round(raw.y / pixelsPerMesh)) * pixelsPerMesh
                     setGuideLine({ x: finalX, y: finalY })
                     setSnapGuides(guides)
+                } else if (isPolylineHover) {
+                    // Live alignment guide preview for polyline draw (walls, doors, etc.)
+                    const raw = { x: event.pageX, y: event.pageY }
+                    if (isShiftPressed || currentMode === 'radiation') {
+                        setGuideLine(raw)
+                        setSnapGuides([])
+                    } else {
+                        const coords = collectPointAlignmentCoordinates(elements, null, currentPoly)
+                        const { snapped, guides } = snapToPointAlignment(raw, coords, MESH_SNAP_THRESHOLD)
+                        const hasXSnap = guides.some(g => g.type === 'vertical')
+                        const hasYSnap = guides.some(g => g.type === 'horizontal')
+                        const finalX = hasXSnap ? snapped.x : (Math.round(raw.x / pixelsPerMesh)) * pixelsPerMesh
+                        const finalY = hasYSnap ? snapped.y : (Math.round(raw.y / pixelsPerMesh)) * pixelsPerMesh
+                        setGuideLine({ x: finalX, y: finalY })
+                        setSnapGuides(guides)
+                    }
                 } else {
                     setGuideLine({x: event.pageX, y: event.pageY})
                     setSnapGuides([])
+                }
+            } else if (isPointHover) {
+                // Point tool: show alignment guides on hover even before click.
+                event.preventDefault();
+                const raw = { x: event.pageX, y: event.pageY }
+                if (isShiftPressed || currentMode === 'radiation') {
+                    setGuideLine(null)
+                    setSnapGuides([])
+                } else {
+                    const coords = collectPointAlignmentCoordinates(elements, null, [])
+                    const { guides } = snapToPointAlignment(raw, coords, MESH_SNAP_THRESHOLD)
+                    setSnapGuides(guides)
+                    setGuideLine(null)
                 }
             } else {
                 setGuideLine(null)
@@ -345,7 +383,7 @@ function Canvas({dimensions, isDevMode}) {
         return () => {
             window.removeEventListener("mousemove", handleMouseMove)
         }
-    }, [isDrawing, currentPoly, scalePoints.length, tool, currentRect, selectedElement, comment, pixelsPerMesh, elements])
+    }, [isDrawing, currentPoly, scalePoints.length, tool, currentRect, selectedElement, comment, pixelsPerMesh, elements, isShiftPressed, currentMode, hasScale])
 
     function deltaGridlines(pxPerMesh, tool) { // actioned if debug mode and after scale set normally
         setPixelsPerMesh(pxPerMesh)
@@ -1260,6 +1298,34 @@ function Canvas({dimensions, isDevMode}) {
         return snapped
     }
 
+    // Sibling of snapVertexWithMeshPriority for the polyline/point tools.
+    // Tries alignment with existing element vertices + in-progress points
+    // (enabling the 2nd door click / Nth polyline vertex to align with
+    // earlier clicks of the same draw), then falls back to grid per-axis.
+    //
+    // Shift-held suppresses alignment and goes straight to grid.
+    // In radiation mode, vertex is returned unchanged (match snapVertexToGrid).
+    function snapVertexWithPointPriority(vertex, excludeId = null, inProgressPoints = [], suppressAlignment = false) {
+        if (currentMode === 'radiation') {
+            setSnapGuides([])
+            return vertex
+        }
+        if (suppressAlignment) {
+            vertex.x = (Math.round(vertex.x / pixelsPerMesh)) * pixelsPerMesh
+            vertex.y = (Math.round(vertex.y / pixelsPerMesh)) * pixelsPerMesh
+            setSnapGuides([])
+            return vertex
+        }
+        const coords = collectPointAlignmentCoordinates(elements, excludeId, inProgressPoints)
+        const { snapped, guides } = snapToPointAlignment(vertex, coords, MESH_SNAP_THRESHOLD)
+        const hasXSnap = guides.some(g => g.type === 'vertical')
+        const hasYSnap = guides.some(g => g.type === 'horizontal')
+        if (!hasXSnap) snapped.x = (Math.round(snapped.x / pixelsPerMesh)) * pixelsPerMesh
+        if (!hasYSnap) snapped.y = (Math.round(snapped.y / pixelsPerMesh)) * pixelsPerMesh
+        setSnapGuides(guides)
+        return snapped
+    }
+
     //   TODO: polyline and mark point tools
     function handlePointerDown(event) { // should this be handle mouse down?
         // event.preventDefault(); 
@@ -1271,7 +1337,7 @@ function Canvas({dimensions, isDevMode}) {
             let dimension = 5
 
             let newP = {x: event.pageX, y: event.pageY}
-            newP = snapVertexToGrid(newP)
+            newP = snapVertexWithPointPriority(newP, null, [], isShiftPressed)
             let currentEl = returnElementObject(tool, [newP], comment) // comment from props
             // setElements(prev => [...prev, currentEl])
             addElement(currentEl)
@@ -1290,18 +1356,19 @@ function Canvas({dimensions, isDevMode}) {
                     if (isCtrlPressed && currentPoly.length > 0) { // and not first point
                         newP = snapVertexOrtho(newP, currentPoly[currentPoly.length-1])
                     }
-                    newP = snapVertexToGrid(newP)
-                    context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension) 
+                    newP = snapVertexWithPointPriority(newP, null, currentPoly, isShiftPressed)
+                    context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)
                     if (prevIndex === 1) {
-                        // add element 
+                        // add element
                         // reset currentPoly
                         let current_el = returnElementObject(tool, [currentPoly[0], newP], comment)
                         addElement(current_el)
                         setIsDrawing(false)
                         setCurrentPoly([])
+                        setSnapGuides([])
                     } else {
                         setCurrentPoly((prev) => [...prev, newP])
-                    }    
+                    }
                 }
             } else {
                 setIsDrawing(true)
@@ -1313,7 +1380,7 @@ function Canvas({dimensions, isDevMode}) {
                 if (isCtrlPressed && currentPoly.length > 0) { // and not first point
                     newP = snapVertexOrtho(newP, currentPoly[currentPoly.length-1])
                 }
-                newP = snapVertexToGrid(newP)
+                newP = snapVertexWithPointPriority(newP, null, currentPoly, isShiftPressed)
 
                 // Snap-to-close: if clicking near the first point with >= 3 points,
                 // close the polygon and finalize (like Figma/Bluebeam)
@@ -1325,6 +1392,7 @@ function Canvas({dimensions, isDevMode}) {
                     addElement(current_el)
                     setIsDrawing(false)
                     setCurrentPoly([])
+                    setSnapGuides([])
                 } else {
                     context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)
                     // add point to currentPoly
