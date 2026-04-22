@@ -11,9 +11,6 @@ const server_urls = {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || server_urls.localhost
 
-console.log("server_urls: ", server_urls)
-console.log("API_BASE: ", API_BASE)
-
 // --- Project persistence API ---
 
 export const createProject = async (name = "Untitled Project", createdBy = null) => {
@@ -35,6 +32,16 @@ export const listProjects = async () => {
 export const loadProject = async (projectId) => {
     const resp = await fetch(`${API_BASE}/projects/${projectId}`)
     if (!resp.ok) throw new Error(`Failed to load project: ${resp.status}`)
+    return resp.json()
+}
+
+export const renameProject = async (projectId, name) => {
+    const resp = await fetch(`${API_BASE}/projects/${projectId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+    })
+    if (!resp.ok) throw new Error(`Failed to rename project: ${resp.status}`)
     return resp.json()
 }
 
@@ -83,19 +90,7 @@ export const sendRadiationData = async (
     docName="Oil Pan Fire Appendix.docx"
   ) => {
     
-    console.log(
-      timeArray, 
-      accumulatedDistanceList, 
-      hobDistanceList, 
-      qList,
-      timestepFEDList,
-      accumulatedFEDList,
-      totalHeatFlux,
-      walkingSpeed,
-      doorOpeningDuration,
-      docName
-    )
-    // receive 
+    // receive
     let bodyContent = JSON.stringify( {
       timeArray, 
       accumulatedDistanceList, 
@@ -109,7 +104,6 @@ export const sendRadiationData = async (
       docName
     } )   
 
-    console.log("fetch local", API_BASE)
     try{
       const response = await fetch(`${API_BASE}/radiation`, {
         method: 'POST',
@@ -178,7 +172,6 @@ export const sendFdsData = async (
   fire_custom_alpha=null,
   slice_z_height=2.0,
 ) => {
-    console.log("elementList at api call: ", elementList)
     let bodyContent = JSON.stringify( {
       elementList,
       z,
@@ -218,7 +211,6 @@ export const sendFdsData = async (
       fire_custom_alpha,
       slice_z_height
     } )
-    console.log("bodyContent: ", bodyContent)
     const response = await fetch(`${API_BASE}/fds`, {
       method: 'POST',
       headers: {
@@ -228,7 +220,6 @@ export const sendFdsData = async (
     });  
     try{
       const data = await response.json();
-      console.log("data received: ", data)
       const blob = new Blob([data], { type: "text/plain;charset=utf-8" });
       saveAs(blob, "test.fds");
       return data;
@@ -283,7 +274,6 @@ export const sendTimeEqData = async (
         tLim,
         fireResistancePeriod
     } )
-    console.log("body: ", bodyContent)
     const response = await fetch(`${API_BASE}/timeEq`, {
       method: 'POST',
       headers: {
@@ -296,9 +286,6 @@ export const sendTimeEqData = async (
     link.href = URL.createObjectURL(blob);
     link.download = 'chart.jpeg';
     link.click();
-    console.log(response.status);
-    console.log(response.headers);
-
     return true;
   
   }

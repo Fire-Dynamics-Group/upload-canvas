@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { listProjects } from './ApiCalls'
+import { listProjects, renameProject } from './ApiCalls'
 import FDRobot from './FDRobot'
 import useStore from '../store/useStore'
 
@@ -26,6 +26,10 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
   const [filter, setFilter] = useState('all') // 'mine' | 'all'
   const [showNewModal, setShowNewModal] = useState(false)
   const [newName, setNewName] = useState('')
+  const [renameTarget, setRenameTarget] = useState(null) // project being renamed
+  const [renameValue, setRenameValue] = useState('')
+  const [renameError, setRenameError] = useState(null)
+  const [renameSaving, setRenameSaving] = useState(false)
 
   useEffect(() => {
     loadProjects()
@@ -44,15 +48,59 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
     }
   }
 
-  const filtered = filter === 'mine'
+  const filtered = (filter === 'mine'
     ? projects.filter(p => p.created_by === userName)
     : projects
+  ).slice().sort((a, b) => {
+    const aTime = a.created_at ? new Date(a.created_at).getTime() : 0
+    const bTime = b.created_at ? new Date(b.created_at).getTime() : 0
+    return bTime - aTime
+  })
 
   const handleCreate = () => {
     const name = newName.trim() || 'Untitled Project'
     setShowNewModal(false)
     setNewName('')
     onNewProject(name)
+  }
+
+  const openRename = (e, project) => {
+    e.stopPropagation()
+    setRenameTarget(project)
+    setRenameValue(project.name || '')
+    setRenameError(null)
+  }
+
+  const closeRename = () => {
+    setRenameTarget(null)
+    setRenameValue('')
+    setRenameError(null)
+    setRenameSaving(false)
+  }
+
+  const handleRename = async () => {
+    if (!renameTarget) return
+    const name = renameValue.trim()
+    if (!name) {
+      setRenameError('Name cannot be empty')
+      return
+    }
+    if (name === renameTarget.name) {
+      closeRename()
+      return
+    }
+    setRenameSaving(true)
+    setRenameError(null)
+    try {
+      const updated = await renameProject(renameTarget.id, name)
+      setProjects((prev) =>
+        prev.map((p) => (p.id === renameTarget.id ? { ...p, name: updated.name } : p))
+      )
+      closeRename()
+    } catch (err) {
+      setRenameError(err.message)
+      setRenameSaving(false)
+    }
   }
 
   const currentMode = useStore((state) => state.currentMode)
@@ -163,10 +211,18 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {filtered.map((project) => (
-              <button
+              <div
                 key={project.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelectProject(project.id)}
-                className="bg-gray-800 hover:bg-gray-700 rounded-lg overflow-hidden text-left transition-colors border border-gray-700 hover:border-gray-500"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    onSelectProject(project.id)
+                  }
+                }}
+                className="relative bg-gray-800 hover:bg-gray-700 rounded-lg overflow-hidden text-left transition-colors border border-gray-700 hover:border-gray-500 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 {project.settings?.thumbnail ? (
                   <img
@@ -179,6 +235,15 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
                     No preview
                   </div>
                 )}
+                <button
+                  type="button"
+                  onClick={(e) => openRename(e, project)}
+                  title="Rename project"
+                  aria-label="Rename project"
+                  className="absolute top-2 right-2 p-1.5 rounded-md bg-gray-900 bg-opacity-70 hover:bg-opacity-100 text-gray-300 hover:text-white"
+                >
+                  ✏️
+                </button>
                 <div className="p-4">
                   <h3 className="font-medium text-white truncate">{project.name}</h3>
                   <p className="text-sm text-gray-400 mt-1">
@@ -189,11 +254,52 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
                     <span>{timeAgo(project.updated_at)}</span>
                   </div>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Rename Project Modal */}
+      {renameTarget && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4">
+            <h2 className="text-lg font-medium mb-4">Rename Project</h2>
+            <input
+              type="text"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              placeholder="Project name"
+              className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              autoFocus
+              disabled={renameSaving}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleRename()
+                if (e.key === 'Escape') closeRename()
+              }}
+            />
+            {renameError && (
+              <p className="text-sm text-red-400 mb-2">{renameError}</p>
+            )}
+            <div className="flex justify-end gap-3 mt-2">
+              <button
+                onClick={closeRename}
+                disabled={renameSaving}
+                className="px-4 py-2 text-gray-400 hover:text-white disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRename}
+                disabled={renameSaving}
+                className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg disabled:opacity-50"
+              >
+                {renameSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* New Project Modal */}
       {showNewModal && (
