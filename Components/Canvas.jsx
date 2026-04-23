@@ -434,73 +434,128 @@ function Canvas({dimensions, isDevMode}) {
 
     // LATER: move to own component -> sends back null or position object
     useEffect(() => {
-        // TODO: guide rect for meshes
+        // Waterfall hover used by point / polyline / non-mesh rect. Matches
+        // snapVertexWithPointPriority's click-side logic axis-for-axis so the
+        // marker always lands where a click would. Per docs/first-click-feedback.md.
+        //   - radiation mode: no snap at all → marker at raw cursor
+        //   - Shift: alignment suppressed, grid-only → marker + axis guides
+        //            at the nearest grid intersection
+        //   - default: full waterfall → alignment guides + marker at snapped
+        //            cursor (grid fallback per axis)
+        const computeHoverFromCursor = (raw, inProgress) => {
+            if (currentMode === 'radiation') {
+                return { guideLine: raw, snapGuides: [] }
+            }
+            if (isShiftPressed) {
+                const grid = applyGridFallback({ raw, snapped: raw, guides: [], pixelsPerMesh })
+                return {
+                    guideLine: grid,
+                    snapGuides: [
+                        { type: 'vertical', x: grid.x },
+                        { type: 'horizontal', y: grid.y },
+                    ],
+                }
+            }
+            const coords = collectPointAlignmentCoordinates(elements, null, inProgress)
+            const { snapped, guides } = snapToPointAlignment(raw, coords, MESH_SNAP_THRESHOLD)
+            return {
+                guideLine: applyGridFallback({ raw, snapped, guides, pixelsPerMesh }),
+                snapGuides: guides,
+            }
+        }
+
+        // Mesh-only hover — mesh-isolation rule (see docs/fds-mesh-alignment-rules.md).
+        // Shift held is the opt-in escape hatch for the 1/10 case where the
+        // mesh isn't meant to interface with another edge: snaps to grid only.
+        // Default (no Shift) keeps the mesh-edge magnet on.
+        const computeMeshHoverFromCursor = (raw) => {
+            if (isShiftPressed) {
+                const grid = applyGridFallback({ raw, snapped: raw, guides: [], pixelsPerMesh })
+                return {
+                    guideLine: grid,
+                    snapGuides: [
+                        { type: 'vertical', x: grid.x },
+                        { type: 'horizontal', y: grid.y },
+                    ],
+                }
+            }
+            const { snapped, guides } = snapToMeshEdges(raw)
+            return {
+                guideLine: applyGridFallback({ raw, snapped, guides, pixelsPerMesh }),
+                snapGuides: guides,
+            }
+        }
+
+        // Scale tool: no alignment candidates (calibration runs before elements
+        // exist, and scale isn't on the waterfall — see docs/scale-tool-ux.md #4).
+        // Grid-only, matching snapVertexToGrid's click-side behaviour so the
+        // cyan crosshair and the landed dot coincide.
+        const computeScaleHoverFromCursor = (raw) => ({
+            guideLine: applyGridFallback({ raw, snapped: raw, guides: [], pixelsPerMesh }),
+            snapGuides: [],
+        })
+
         const handleMouseMove = (event) => {
-            // currentElement should have type and can include scale
-            const isPolylineHover = tool === 'polyline' && (isDrawing && currentPoly.length > 0)
+            const raw = { x: event.pageX, y: event.pageY }
+            const isPolylineHover = tool === 'polyline' && isDrawing && currentPoly.length > 0
             const isPointHover = tool === 'point' && hasScale
-            if (selectedElement || isDrawing && currentPoly.length > 0 || tool === 'scale' && scalePoints.length == 1 || tool === 'rect' && currentRect.length == 1) { // and tool == polyline
-                event.preventDefault();
-                if (tool === 'rect' && currentRect.length === 1 && comment && comment.toLowerCase().includes('mesh')) {
-                    const raw = { x: event.pageX, y: event.pageY }
-                    const { snapped, guides } = snapToMeshEdges(raw)
-                    setGuideLine(applyGridFallback({ raw, snapped, guides, pixelsPerMesh }))
-                    setSnapGuides(guides)
+            const isMeshRect = tool === 'rect' && comment && comment.toLowerCase().includes('mesh')
+
+            // In-progress (post-first-click) branch.
+            if (selectedElement || (isDrawing && currentPoly.length > 0) || (tool === 'scale' && scalePoints.length === 1) || (tool === 'rect' && currentRect.length === 1)) {
+                event.preventDefault()
+                if (tool === 'rect' && currentRect.length === 1 && isMeshRect) {
+                    const { guideLine, snapGuides } = computeMeshHoverFromCursor(raw)
+                    setGuideLine(guideLine)
+                    setSnapGuides(snapGuides)
                 } else if (tool === 'rect' && currentRect.length === 1) {
-                    // Live alignment guide for non-mesh rect drag (stair landings, stair
-                    // obstructions, sensor boxes). Mirrors polyline hover — full waterfall.
-                    const raw = { x: event.pageX, y: event.pageY }
-                    if (isShiftPressed || currentMode === 'radiation') {
-                        setGuideLine(raw)
-                        setSnapGuides([])
-                    } else {
-                        const coords = collectPointAlignmentCoordinates(elements, null, currentRect)
-                        const { snapped, guides } = snapToPointAlignment(raw, coords, MESH_SNAP_THRESHOLD)
-                        setGuideLine(applyGridFallback({ raw, snapped, guides, pixelsPerMesh }))
-                        setSnapGuides(guides)
-                    }
+                    const { guideLine, snapGuides } = computeHoverFromCursor(raw, currentRect)
+                    setGuideLine(guideLine)
+                    setSnapGuides(snapGuides)
                 } else if (isPolylineHover) {
-                    // Live alignment guide preview for polyline draw (walls, doors, etc.)
-                    const raw = { x: event.pageX, y: event.pageY }
-                    if (isShiftPressed || currentMode === 'radiation') {
-                        setGuideLine(raw)
-                        setSnapGuides([])
-                    } else {
-                        const coords = collectPointAlignmentCoordinates(elements, null, currentPoly)
-                        const { snapped, guides } = snapToPointAlignment(raw, coords, MESH_SNAP_THRESHOLD)
-                        setGuideLine(applyGridFallback({ raw, snapped, guides, pixelsPerMesh }))
-                        setSnapGuides(guides)
-                    }
+                    const { guideLine, snapGuides } = computeHoverFromCursor(raw, currentPoly)
+                    setGuideLine(guideLine)
+                    setSnapGuides(snapGuides)
+                } else if (tool === 'scale' && scalePoints.length === 1) {
+                    const { guideLine, snapGuides } = computeScaleHoverFromCursor(raw)
+                    setGuideLine(guideLine)
+                    setSnapGuides(snapGuides)
                 } else {
-                    setGuideLine({x: event.pageX, y: event.pageY})
+                    // Fall-through for selectedElement — keep raw cursor available
+                    // for non-marker consumers; render gate hides the dot.
+                    setGuideLine(raw)
                     setSnapGuides([])
                 }
-            } else if (isPointHover) {
-                // Point tool: show alignment guides + a marker at the snapped
-                // cursor so the user can see where the single click will land
-                // before committing. Per docs/first-click-feedback.md.
-                event.preventDefault();
-                const raw = { x: event.pageX, y: event.pageY }
-                if (isShiftPressed || currentMode === 'radiation') {
-                    setGuideLine(null)
-                    setSnapGuides([])
-                } else {
-                    const coords = collectPointAlignmentCoordinates(elements, null, [])
-                    const { snapped, guides } = snapToPointAlignment(raw, coords, MESH_SNAP_THRESHOLD)
-                    setGuideLine(applyGridFallback({ raw, snapped, guides, pixelsPerMesh }))
-                    setSnapGuides(guides)
-                }
+                return
+            }
+
+            // Pre-first-click branch — same helpers, empty inProgress.
+            if (isPointHover) {
+                event.preventDefault()
+                const { guideLine, snapGuides } = computeHoverFromCursor(raw, [])
+                setGuideLine(guideLine)
+                setSnapGuides(snapGuides)
+            } else if (tool === 'rect') {
+                event.preventDefault()
+                const { guideLine, snapGuides } = isMeshRect
+                    ? computeMeshHoverFromCursor(raw)
+                    : computeHoverFromCursor(raw, [])
+                setGuideLine(guideLine)
+                setSnapGuides(snapGuides)
+            } else if (tool === 'polyline') {
+                event.preventDefault()
+                const { guideLine, snapGuides } = computeHoverFromCursor(raw, [])
+                setGuideLine(guideLine)
+                setSnapGuides(snapGuides)
             } else if (tool === 'scale') {
-                // Full-canvas crosshair follows the cursor from the moment the tool
-                // is picked, so the user can align clicks to distant features.
-                // Bluebeam / AutoCAD convention.
-                setGuideLine({ x: event.pageX, y: event.pageY })
-                setSnapGuides([])
+                const { guideLine, snapGuides } = computeScaleHoverFromCursor(raw)
+                setGuideLine(guideLine)
+                setSnapGuides(snapGuides)
             } else {
                 setGuideLine(null)
                 setSnapGuides([])
             }
-        };
+        }
 
         window.addEventListener("mousemove", handleMouseMove)
 
@@ -1202,11 +1257,13 @@ function Canvas({dimensions, isDevMode}) {
             context.restore()
         }
 
-        // First-click marker: magenta dot at the waterfall-snapped cursor so
-        // the user can see where a point-tool click will land before committing.
-        // Gated on `tool === 'point'` for step 2 of docs/first-click-feedback.md
-        // (validate the visual before rolling out to rect/polyline/2-point/scale).
-        if (tool === 'point' && guideLine) {
+        // First-click marker: magenta dot at the snapped cursor, showing
+        // exactly where the next click will land. Fires for every drawing
+        // tool (point, polyline, rect, scale). Suppressed when an element is
+        // selected, since clicks in that state manipulate the selection
+        // rather than placing a new element. Per docs/first-click-feedback.md.
+        const DRAWING_TOOLS_FOR_MARKER = ['point', 'polyline', 'rect', 'scale']
+        if (DRAWING_TOOLS_FOR_MARKER.includes(tool) && guideLine && !selectedElement) {
             context.save()
             context.fillStyle = '#ff00ff'
             context.beginPath()
@@ -1414,7 +1471,18 @@ function Canvas({dimensions, isDevMode}) {
         return { snapped: { x: snappedX, y: snappedY }, guides }
     }
 
-    function snapVertexWithMeshPriority(vertex, excludeId = null) {
+    // Shift-held escape hatch (opt-in, 1/10 case): go straight to the grid,
+    // bypassing mesh-edge snap. Default path (99% usage) is unchanged — mesh
+    // edges still magnetise so abutting meshes share exact coordinates per
+    // docs/fds-mesh-alignment-rules.md. Use Shift when the mesh is deliberately
+    // NOT meant to interface with another mesh edge.
+    function snapVertexWithMeshPriority(vertex, excludeId = null, suppressAlignment = false) {
+        if (suppressAlignment) {
+            vertex.x = Math.round(vertex.x / pixelsPerMesh) * pixelsPerMesh
+            vertex.y = Math.round(vertex.y / pixelsPerMesh) * pixelsPerMesh
+            setSnapGuides([])
+            return vertex
+        }
         const { snapped, guides } = snapToMeshEdges(vertex, excludeId)
         const hasXSnap = guides.some(g => g.type === 'vertical')
         const hasYSnap = guides.some(g => g.type === 'horizontal')
@@ -1539,7 +1607,7 @@ function Canvas({dimensions, isDevMode}) {
                 // alignment -> in-progress alignment -> grid fallback,
                 // with shift suppressing alignment (grid-only).
                 newP = isMeshRect
-                    ? snapVertexWithMeshPriority(newP)
+                    ? snapVertexWithMeshPriority(newP, null, isShiftPressed)
                     : snapVertexWithPointPriority(newP, null, currentRect, isShiftPressed)
 
                 // on first point
@@ -1552,7 +1620,7 @@ function Canvas({dimensions, isDevMode}) {
                 // Same waterfall for the 2nd corner of a non-mesh rect;
                 // currentRect carries the 1st corner so the 2nd snaps to it.
                 newP = isMeshRect
-                    ? snapVertexWithMeshPriority(newP)
+                    ? snapVertexWithMeshPriority(newP, null, isShiftPressed)
                     : snapVertexWithPointPriority(newP, null, currentRect, isShiftPressed)
 
                 let pointsArray = [currentRect[0], newP]

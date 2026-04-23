@@ -78,7 +78,7 @@ User overrides:
 
 | Drawing tool / element | Sees mesh edges? | Sees walls / points / non-mesh rects? | Sees in-progress points? | Grid fallback? | Shift override? |
 |---|---|---|---|---|---|
-| Mesh rect | ✓ | ✗ (deliberately isolated) | ✗ | ✓ | (not wired — mesh path is minimal) |
+| Mesh rect | ✓ | ✗ (deliberately isolated) | ✗ | ✓ | ✓ (opt-in escape: grid-only, use when mesh is not meant to abut another edge) |
 | Wall polyline | ✓ (mesh corners) | ✓ | ✓ (`currentPoly`) | ✓ | ✓ |
 | Door / inlet / extract (2-point polyline) | ✓ | ✓ | ✓ (`currentPoly`) | ✓ | ✓ |
 | Single point (sensor, device) | ✓ | ✓ | — | ✓ | ✓ |
