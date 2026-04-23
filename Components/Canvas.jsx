@@ -571,6 +571,12 @@ function Canvas({dimensions, isDevMode}) {
         // change from scale mode to drawing mode
         setTool(tool)
         setComment("obstruction")
+        // Scale click 1 set isDrawing=true and never reset it — a latent bug
+        // that the first-click-feedback hover pipeline exposed via
+        // drawPolyAndGuide(currentPoly=[]). Reset here so the newly-selected
+        // tool starts from a clean pre-first-click state.
+        setIsDrawing(false)
+        setCurrentPoly([])
     }
 
     function handleScaleInput(inputDistance) {
@@ -692,7 +698,11 @@ function Canvas({dimensions, isDevMode}) {
             }            
         }
         function drawPolyAndGuide(poly, comment, context) {
-                    
+            // Defensive: caller sometimes passes currentPoly while isDrawing is
+            // stale (e.g. orphaned isDrawing=true after non-polyline flows).
+            // Drawing a rubber-band from poly[-1] crashes — bail early.
+            if (!poly || poly.length === 0) return
+
             // need if beingEdited
             if (selectedElement) {
                 // change polypoints before drawing
