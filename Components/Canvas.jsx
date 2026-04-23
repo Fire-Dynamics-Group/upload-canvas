@@ -201,6 +201,19 @@ export function collectSelectionCandidates(pointer, elements, threshold = 40) {
  * threshold, emits vertical/horizontal guides of the same shape the
  * canvas render block already understands.
  */
+// Waterfall tail: any axis with an alignment/mesh guide uses the snapped
+// coordinate; any axis without one quantises the raw cursor to the grid.
+// Inlined three times in handleMouseMove (mesh-rect, non-mesh-rect,
+// polyline-hover); extracted so vertex-1 feedback can share the same path.
+export function applyGridFallback({ raw, snapped, guides, pixelsPerMesh }) {
+    const hasXSnap = guides.some(g => g.type === 'vertical')
+    const hasYSnap = guides.some(g => g.type === 'horizontal')
+    return {
+        x: hasXSnap ? snapped.x : Math.round(raw.x / pixelsPerMesh) * pixelsPerMesh,
+        y: hasYSnap ? snapped.y : Math.round(raw.y / pixelsPerMesh) * pixelsPerMesh,
+    }
+}
+
 export function snapToPointAlignment(vertex, coordsResult, threshold) {
     const { xCoords, yCoords } = coordsResult
     const guides = []
@@ -431,11 +444,7 @@ function Canvas({dimensions, isDevMode}) {
                 if (tool === 'rect' && currentRect.length === 1 && comment && comment.toLowerCase().includes('mesh')) {
                     const raw = { x: event.pageX, y: event.pageY }
                     const { snapped, guides } = snapToMeshEdges(raw)
-                    const hasXSnap = guides.some(g => g.type === 'vertical')
-                    const hasYSnap = guides.some(g => g.type === 'horizontal')
-                    const finalX = hasXSnap ? snapped.x : (Math.round(raw.x / pixelsPerMesh)) * pixelsPerMesh
-                    const finalY = hasYSnap ? snapped.y : (Math.round(raw.y / pixelsPerMesh)) * pixelsPerMesh
-                    setGuideLine({ x: finalX, y: finalY })
+                    setGuideLine(applyGridFallback({ raw, snapped, guides, pixelsPerMesh }))
                     setSnapGuides(guides)
                 } else if (tool === 'rect' && currentRect.length === 1) {
                     // Live alignment guide for non-mesh rect drag (stair landings, stair
@@ -447,11 +456,7 @@ function Canvas({dimensions, isDevMode}) {
                     } else {
                         const coords = collectPointAlignmentCoordinates(elements, null, currentRect)
                         const { snapped, guides } = snapToPointAlignment(raw, coords, MESH_SNAP_THRESHOLD)
-                        const hasXSnap = guides.some(g => g.type === 'vertical')
-                        const hasYSnap = guides.some(g => g.type === 'horizontal')
-                        const finalX = hasXSnap ? snapped.x : (Math.round(raw.x / pixelsPerMesh)) * pixelsPerMesh
-                        const finalY = hasYSnap ? snapped.y : (Math.round(raw.y / pixelsPerMesh)) * pixelsPerMesh
-                        setGuideLine({ x: finalX, y: finalY })
+                        setGuideLine(applyGridFallback({ raw, snapped, guides, pixelsPerMesh }))
                         setSnapGuides(guides)
                     }
                 } else if (isPolylineHover) {
@@ -463,11 +468,7 @@ function Canvas({dimensions, isDevMode}) {
                     } else {
                         const coords = collectPointAlignmentCoordinates(elements, null, currentPoly)
                         const { snapped, guides } = snapToPointAlignment(raw, coords, MESH_SNAP_THRESHOLD)
-                        const hasXSnap = guides.some(g => g.type === 'vertical')
-                        const hasYSnap = guides.some(g => g.type === 'horizontal')
-                        const finalX = hasXSnap ? snapped.x : (Math.round(raw.x / pixelsPerMesh)) * pixelsPerMesh
-                        const finalY = hasYSnap ? snapped.y : (Math.round(raw.y / pixelsPerMesh)) * pixelsPerMesh
-                        setGuideLine({ x: finalX, y: finalY })
+                        setGuideLine(applyGridFallback({ raw, snapped, guides, pixelsPerMesh }))
                         setSnapGuides(guides)
                     }
                 } else {
@@ -475,7 +476,9 @@ function Canvas({dimensions, isDevMode}) {
                     setSnapGuides([])
                 }
             } else if (isPointHover) {
-                // Point tool: show alignment guides on hover even before click.
+                // Point tool: show alignment guides + a marker at the snapped
+                // cursor so the user can see where the single click will land
+                // before committing. Per docs/first-click-feedback.md.
                 event.preventDefault();
                 const raw = { x: event.pageX, y: event.pageY }
                 if (isShiftPressed || currentMode === 'radiation') {
@@ -483,9 +486,9 @@ function Canvas({dimensions, isDevMode}) {
                     setSnapGuides([])
                 } else {
                     const coords = collectPointAlignmentCoordinates(elements, null, [])
-                    const { guides } = snapToPointAlignment(raw, coords, MESH_SNAP_THRESHOLD)
+                    const { snapped, guides } = snapToPointAlignment(raw, coords, MESH_SNAP_THRESHOLD)
+                    setGuideLine(applyGridFallback({ raw, snapped, guides, pixelsPerMesh }))
                     setSnapGuides(guides)
-                    setGuideLine(null)
                 }
             } else if (tool === 'scale') {
                 // Full-canvas crosshair follows the cursor from the moment the tool
@@ -530,105 +533,6 @@ function Canvas({dimensions, isDevMode}) {
         const context = canvas.getContext('2d')
         
         context.clearRect(0, 0, canvas.width, canvas.height)
-
-        function linesSharePoint(line1Start, line1End, line2Start, line2End) {
-
-            let line1minX = Math.round(Math.min(line1Start.x, line1End.x))
-            let line1maxX = Math.round(Math.max(line1Start.x, line1End.x))
-            let line1minY = Math.round(Math.min(line1Start.y, line1End.y))
-            let line1maxY = Math.round(Math.max(line1Start.y, line1End.y))
-
-            let line2minX = Math.round(Math.min(line2Start.x, line2End.x))
-            let line2maxX = Math.round(Math.max(line2Start.x, line2End.x))
-            let line2minY = Math.round(Math.min(line2Start.y, line2End.y))
-            let line2maxY = Math.round(Math.max(line2Start.y, line2End.y))
-
-            // TODO: return point of central intersection -> or colour lines?
-            if (line1minY === line1maxY && line1maxY === line2minY && line2minY === line2maxY) {
-                if (line1minX <= line2minX && line1maxX >= line2minX || line2minX <= line1minX && line2maxX >= line1minX) {
-                    return true
-                }
-                if (line1minX <= line2maxX && line1maxX >= line2maxX || line2minX <= line1maxX && line2maxX >= line1maxX) {
-                    return true
-                }
-
-            } 
-            if (line1minX === line1maxX && line1maxX === line2minX && line2minX === line2maxX) {
-
-                if (line1minY <= line2minY && line1maxY >= line2minY || line2minY <= line1minY && line2maxY >= line1minY) {
-                    return true
-                }
-                if (line1minY <= line2maxY && line1maxY >= line2maxY || line2minY <= line1maxY && line2maxY >= line1maxY) {
-                    return true
-                }
-            }
-
-            return false
-        }
-        function areListsDifferent(list1, list2) {
-            // Check if lists have different lengths
-            if (list1.length !== list2.length) {
-                return true;
-            }
-        
-            for (let i = 0; i < list1.length; i++) {
-                const obj1 = list1[i];
-                const obj2 = list2[i];
-        
-                // Compare lengths of the x arrays
-                if (obj1.x.length !== obj2.x.length) {
-                    return true;
-                }
-        
-                // Compare lengths of the y arrays
-                if (obj1.y.length !== obj2.y.length) {
-                    return true;
-                }
-        
-
-                    if (Math.round(obj1.x) !== Math.round(obj2.x)) {
-                        return true;
-                    }
-
-
-                    if (Math.round(obj1.y) !== Math.round(obj2.y)) {
-                        return true;
-                    }
-
-            }
-        
-            return false;
-        }
-        
-        // TODO: have indication if two meshes aligned -> perhaps a cross?
-        function isMeshAligned(currentPoints, elements) { // probably finished shapes only
-            // check if currentPoints align with any meshElements
-            let currentCorners = getRectCorners(currentPoints)
-            for (let i = 0; i < currentCorners.length; i++) {
-                let currentStart = currentCorners[i]
-                let currentEnd = currentCorners[(i+1)%4]
-                for (let j = 0; j < elements.length; j++) {
-                    if (isMesh(elements[j])) {
-                        // all 4 sides of mesh
-                        let checkCorners = getRectCorners(elements[j]["points"])
-                        // check not the same element
-                        if (areListsDifferent(checkCorners, currentCorners)) {
-                            for (let k = 0; k < checkCorners.length; k++) {
-                                let checkStart = checkCorners[k]
-                                let checkEnd = checkCorners[(k+1)%4]
-                                // check if any of the sides align
-                                if (linesSharePoint(currentStart, currentEnd, checkStart, checkEnd)) {
-                                    return {"isAligned":true, keyPoints: [currentStart, currentEnd, checkStart, checkEnd]}; // need side that aligns
-                                    // later only return subsection that overlaps the other line
-                                }
-                            }
-
-                        }
-                    }
-                }
-            }
-            return {"isAligned":false, keyPoints: null}
-        }
 
         function drawRect(points, context, comments, dotted=false) {
             let p1 = points[0]
@@ -971,29 +875,7 @@ function Canvas({dimensions, isDevMode}) {
                 if (element.type == 'polyline' || element.type == 'scale') {   
                     drawPolyline(element.points, context, element.comments)
                 } else if (element.type == 'rect') {
-                    // TODO: check if mesh aligns with other mesh edges -> perhaps a cross? or colour change edge
                     drawRect(element.points, context, element.comments)
-                                // signal if mesh is aligned with other mesh
-            // console.log("checking alignment")
-            if (isMesh(element)) { 
-                let alignedObject = isMeshAligned(element.points, elements)
-                if (alignedObject["isAligned"]) { 
-                    // draw cross
-                    let keyPoints = alignedObject["keyPoints"]
-                    let p1 = keyPoints[0]
-                    let p2 = keyPoints[1]
-                    let p3 = keyPoints[2]
-                    let p4 = keyPoints[3]
-                    context.strokeStyle = "red"
-                    context.beginPath()
-                    context.moveTo(p1.x, p1.y)
-                    context.lineTo(p2.x, p2.y)
-                    context.strokeStyle = "yellow"
-                    context.moveTo(p3.x, p3.y)
-                    context.lineTo(p4.x, p4.y)
-                    context.stroke()
-                }
-            }
                 } else if (element.type == 'point') {
                     if (element.comments === 'sensorTree') {
                         // Draw bullseye icon (concentric circles)
@@ -1317,6 +1199,19 @@ function Canvas({dimensions, isDevMode}) {
                 }
                 context.stroke()
             }
+            context.restore()
+        }
+
+        // First-click marker: magenta dot at the waterfall-snapped cursor so
+        // the user can see where a point-tool click will land before committing.
+        // Gated on `tool === 'point'` for step 2 of docs/first-click-feedback.md
+        // (validate the visual before rolling out to rect/polyline/2-point/scale).
+        if (tool === 'point' && guideLine) {
+            context.save()
+            context.fillStyle = '#ff00ff'
+            context.beginPath()
+            context.arc(guideLine.x, guideLine.y, 4, 0, Math.PI * 2)
+            context.fill()
             context.restore()
         }
 
