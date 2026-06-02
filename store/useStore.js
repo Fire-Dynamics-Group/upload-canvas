@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import {findOriginPixels, returnFinalCoordinates} from '../utils/pointManipulation'
 import { clearPdfFromIndexedDB } from '../utils/pdfStorage'
-import { isDbBacked, PERSIST_VERSION, migratePersistedState } from './persistenceModes'
+import { isDbBacked, PERSIST_VERSION, migratePersistedState, mergePersistedState } from './persistenceModes'
 
 const defaultDoorTimings = {
     MOE: {
@@ -27,6 +27,15 @@ const defaultDoorTimings = {
 
 const useStore = create(persist((set, get) => {
     const defaultStairObject = {"fire_floor": 0, "total_floors": 5, "stair_roof_z": 25, "top_storey_height": 21}
+
+    // Write the active mode's geometry: update the live `elements` array AND keep
+    // the active mode's bucket (elementsByMode[currentMode]) in sync. The bucket
+    // is the source of truth across reloads; `elements` is its live checkout.
+    const writeElements = (state, nextElements) => ({
+        elements: nextElements,
+        elementsByMode: { ...state.elementsByMode, [state.currentMode]: nextElements },
+    })
+
     return {
 
         // Project persistence
@@ -36,6 +45,10 @@ const useStore = create(persist((set, get) => {
         saveStatus: null, // null | "saving" | "saved" | "error"
 
         elements: [],
+        // Per-mode geometry buckets. `elements` is the live "checkout" of the
+        // active mode's bucket; setCurrentMode stashes/restores between them so
+        // modes can't clobber each other's shapes. See docs/phase2-*.md.
+        elementsByMode: { fdsGen: [], radiation: [], timeEq: [] },
         tool: "scale",
         selectedElement: null,
         currentMode: "fdsGen",
@@ -144,9 +157,7 @@ const useStore = create(persist((set, get) => {
             stairObject: newStairObject
         })),
         
-        addElement: (newEl) => set((state) => ({
-            elements: [...state.elements, newEl]
-        })),
+        addElement: (newEl) => set((state) => writeElements(state, [...state.elements, newEl])),
         // Replace all sensorTree and fsaSensor elements with new ones
         setSensorTreeElements: (sensorPoints, fsaPoints = []) => set((state) => {
             const withoutSensors = state.elements.filter(el => el.comments !== 'sensorTree' && el.comments !== 'fsaSensor')
@@ -167,21 +178,16 @@ const useStore = create(persist((set, get) => {
                 fsaDistance: pt.fsaDistance, // 2, 4, or 15 metres from apt door
                 id: maxId + 1 + sensorPoints.length + i,
             }))
-            return { elements: [...withoutSensors, ...newSensors, ...newFsa] }
+            return writeElements(state, [...withoutSensors, ...newSensors, ...newFsa])
         }),
-        changeElement: (changedEl) =>  set((state) => ({
-            elements: 
-                state.elements.map(element => {
-                    if (element.id === changedEl.id) {
-                        return changedEl
-                    } else {
-                        return element
-                    }
-                })         
-        })),
-        removeElement: (selectedID) => set((state) => ({
-            elements: state.elements.filter(element => element.id !== selectedID)
-        })),
+        changeElement: (changedEl) => set((state) => writeElements(
+            state,
+            state.elements.map(element => element.id === changedEl.id ? changedEl : element)
+        )),
+        removeElement: (selectedID) => set((state) => writeElements(
+            state,
+            state.elements.filter(element => element.id !== selectedID)
+        )),
         // change tool to incoming
         // if tool not selection; set selection to null
         setTool: (newTool) => {
@@ -201,9 +207,16 @@ const useStore = create(persist((set, get) => {
         setSelectedElement: (newEl) => set(() => ({
             selectedElement: newEl
         })),
-        setCurrentMode: (newMode) => set(() => ({
-            currentMode: newMode
-        })),
+        // Switching modes checks out the new mode's geometry bucket into the
+        // live `elements` array. The outgoing mode's bucket is already current
+        // (writeElements keeps it in sync), so no stash step is needed.
+        setCurrentMode: (newMode) => set((state) => {
+            if (newMode === state.currentMode) return {}
+            return {
+                currentMode: newMode,
+                elements: state.elementsByMode?.[newMode] ?? [],
+            }
+        }),
         setComment: (newComment) => set(() => ({
             comment: newComment
         })),
@@ -467,7 +480,15 @@ const useStore = create(persist((set, get) => {
         hydrateFromServer: (project, floorDetail) => {
             const ps = project.settings || {}
             const fs = floorDetail.settings || {}
-            set(() => ({
+            const loadedElements = (floorDetail.elements || []).map(el => ({
+                id: el.element_index,
+                type: el.type,
+                points: el.points,
+                comments: el.comments,
+                ...(el.zoneName ? { zoneName: el.zoneName } : {}),
+                ...(el.fsaDistance != null ? { fsaDistance: el.fsaDistance } : {}),
+            }))
+            set((state) => ({
                 projectId: project.id,
                 projectName: project.name,
                 floorId: floorDetail.id,
@@ -515,15 +536,9 @@ const useStore = create(persist((set, get) => {
                 inletConfig: fs.inletConfig ?? {},
                 zoneConfig: fs.zoneConfig ?? {},
                 sliceZHeight: fs.sliceZHeight ?? 2.0,
-                // Elements
-                elements: (floorDetail.elements || []).map(el => ({
-                    id: el.element_index,
-                    type: el.type,
-                    points: el.points,
-                    comments: el.comments,
-                    ...(el.zoneName ? { zoneName: el.zoneName } : {}),
-                    ...(el.fsaDistance != null ? { fsaDistance: el.fsaDistance } : {}),
-                })),
+                // Elements — load into both the live array and the active bucket
+                elements: loadedElements,
+                elementsByMode: { ...state.elementsByMode, [state.currentMode]: loadedElements },
             }))
         },
 
@@ -537,6 +552,7 @@ const useStore = create(persist((set, get) => {
                 projectName: null,
                 saveStatus: null,
                 elements: [],
+                elementsByMode: { fdsGen: [], radiation: [], timeEq: [] },
                 tool: "scale",
                 selectedElement: null,
                 comment: "",
@@ -597,11 +613,13 @@ const useStore = create(persist((set, get) => {
     name: 'upload-canvas-fds',
     version: PERSIST_VERSION,
     migrate: migratePersistedState,
+    merge: mergePersistedState,
     partialize: (state) => ({
         projectId: state.projectId,
         floorId: state.floorId,
         projectName: state.projectName,
         elements: state.elements,
+        elementsByMode: state.elementsByMode,
         tool: state.tool,
         canvasDimensions: state.canvasDimensions,
         pixelsPerMesh: state.pixelsPerMesh,

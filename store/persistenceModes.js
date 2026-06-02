@@ -25,7 +25,9 @@ export const isDbBacked = (mode) => Boolean(MODE_PERSISTENCE[mode]?.dbBacked)
 // v0 -> v1: project persistence (projectId/floorId/projectName) was added. Older
 // blobs predate it, so ensure those keys exist rather than leaving them
 // undefined (which could arm auto-save against an undefined project).
-export const PERSIST_VERSION = 1
+// v1 -> v2: geometry split into per-mode buckets (elementsByMode). The old flat
+// `elements` array belonged to fdsGen, so seed the fdsGen bucket from it.
+export const PERSIST_VERSION = 2
 
 export function migratePersistedState(persisted, fromVersion) {
     if (!persisted) return persisted
@@ -40,5 +42,30 @@ export function migratePersistedState(persisted, fromVersion) {
         }
     }
 
+    if (fromVersion < 2) {
+        state = {
+            ...state,
+            elementsByMode: state.elementsByMode ?? {
+                fdsGen: state.elements ?? [],
+                radiation: [],
+                timeEq: [],
+            },
+        }
+    }
+
     return state
+}
+
+// Custom persist merge. Replicates Zustand's default shallow merge, then
+// reconstructs the live `elements` array from the booted mode's bucket.
+// `currentMode` is intentionally not persisted, so on reload it is the default
+// ('fdsGen'); the persisted live `elements` may be left over from whatever mode
+// was active at save time, so the per-mode bucket is the source of truth.
+export function mergePersistedState(persisted, current) {
+    const merged = { ...current, ...(persisted || {}) }
+    const mode = merged.currentMode
+    if (merged.elementsByMode && merged.elementsByMode[mode]) {
+        merged.elements = merged.elementsByMode[mode]
+    }
+    return merged
 }

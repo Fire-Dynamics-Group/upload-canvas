@@ -4,6 +4,7 @@ import {
     isDbBacked,
     PERSIST_VERSION,
     migratePersistedState,
+    mergePersistedState,
 } from '../store/persistenceModes'
 
 // Phase 1: a per-mode persistence registry is the single source of truth for
@@ -60,5 +61,63 @@ describe('persisted-state migration', () => {
         expect(migrated.projectId).toBe('p1')
         expect(migrated.floorId).toBe('f1')
         expect(migrated.projectName).toBe('Tower')
+    })
+
+    it('moves a legacy flat elements array into the fdsGen bucket (v1 -> v2)', () => {
+        const blob = { elements: [{ id: 1, comments: 'mesh' }] }
+        const migrated = migratePersistedState(blob, 1)
+        expect(migrated.elementsByMode).toEqual({
+            fdsGen: [{ id: 1, comments: 'mesh' }],
+            radiation: [],
+            timeEq: [],
+        })
+        // legacy field left intact (it's the active fdsGen checkout)
+        expect(migrated.elements).toEqual([{ id: 1, comments: 'mesh' }])
+    })
+
+    it('does not clobber elementsByMode for already-migrated (v2) blobs', () => {
+        const blob = {
+            elements: [{ id: 7 }],
+            elementsByMode: { fdsGen: [{ id: 7 }], radiation: [{ id: 9 }], timeEq: [] },
+        }
+        const migrated = migratePersistedState(blob, 2)
+        expect(migrated.elementsByMode.radiation).toEqual([{ id: 9 }])
+    })
+})
+
+describe('rehydrate merge (reconstruct live elements from active bucket)', () => {
+    it('shallow-merges persisted over current state', () => {
+        const merged = mergePersistedState(
+            { projectId: 'p1' },
+            { projectId: null, currentMode: 'fdsGen', tool: 'scale' }
+        )
+        expect(merged.projectId).toBe('p1')
+        expect(merged.tool).toBe('scale')
+    })
+
+    it('checks out the booted mode bucket, ignoring a stale persisted live array', () => {
+        // currentMode is not persisted, so on reload it is the default ('fdsGen').
+        // The persisted live `elements` may be left over from radiation; the
+        // fdsGen bucket is the source of truth and must win.
+        const merged = mergePersistedState(
+            {
+                elements: [{ id: 99, comments: 'escapeRoute' }], // radiation leftover
+                elementsByMode: {
+                    fdsGen: [{ id: 1, comments: 'mesh' }],
+                    radiation: [{ id: 99, comments: 'escapeRoute' }],
+                    timeEq: [],
+                },
+            },
+            { currentMode: 'fdsGen', elements: [] }
+        )
+        expect(merged.elements).toEqual([{ id: 1, comments: 'mesh' }])
+    })
+
+    it('falls back gracefully when no elementsByMode is present', () => {
+        const merged = mergePersistedState(
+            { elements: [{ id: 5 }] },
+            { currentMode: 'fdsGen', elements: [] }
+        )
+        expect(merged.elements).toEqual([{ id: 5 }])
     })
 })
