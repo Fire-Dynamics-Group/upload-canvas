@@ -96,8 +96,9 @@ export default function Home() {
 
   // Memoize the auto-save function
   const triggerAutoSave = useCallback(() => {
+    // Persistence is fdsGen-only; never auto-save edits made in other modes
+    if (!useStore.getState().shouldAutoSave()) return
     const currentProjectId = useStore.getState().projectId
-    if (!currentProjectId) return
 
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
@@ -125,7 +126,8 @@ export default function Home() {
   useEffect(() => {
     let prevSnapshot = null
     const unsub = useStore.subscribe((state) => {
-      if (!state.projectId) return
+      // fdsGen-only: skip while no project loaded or in radiation/timeEq mode
+      if (!state.shouldAutoSave()) return
       const snapshot = JSON.stringify({
         elements: state.elements,
         pixelsPerMesh: state.pixelsPerMesh,

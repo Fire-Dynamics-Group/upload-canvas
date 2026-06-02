@@ -384,6 +384,14 @@ const useStore = create(persist((set, get) => {
         setProjectName: (newVal) => set(() => ({ projectName: newVal })),
         setSaveStatus: (newVal) => set(() => ({ saveStatus: newVal })),
 
+        // Persistence is fdsGen-only. Auto-save must never fire while the user
+        // is in radiation or timeEq mode, otherwise scratch geometry from those
+        // modes would overwrite the loaded fdsGen project.
+        shouldAutoSave: () => {
+            const s = get()
+            return Boolean(s.projectId) && s.currentMode === 'fdsGen'
+        },
+
         // Build the bulk-save payload from current state
         buildSavePayload: () => {
             const s = get()
