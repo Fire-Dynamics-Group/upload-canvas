@@ -1,14 +1,20 @@
+import { buildFdsPayload, hydrateFdsState } from './fdsPersistence'
+
 // Per-mode persistence registry.
 //
-// Single source of truth for "is this mode backed by the projects DB?". Modes
-// are brought onto the DB incrementally — today only fdsGen persists; radiation
-// and timeEq compute in-memory. Bringing a mode onto the DB later should be an
-// additive change here (flip `dbBacked`, and in Phase 3 attach buildPayload /
-// hydrate), never a scattered edit of hardcoded `currentMode === 'fdsGen'`
-// checks across the app.
+// Single source of truth for "is this mode backed by the projects DB?", plus
+// the per-mode save/hydrate handlers. Modes are brought onto the DB
+// incrementally — today only fdsGen persists; radiation and timeEq compute
+// in-memory. Bringing a mode onto the DB later is an additive change here:
+// write its handlers, add an entry with `dbBacked: true`. No scattered edits of
+// hardcoded `currentMode === 'fdsGen'` checks across the app.
+//
+// Handler contract:
+//   buildPayload(state) -> payload for saveProjectToServer
+//   hydrate(project, floorDetail, state) -> partial store state to `set`
 
 export const MODE_PERSISTENCE = {
-    fdsGen: { dbBacked: true },
+    fdsGen: { dbBacked: true, buildPayload: buildFdsPayload, hydrate: hydrateFdsState },
     radiation: { dbBacked: false },
     timeEq: { dbBacked: false },
 }
