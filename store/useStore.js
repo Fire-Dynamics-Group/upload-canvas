@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import {findOriginPixels, returnFinalCoordinates} from '../utils/pointManipulation'
 import { clearPdfFromIndexedDB } from '../utils/pdfStorage'
+import { isDbBacked, PERSIST_VERSION, migratePersistedState } from './persistenceModes'
 
 const defaultDoorTimings = {
     MOE: {
@@ -384,12 +385,13 @@ const useStore = create(persist((set, get) => {
         setProjectName: (newVal) => set(() => ({ projectName: newVal })),
         setSaveStatus: (newVal) => set(() => ({ saveStatus: newVal })),
 
-        // Persistence is fdsGen-only. Auto-save must never fire while the user
-        // is in radiation or timeEq mode, otherwise scratch geometry from those
-        // modes would overwrite the loaded fdsGen project.
+        // Auto-save only fires for DB-backed modes (see persistenceModes.js).
+        // Otherwise scratch geometry from a non-DB mode (radiation/timeEq) could
+        // overwrite the loaded project. Registry-driven so new modes opt in by
+        // flipping a flag, not by editing this check.
         shouldAutoSave: () => {
             const s = get()
-            return Boolean(s.projectId) && s.currentMode === 'fdsGen'
+            return Boolean(s.projectId) && isDbBacked(s.currentMode)
         },
 
         // Build the bulk-save payload from current state
@@ -593,6 +595,8 @@ const useStore = create(persist((set, get) => {
 }
 }, {
     name: 'upload-canvas-fds',
+    version: PERSIST_VERSION,
+    migrate: migratePersistedState,
     partialize: (state) => ({
         projectId: state.projectId,
         floorId: state.floorId,

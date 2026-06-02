@@ -40,6 +40,14 @@ describe('Store: auto-save mode guard', () => {
         expect(useStore.getState().shouldAutoSave()).toBe(false)
     })
 
+    it('does NOT auto-save in a mode that is not in the persistence registry', () => {
+        // Guards against adding a new mode without registering it as DB-backed
+        useStore.getState().setProjectId('proj-1')
+        useStore.getState().setCurrentMode('someUnregisteredMode')
+
+        expect(useStore.getState().shouldAutoSave()).toBe(false)
+    })
+
     it('resumes auto-saving when switching back to fdsGen', () => {
         useStore.getState().setProjectId('proj-1')
 

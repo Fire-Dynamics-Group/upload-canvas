@@ -9,6 +9,7 @@ import ErrorPopup from '../Components/ErrorPopup'
 
 import ProjectDashboard from '../Components/ProjectDashboard'
 import useUserName from '../hooks/useUserName'
+import { isDbBacked } from '../store/persistenceModes'
 import { savePdfToIndexedDB, loadPdfFromIndexedDB } from '../utils/pdfStorage'
 import {
   createProject,
@@ -216,9 +217,9 @@ export default function Home() {
     // Render using a URL (pdfjs prefers this for File objects)
     await renderPdf(URL.createObjectURL(file), isContinuing)
 
-    // Only create project and upload to S3 in fdsGen mode
+    // Only create project and upload to S3 for DB-backed modes
     const mode = useStore.getState().currentMode
-    if (mode === 'fdsGen') {
+    if (isDbBacked(mode)) {
       let currentProjectId = useStore.getState().projectId
       let currentFloorId = useStore.getState().floorId
 
@@ -342,7 +343,7 @@ export default function Home() {
   }
 
 
-  const showDashboard = currentMode === 'fdsGen' && !selectedFile && !isContinuing && !isLoadingFromServer && !showUploadScreen
+  const showDashboard = isDbBacked(currentMode) && !selectedFile && !isContinuing && !isLoadingFromServer && !showUploadScreen
 
   if (!hasMounted) return null
 
@@ -386,7 +387,7 @@ export default function Home() {
       {/* Top bar - visible when working on a project */}
       {selectedFile && (
         <div className="fixed top-2 right-2 z-50 flex gap-2">
-          {currentMode === 'fdsGen' && (
+          {isDbBacked(currentMode) && (
             <>
               <button
                 onClick={handleBackToDashboard}
