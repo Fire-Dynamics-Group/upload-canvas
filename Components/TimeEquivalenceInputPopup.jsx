@@ -1,15 +1,26 @@
 import useStore from '@/store/useStore';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {sendTimeEqData} from './ApiCalls'
 
 // TODO: add fire resitance period input
 // add choice of use of building
 // change several input boxes to dropdowns
 // TODO: discern tLim and others from use
-const TimeEquivalenceInputPopup = ({mockData=null}) => {
+const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
 
     let walls = [0, 1, 2, 3]
     const convertedPoints = useStore((state) => state.convertedPoints)
+    const setShowTimeEqPopup = useStore((state) => state.setShowTimeEqPopup)
+
+    // Close without running the calc (Escape / backdrop / close button)
+    const handleClose = onClose || (() => setShowTimeEqPopup(false))
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') handleClose()
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [])
     // let openings = [0, 1]
     let obstructions
     let openings
@@ -102,8 +113,19 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
     return (
       // todo: loop through obstruction elements between vertices/points
     //   how to add to state object on click
-      <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 overflow-hidden">
-        <div className="bg-white p-4 rounded-lg shadow-lg text-black overflow-y-auto h-[80vh]">
+      <div
+        className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 overflow-hidden"
+        onClick={handleClose}
+      >
+        <div className="relative bg-white p-4 rounded-lg shadow-lg text-black overflow-y-auto h-[80vh]" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              aria-label="Close"
+              className="absolute top-2 right-2 text-gray-500 hover:text-black text-xl leading-none"
+              onClick={handleClose}
+            >
+              &times;
+            </button>
             <ul>
                 <li key={"sprinklers"}>
                 <label className="text-lg font-bold mb-2">{"Tick if sprinklered: "}</label>
@@ -214,7 +236,7 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
                 }}/> */}
                 </li>
             {wallProperties.map((current, index) => {
-                return (<>
+                return (
                 <li key={"wallInput"+ index}>
                     {/* plan if first or last */}
                 <h2 className="text-lg font-bold mb-2">Select Wall {index + 1} Material:</h2>
@@ -235,11 +257,11 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
                         { materialDropDownContent }
                         </select>
                 </li>
-                </>)
-                
+                )
+
             })}
             {openingHeights.map((current, index) => {
-                return (<>
+                return (
                 <li key={"opening" + index}>
                     <h2 className="text-lg font-bold mb-2">Enter Opening {index + 1} Height (m):</h2>
                     {/* set wall x property on change */}
@@ -254,8 +276,8 @@ const TimeEquivalenceInputPopup = ({mockData=null}) => {
                         setOpeningHeights(temp)}}/>
 
                 </li>
-                </>)
-                
+                )
+
             })}
             </ul>
           <button className="px-4 py-2 bg-blue-500 text-white rounded-lg" onClick={handleClick}>
