@@ -8,6 +8,26 @@
  * @param {number} pixelsPerMesh - Store value (mesh cell px size)
  * @returns {Array<{x: number, y: number}>} Up to 2 sprinkler positions in px coords
  */
+/**
+ * Whether auto-placed sprinkler markers should be drawn.
+ *
+ * Only in FDS generation mode (not radiation / time-equivalence), only when
+ * the building is marked sprinklered, and only when the user hasn't already
+ * placed manual sprinklers.
+ *
+ * @param {string} currentMode - Active app mode ('fdsGen' | 'radiation' | 'timeEq')
+ * @param {boolean} isSprinklered - Store flag
+ * @param {Array} elements - All canvas elements
+ * @returns {boolean}
+ */
+export function shouldShowAutoSprinklers(currentMode, isSprinklered, elements = []) {
+    return (
+        currentMode === 'fdsGen' &&
+        !!isSprinklered &&
+        elements.filter(el => el.comments === 'sprinkler').length === 0
+    )
+}
+
 export function computeAutoSprinklerPositions(elements, pixelsPerMesh) {
     const manualSprinklers = elements.filter(el => el.comments === 'sprinkler')
     if (manualSprinklers.length > 0) return []

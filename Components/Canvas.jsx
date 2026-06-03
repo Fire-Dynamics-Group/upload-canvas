@@ -6,7 +6,8 @@ import { CSVLink } from 'react-csv'
 import useStore from '../store/useStore'
 import { calcDistance } from '@/utils/helperFunctions'
 import { computeShaftRect } from '@/utils/shaftGeometry'
-import { computeAutoSprinklerPositions } from '@/utils/autoSprinklers'
+import { computeAutoSprinklerPositions, shouldShowAutoSprinklers } from '@/utils/autoSprinklers'
+import { computeTimeEqLabels } from '@/utils/timeEqLabels'
 import { get } from 'http'
 
 /**
@@ -894,38 +895,6 @@ function Canvas({dimensions, isDevMode}) {
             }
     }
 
-        // loop through current polypoints
-        if (isDrawing) {
-
-                // should be current element with type and points object
-                // logic should allow guide to not be final point
-
-                
-                if (tool === 'polyline') {
-                    drawPolyAndGuide(currentPoly, comment, context)
-                // } else if (selectedElement) {
-                //     drawPolyAndGuide(selectedElement["element"]["points"], tool)
-                }else if (tool === 'scale') {
-                    // without context in this case!!
-                    drawPolyAndGuide(scalePoints, tool, context)
-                } else if (tool === 'point'){
-                    drawPolyline(currentPoint, context, comment) // should just add to state
-                } else if (tool == 'rect') {
-                    if (currentRect.length == 1) {
-                        // use guide for mousePosition
-                        if (guideLine != null) {
-
-                            // have guide point for rect -> send to draw rect
-                            // likely need to add offset to rect points
-                            // get rect corners first etc
-                            let rectPoints = [currentRect[0], guideLine]
-                            drawRect(rectPoints, context, comment)
-                        }
-                    }
-                }
-
-        }
-
         // Pre-compute indices for numbered labels
         const doorElements = elements.filter(el => el.comments === 'door')
         const extractElements = elements.filter(el => el.comments === 'extract')
@@ -1199,6 +1168,45 @@ function Canvas({dimensions, isDevMode}) {
             }
         })
 
+        // Draw the in-progress shape AFTER committed elements so the line
+        // being drawn (e.g. an opening over a wall) is never hidden behind a
+        // committed obstruction line.
+        if (isDrawing) {
+            if (tool === 'polyline') {
+                drawPolyAndGuide(currentPoly, comment, context)
+            } else if (tool === 'scale') {
+                drawPolyAndGuide(scalePoints, tool, context)
+            } else if (tool === 'point') {
+                drawPolyline(currentPoint, context, comment)
+            } else if (tool == 'rect') {
+                if (currentRect.length == 1) {
+                    if (guideLine != null) {
+                        let rectPoints = [currentRect[0], guideLine]
+                        drawRect(rectPoints, context, comment)
+                    }
+                }
+            }
+        }
+
+        // Time-equivalence mode: label each wall (segment of the first
+        // obstruction polygon) and each opening so they line up with the
+        // "Wall N" / "Opening N" inputs in the Time Equivalence popup.
+        if (currentMode === 'timeEq') {
+            const drawTimeEqLabel = (text, x, y, color) => {
+                context.save()
+                context.font = 'bold 12px sans-serif'
+                context.fillStyle = color
+                context.strokeStyle = 'black'
+                context.lineWidth = 3
+                context.strokeText(text, x + 6, y - 6)
+                context.fillText(text, x + 6, y - 6)
+                context.restore()
+            }
+            const { walls, openings } = computeTimeEqLabels(elements)
+            walls.forEach((w) => drawTimeEqLabel(w.text, w.x, w.y, elementConfig['obstruction']))
+            openings.forEach((o) => drawTimeEqLabel(o.text, o.x, o.y, elementConfig['opening']))
+        }
+
         // Debug: draw decomposed rectangles
         if (debugRects && debugRects.length >= 4) {
             const colors = ['rgba(255,0,0,0.3)', 'rgba(0,0,255,0.3)', 'rgba(255,255,0,0.3)', 'rgba(0,255,255,0.3)', 'rgba(255,0,255,0.3)', 'rgba(128,255,0,0.3)']
@@ -1217,7 +1225,7 @@ function Canvas({dimensions, isDevMode}) {
         }
 
         // Draw auto-placed sprinkler markers only in FDS gen mode, when no manual sprinklers exist
-        if (currentMode === 'fdsGen' && isSprinklered && elements.filter(el => el.comments === 'sprinkler').length === 0) {
+        if (shouldShowAutoSprinklers(currentMode, isSprinklered, elements)) {
             const sprinklerPositions = computeAutoSprinklerPositions(elements, pixelsPerMesh)
             if (sprinklerPositions.length > 0) {
                 sprinklerPositions.forEach((sp, i) => {
