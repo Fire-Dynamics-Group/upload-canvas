@@ -402,7 +402,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
       {showErrorPopup && <ErrorPopup setShowPopup={setShowErrorPopup} errorList={errorList}/>}
       {showTimeEqPopup && <TimeEquivalenceInputPopup mockData={null}/>}
       {showFireInputsPopup && <FireInputsPopup handleUserInput={handleFireInput}/>}
-      {showWalkingPopup && <WalkingSpeedPopup handleUserInput={handleWalkingInput}/>}
+      {showWalkingPopup && <WalkingSpeedPopup handleUserInput={handleWalkingInput} onClose={() => setShowWalkingPopup(false)}/>}
         <div className="text-center">
           <button
             onClick={handleModeButtonClick}

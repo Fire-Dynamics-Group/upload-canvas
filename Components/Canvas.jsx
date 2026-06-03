@@ -1216,8 +1216,8 @@ function Canvas({dimensions, isDevMode}) {
             }
         }
 
-        // Draw auto-placed sprinkler markers only when no manual sprinklers exist
-        if (isSprinklered && elements.filter(el => el.comments === 'sprinkler').length === 0) {
+        // Draw auto-placed sprinkler markers only in FDS gen mode, when no manual sprinklers exist
+        if (currentMode === 'fdsGen' && isSprinklered && elements.filter(el => el.comments === 'sprinkler').length === 0) {
             const sprinklerPositions = computeAutoSprinklerPositions(elements, pixelsPerMesh)
             if (sprinklerPositions.length > 0) {
                 sprinklerPositions.forEach((sp, i) => {
