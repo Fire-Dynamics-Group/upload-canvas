@@ -287,7 +287,56 @@ export const sendTimeEqData = async (
     link.download = 'chart.jpeg';
     link.click();
     return true;
-  
+
+  }
+
+// Monte Carlo time-equivalence reliability. Unlike sendTimeEqData (which downloads a
+// chart jpeg), this returns the parsed JSON reliability result for inline display.
+export const sendTimeEqReliabilityData = async (
+    convertedPoints,
+    {
+      occupancy,
+      compartmentHeight,
+      fireResistancePeriod,
+      isSprinklered = false,
+      nSim = 2000,
+      openableWidths = null,   // per-wall openable width (party/fire walls = 0)
+      roomComposition = null,  // for backend-derived b-value
+      bValue = null,           // explicit b-value override (wins over roomComposition)
+      sectionFactor = null,
+      criticalTemp = null,
+      tLimMinutes = null,      // fire growth rate (medium = 20)
+      combustionFactor = 0.8,
+      sprinklerFactor = 0.65,
+    } = {}
+  ) => {
+    const bodyContent = JSON.stringify({
+      convertedPoints,
+      occupancy,
+      compartmentHeight,
+      fireResistancePeriod,
+      isSprinklered,
+      nSim,
+      openableWidths,
+      roomComposition,
+      bValue,
+      sectionFactor,
+      criticalTemp,
+      tLimMinutes,
+      combustionFactor,
+      sprinklerFactor,
+    })
+    const response = await fetch(`${API_BASE}/timeEqReliability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: bodyContent,
+    })
+    if (!response.ok) {
+      let detail = `Reliability request failed: ${response.status}`
+      try { detail = (await response.json()).detail || detail } catch { /* non-JSON error */ }
+      throw new Error(detail)
+    }
+    return response.json()
   }
 
   // export const sendRadiationData = async (
