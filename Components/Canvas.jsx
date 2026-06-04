@@ -272,6 +272,8 @@ function Canvas({dimensions, isDevMode}) {
     const debugRects = useStore((state) => state.debugRects)
     const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
     const efsColumnSpacing = useStore((state) => state.efsColumnSpacing)
+    const efsPopupOpen = useStore((state) => state.efsPopupOpen)
+    const efsCalcDone = useStore((state) => state.efsCalcDone)
     const setPixelsPerMesh = useStore((state) => state.setPixelsPerMesh)
 
 
@@ -1217,7 +1219,10 @@ function Canvas({dimensions, isDevMode}) {
             const pxPerM = pixelsPerMesh * 10
             const spacingM = Number(efsColumnSpacing)
             if (wall?.points?.length >= 2 && spacingM > 0 && pxPerM > 0) {
-                // Column markers (filled squares) at each gridline.
+                // Column markers (filled squares) at each gridline. While the EFS
+                // popup is open or a calc has been run, also label each with its
+                // gridline number so they line up with the popup table.
+                const showGridlineLabels = efsPopupOpen || efsCalcDone
                 const stations = gridlineStations(wall.points, spacingM * pxPerM)
                 stations.forEach((st) => {
                     const r = 5
@@ -1229,6 +1234,15 @@ function Canvas({dimensions, isDevMode}) {
                     context.rect(st.point.x - r, st.point.y - r, r * 2, r * 2)
                     context.fill()
                     context.stroke()
+                    if (showGridlineLabels) {
+                        const label = String(st.gridline)
+                        context.font = 'bold 12px sans-serif'
+                        context.lineWidth = 3
+                        context.strokeStyle = 'black'
+                        context.strokeText(label, st.point.x + r + 2, st.point.y - r - 2)
+                        context.fillStyle = 'white'
+                        context.fillText(label, st.point.x + r + 2, st.point.y - r - 2)
+                    }
                     context.restore()
                 })
 
@@ -1401,7 +1415,7 @@ function Canvas({dimensions, isDevMode}) {
             context.restore()
         }
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, debugRects, snapGuides, candidateCycleState])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, debugRects, snapGuides, candidateCycleState])
 
     // Generate thumbnail by compositing PDF + drawing canvases
     const thumbnailTimerRef = useRef(null)

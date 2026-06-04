@@ -21,6 +21,7 @@ const EfsPopup = ({ onClose }) => {
     // scale (that's the scale tool / pixelsPerMesh).
     const columnSpacing = useStore((state) => state.efsColumnSpacing)
     const setColumnSpacing = useStore((state) => state.setEfsColumnSpacing)
+    const setEfsCalcDone = useStore((state) => state.setEfsCalcDone)
     const [result, setResult] = useState(null)
     const [error, setError] = useState(null)
 
@@ -48,6 +49,7 @@ const EfsPopup = ({ onClose }) => {
             spacing: sp,
         })
         setResult(res)
+        setEfsCalcDone(true)
     }
 
     const numberField = (label, value, setter) => (

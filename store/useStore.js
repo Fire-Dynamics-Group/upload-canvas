@@ -47,6 +47,10 @@ const useStore = create(persist((set, get) => {
         // EFS view-factor mode: column spacing (m) along the elevation. Shared by
         // the EFS popup and the canvas boundary-distance overlay.
         efsColumnSpacing: 8,
+        // Whether the EFS popup is open, and whether a calc has been run — either
+        // shows the gridline number labels on the canvas.
+        efsPopupOpen: false,
+        efsCalcDone: false,
 
         // Fire configuration
         fireHRR: 1000,              // kW
@@ -233,6 +237,8 @@ const useStore = create(persist((set, get) => {
             pixelsPerMesh: pxPerMesh
         })),
         setEfsColumnSpacing: (v) => set(() => ({ efsColumnSpacing: v })),
+        setEfsPopupOpen: (v) => set(() => ({ efsPopupOpen: v })),
+        setEfsCalcDone: (v) => set(() => ({ efsCalcDone: v })),
 
         setConvertedPoints: () => set((state) => {
             let tempOrigin = findOriginPixels(state.elements, state.canvasDimensions.height)

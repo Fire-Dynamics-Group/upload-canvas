@@ -80,7 +80,8 @@ const Toolbar = ({setShowModePopup}) => {
 
     const [showFireInputsPopup, setShowFireInputsPopup] = useState(false)
     const [showFDSInputsPopup, setShowFDSInputsPopup] = useState(false)
-    const [showEfsPopup, setShowEfsPopup] = useState(false)
+    const showEfsPopup = useStore((state) => state.efsPopupOpen)
+    const setShowEfsPopup = useStore((state) => state.setEfsPopupOpen)
 
     const totalHeatFlux = useStore((state) => state.totalHeatFlux)
     const heatEndPoint = useStore((state) => state.heatEndPoint)
