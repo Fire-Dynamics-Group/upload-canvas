@@ -367,10 +367,21 @@ export function solveSForTargetPartial(
 
 // Column gridline x-positions along an elevation of `width`: 0, spacing, ...,
 // width (far edge always included). Bay i (1-indexed) spans [xs[i-1], xs[i]].
-export function columnPositions(width, spacing) {
+// `firstSpacing` / `lastSpacing` (opt) override the END bay widths — buildings
+// often have non-typical end bays — so the first bay is `firstSpacing` wide
+// and/or the last bay is `lastSpacing` wide, with the regular grid in between.
+export function columnPositions(width, spacing, { firstSpacing, lastSpacing } = {}) {
+    if (!(width > 0) || !(spacing > 0)) return [0]
     const xs = [0]
-    while (xs[xs.length - 1] + spacing < width) xs.push(xs[xs.length - 1] + spacing)
-    if (xs[xs.length - 1] < width) xs.push(width)
+    const first = firstSpacing > 0 ? firstSpacing : spacing
+    const lastStart = lastSpacing > 0 ? width - lastSpacing : null
+    const limit = (lastStart != null && lastStart > 0) ? lastStart : width
+    let x = first
+    while (x < limit - 1e-9) { xs.push(x); x += spacing }
+    if (lastStart != null && lastStart > xs[xs.length - 1] + 1e-9 && lastStart < width - 1e-9) {
+        xs.push(lastStart)
+    }
+    if (xs[xs.length - 1] < width - 1e-9) xs.push(width)
     return xs
 }
 
@@ -509,8 +520,8 @@ function subtractBands(intervals, bands) {
 // The column bays a span [start, end] (arc-length along the wall) covers. Snaps
 // to whole bays: any bay the span touches is included (so a region extends into
 // the next bay if it crosses a column line). 1-indexed bay numbers.
-export function baysCoveredBySpan(width, spacing, start, end) {
-    const xs = columnPositions(width, spacing)
+export function baysCoveredBySpan(width, spacing, start, end, opts = {}) {
+    const xs = columnPositions(width, spacing, opts)
     const lo = Math.min(start, end)
     const hi = Math.max(start, end)
     const bays = []
@@ -532,8 +543,8 @@ export function projectSpanOntoWall(wallPoints, regionPoints) {
 // per-bay status for labelling, the conflict bays (protected/unprotected bands
 // overlapping vertically -> apply neither there), and the bays locked out of
 // auto-suggest (those carrying an unprotected band).
-export function buildEmitter({ width, spacing, height, protectedBays = [], regions = [] }) {
-    const xs = columnPositions(width, spacing)
+export function buildEmitter({ width, spacing, height, protectedBays = [], regions = [], firstSpacing, lastSpacing }) {
+    const xs = columnPositions(width, spacing, { firstSpacing, lastSpacing })
     const nBays = xs.length - 1
     const protectedSet = new Set(protectedBays)
 
@@ -593,7 +604,7 @@ export function buildEmitter({ width, spacing, height, protectedBays = [], regio
 // blanket fixed-step sampling). Protected bays are compliant by construction.
 export function assessElevationBays({
     wallPoints, boundaryPoints, height, T, spacing, protectedBays = [], regions = [],
-    buildingPoints, targetIs = DEFAULT_TARGET_IS,
+    firstSpacing, lastSpacing, buildingPoints, targetIs = DEFAULT_TARGET_IS,
 }) {
     if (!wallPoints || wallPoints.length < 2) {
         throw new Error('assessElevationBays requires a wall line of >= 2 points')
@@ -612,7 +623,7 @@ export function assessElevationBays({
     // bays from #8). Unprotected bands are constraints/labels, not emitter
     // changes. With no regions this reduces to the unprotected-bays emitter.
     const { pieces, bayStatus, conflictBays, lockedBays, nBays, xs } = buildEmitter({
-        width, spacing, height, protectedBays, regions,
+        width, spacing, height, protectedBays, regions, firstSpacing, lastSpacing,
     })
     const statusByBay = Object.fromEntries(bayStatus.map((s) => [s.bay, s]))
 
@@ -710,10 +721,11 @@ export function assessElevationBays({
 // compliance was achieved, and the final assessment.
 export function suggestProtection({
     wallPoints, boundaryPoints, height, T, spacing, cornersFirst = true, regions = [],
-    buildingPoints, targetIs = DEFAULT_TARGET_IS,
+    firstSpacing, lastSpacing, buildingPoints, targetIs = DEFAULT_TARGET_IS,
 }) {
     const run = (protectedBays) => assessElevationBays({
-        wallPoints, boundaryPoints, height, T, spacing, protectedBays, regions, buildingPoints, targetIs,
+        wallPoints, boundaryPoints, height, T, spacing, protectedBays, regions,
+        firstSpacing, lastSpacing, buildingPoints, targetIs,
     })
     let assessment = run([])
     if (!assessment.hasBoundary) {
@@ -824,13 +836,10 @@ export function splitIntoElevations(points, angleThresholdDeg = 20) {
 
 // Arc-length stations of the column gridlines along the wall: 0, spacing, ...,
 // width (the far edge is always included). Returns [{ gridline, dist, point }].
-export function gridlineStations(wallPoints, spacing) {
+export function gridlineStations(wallPoints, spacing, opts = {}) {
     if (!wallPoints || wallPoints.length < 2 || !(spacing > 0)) return []
     const width = polylineLength(wallPoints)
-    const ds = [0]
-    while (ds[ds.length - 1] + spacing < width) ds.push(ds[ds.length - 1] + spacing)
-    if (ds[ds.length - 1] < width) ds.push(width)
-    return ds.map((dist, i) => ({
+    return columnPositions(width, spacing, opts).map((dist, i) => ({
         gridline: i + 1,
         dist,
         point: pointAtDistanceAlong(wallPoints, dist),
@@ -843,9 +852,9 @@ export function gridlineStations(wallPoints, spacing) {
 // that worst point. Space-agnostic — pass pixel points + pixel spacing +
 // pixel sampleStep for canvas drawing, or metre units throughout. Returns
 // [{ segment, from, to, distance, outward }]; empty if inputs are insufficient.
-export function buildBoundaryArrows(wallPoints, boundaryPoints, spacing, sampleStep, losPoints = wallPoints) {
+export function buildBoundaryArrows(wallPoints, boundaryPoints, spacing, sampleStep, losPoints = wallPoints, opts = {}) {
     if (!boundaryPoints || boundaryPoints.length < 2) return []
-    const stations = gridlineStations(wallPoints, spacing)
+    const stations = gridlineStations(wallPoints, spacing, opts)
     if (stations.length < 2) return []
 
     const arrows = []
@@ -880,9 +889,9 @@ export function buildBoundaryArrows(wallPoints, boundaryPoints, spacing, sampleS
 // metre points, or pixel values with pixel points). Space-agnostic, mirroring
 // buildBoundaryArrows. Returns [{ gridline, from, required, point }]; `point` is
 // null where the outward direction can't be found. [] without a boundary.
-export function buildRequiredBoundaryLine(wallPoints, boundaryPoints, spacing, requiredByStation, losPoints = wallPoints) {
+export function buildRequiredBoundaryLine(wallPoints, boundaryPoints, spacing, requiredByStation, losPoints = wallPoints, opts = {}) {
     if (!boundaryPoints || boundaryPoints.length < 2) return []
-    const stations = gridlineStations(wallPoints, spacing)
+    const stations = gridlineStations(wallPoints, spacing, opts)
     if (stations.length < 2 || !requiredByStation || !requiredByStation.length) return []
     return stations.map((st, i) => {
         const required = requiredByStation[i]

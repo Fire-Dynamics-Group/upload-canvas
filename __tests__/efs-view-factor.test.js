@@ -299,6 +299,45 @@ describe('columnPositions — bay layout', () => {
         expect(columnPositions(96, 8)).toEqual([0, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96])
         expect(columnPositions(40, 8)).toHaveLength(6) // 5 bays
     })
+
+    it('honours a custom first-bay spacing', () => {
+        // first bay 5 m wide, then the regular 8 m grid, last bay the remainder
+        const xs = columnPositions(40, 8, { firstSpacing: 5 })
+        expect(xs[0]).toBe(0)
+        expect(xs[1]).toBe(5)
+        expect(xs[2]).toBe(13)
+        expect(xs[xs.length - 1]).toBe(40)
+    })
+
+    it('honours a custom last-bay spacing', () => {
+        // last bay 6 m wide -> a column at width - 6 = 34, then 40
+        const xs = columnPositions(40, 8, { lastSpacing: 6 })
+        expect(xs[xs.length - 1]).toBe(40)
+        expect(xs[xs.length - 2]).toBe(34)
+        expect(40 - 34).toBe(6)
+    })
+
+    it('honours custom first and last bays together', () => {
+        const xs = columnPositions(50, 10, { firstSpacing: 4, lastSpacing: 6 })
+        expect(xs[0]).toBe(0)
+        expect(xs[1]).toBe(4)            // first bay 4
+        expect(xs[xs.length - 1]).toBe(50)
+        expect(xs[xs.length - 2]).toBe(44) // last bay 6
+    })
+})
+
+describe('assessElevationBays — custom end-bay spacing', () => {
+    const wallPoints = [{ x: 0, y: 0 }, { x: 96, y: 0 }]
+
+    it('changes the bay layout when first/last spacing are given', () => {
+        const plain = assessElevationBays({ wallPoints, boundaryPoints: [], height: 18, T, spacing: 8 })
+        const custom = assessElevationBays({
+            wallPoints, boundaryPoints: [], height: 18, T, spacing: 8, firstSpacing: 5, lastSpacing: 5,
+        })
+        // first/last bay widths differ from the uniform grid
+        expect(custom.rows[0].rightW + custom.rows[0].leftW).toBeGreaterThan(0)
+        expect(plain.nBays).not.toBe(custom.nBays)
+    })
 })
 
 describe('assessElevationBays — per-bay assessment', () => {

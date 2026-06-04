@@ -279,6 +279,7 @@ function Canvas({dimensions, isDevMode}) {
     const efsActiveElevation = useStore((state) => state.efsActiveElevation)
     const efsProtectedByElev = useStore((state) => state.efsProtectedByElev)
     const efsRequiredByElev = useStore((state) => state.efsRequiredByElev)
+    const efsEndSpacingByElev = useStore((state) => state.efsEndSpacingByElev)
     const setPixelsPerMesh = useStore((state) => state.setPixelsPerMesh)
 
 
@@ -1233,13 +1234,22 @@ function Canvas({dimensions, isDevMode}) {
                 const face = elevations[activeIdx] || { points: wall.points }
                 const facePts = face.points
                 const showGridlineLabels = efsPopupOpen || efsCalcDone
-                const stations = gridlineStations(facePts, spacingPx)
+                // Per-elevation custom end-bay spacing, scaled to pixels.
+                const optsForElev = (idx) => {
+                    const cfg = efsEndSpacingByElev[idx] || {}
+                    return {
+                        firstSpacing: cfg.firstEnabled && cfg.firstSpacing > 0 ? Number(cfg.firstSpacing) * pxPerM : undefined,
+                        lastSpacing: cfg.lastEnabled && cfg.lastSpacing > 0 ? Number(cfg.lastSpacing) * pxPerM : undefined,
+                    }
+                }
+                const activeOpts = optsForElev(activeIdx)
+                const stations = gridlineStations(facePts, spacingPx, activeOpts)
 
                 // Faint column markers on every (non-active) elevation so the whole
                 // building's grid is visible; the active face is drawn richly below.
                 elevations.forEach((e, idx) => {
                     if (idx === activeIdx) return
-                    gridlineStations(e.points, spacingPx).forEach((st) => {
+                    gridlineStations(e.points, spacingPx, optsForElev(idx)).forEach((st) => {
                         context.save()
                         context.fillStyle = 'rgba(234,179,8,0.5)'
                         context.beginPath()
@@ -1303,7 +1313,7 @@ function Canvas({dimensions, isDevMode}) {
                         if (bestIdx !== activeIdx) return
                         const protectedKind = el.comments === 'efsProtected'
                         const { start, end } = projectSpanOntoWall(facePts, el.points)
-                        baysCoveredBySpan(faceWidthPx, spacingPx, start, end).forEach((bay) => {
+                        baysCoveredBySpan(faceWidthPx, spacingPx, start, end, activeOpts).forEach((bay) => {
                             shadeBay(
                                 bay,
                                 protectedKind ? 'rgba(55,65,81,0.30)' : 'rgba(37,99,235,0.22)',
@@ -1367,7 +1377,7 @@ function Canvas({dimensions, isDevMode}) {
                 }
                 // 0.1 m sampling along each segment to find the worst case (active
                 // face; full outline for line-of-sight).
-                const arrows = buildBoundaryArrows(facePts, boundary?.points, spacingPx, 0.1 * pxPerM, losPts)
+                const arrows = buildBoundaryArrows(facePts, boundary?.points, spacingPx, 0.1 * pxPerM, losPts, activeOpts)
                 arrows.forEach((a) => drawBoundaryArrow(a.from, a.to, a.distance / pxPerM))
 
                 // "Needed boundary" locus (after the calc): offset each gridline
@@ -1377,7 +1387,7 @@ function Canvas({dimensions, isDevMode}) {
                 if (efsCalcDone && boundary?.points?.length >= 2
                     && Array.isArray(activeRequired) && activeRequired.length) {
                     const requiredPx = activeRequired.map((d) => d * pxPerM)
-                    const line = buildRequiredBoundaryLine(facePts, boundary.points, spacingPx, requiredPx, losPts)
+                    const line = buildRequiredBoundaryLine(facePts, boundary.points, spacingPx, requiredPx, losPts, activeOpts)
                     const pts = line.map((l) => l.point).filter(Boolean)
                     if (pts.length >= 2) {
                         context.save()
@@ -1536,7 +1546,7 @@ function Canvas({dimensions, isDevMode}) {
             context.restore()
         }
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsActiveElevation, efsProtectedByElev, efsRequiredByElev, debugRects, snapGuides, candidateCycleState])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsActiveElevation, efsProtectedByElev, efsRequiredByElev, efsEndSpacingByElev, debugRects, snapGuides, candidateCycleState])
 
     // Generate thumbnail by compositing PDF + drawing canvases
     const thumbnailTimerRef = useRef(null)

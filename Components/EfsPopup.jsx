@@ -41,6 +41,9 @@ const EfsPopup = ({ onClose }) => {
     const setRequiredForElev = useStore((state) => state.setEfsRequiredForElev)
     const cornersFirst = useStore((state) => state.efsCornersFirst)
     const setCornersFirst = useStore((state) => state.setEfsCornersFirst)
+    // Optional custom end-bay spacing per elevation (tick boxes).
+    const endSpacingByElev = useStore((state) => state.efsEndSpacingByElev)
+    const setEndSpacingForElev = useStore((state) => state.setEfsEndSpacingForElev)
     // Region bands (issue #11), keyed by drawn region element id.
     const regionConfig = useStore((state) => state.efsRegionConfig)
     const setRegionBand = useStore((state) => state.setEfsRegionBand)
@@ -54,6 +57,13 @@ const EfsPopup = ({ onClose }) => {
     const elevations = wall?.finalPoints?.length >= 2 ? splitIntoElevations(wall.finalPoints) : []
     const active = elevations.length ? Math.min(activeElev, elevations.length - 1) : 0
     const protectedBays = protectedByElev[active] || []
+
+    // Resolve the active elevation's custom end-bay spacing into calc opts.
+    const endCfg = endSpacingByElev[active] || {}
+    const endOpts = (cfg) => ({
+        firstSpacing: cfg.firstEnabled && cfg.firstSpacing > 0 ? Number(cfg.firstSpacing) : undefined,
+        lastSpacing: cfg.lastEnabled && cfg.lastSpacing > 0 ? Number(cfg.lastSpacing) : undefined,
+    })
 
     function readInputs() {
         if (!wall || !wall.finalPoints || wall.finalPoints.length < 2) {
@@ -73,7 +83,7 @@ const EfsPopup = ({ onClose }) => {
 
     // Drawn region polylines, bound to the nearest elevation, snapped to the bays
     // they cover on that face, with their configured vertical band — for `face`.
-    function regionsForFace(face, faceWidth, spacing, h) {
+    function regionsForFace(face, faceWidth, spacing, h, opts) {
         const regs = []
         for (const el of (convertedPoints || [])) {
             if (el.comments !== 'efsProtected' && el.comments !== 'efsUnprotected') continue
@@ -90,7 +100,7 @@ const EfsPopup = ({ onClose }) => {
             })
             if (elevations[bestIdx] !== face) continue
             const { start, end } = projectSpanOntoWall(face.points, el.finalPoints)
-            const bays = baysCoveredBySpan(faceWidth, spacing, start, end)
+            const bays = baysCoveredBySpan(faceWidth, spacing, start, end, opts || {})
             if (!bays.length) continue
             const cfg = regionConfig[el.id] || {}
             regs.push({
@@ -111,7 +121,8 @@ const EfsPopup = ({ onClose }) => {
         const face = elevations[idx]
         if (!face) { setError('No elevation at that tab.'); return null }
         const faceWidth = polylineLength(face.points)
-        const regions = regionsForFace(face, faceWidth, inp.sp, inp.h)
+        const opts = endOpts(endSpacingByElev[idx] || {})
+        const regions = regionsForFace(face, faceWidth, inp.sp, inp.h, opts)
         const res = assessElevationBays({
             wallPoints: face.points,
             boundaryPoints: inp.boundary ? inp.boundary.finalPoints : [],
@@ -120,6 +131,8 @@ const EfsPopup = ({ onClose }) => {
             spacing: inp.sp,
             protectedBays: bays,
             regions,
+            firstSpacing: opts.firstSpacing,
+            lastSpacing: opts.lastSpacing,
             buildingPoints: wall.finalPoints,
         })
         res._regions = regions
@@ -160,7 +173,8 @@ const EfsPopup = ({ onClose }) => {
         }
         const face = elevations[active]
         const faceWidth = polylineLength(face.points)
-        const regions = regionsForFace(face, faceWidth, inp.sp, inp.h)
+        const opts = endOpts(endCfg)
+        const regions = regionsForFace(face, faceWidth, inp.sp, inp.h, opts)
         const sug = suggestProtection({
             wallPoints: face.points,
             boundaryPoints: inp.boundary.finalPoints,
@@ -169,6 +183,8 @@ const EfsPopup = ({ onClose }) => {
             spacing: inp.sp,
             cornersFirst,
             regions,
+            firstSpacing: opts.firstSpacing,
+            lastSpacing: opts.lastSpacing,
             buildingPoints: wall.finalPoints,
         })
         setProtectedForElev(active, sug.protectedBays)
@@ -192,6 +208,15 @@ const EfsPopup = ({ onClose }) => {
         setProtectedForElev(active, [])
         setSuggestNote(null)
         assessElev(active, [])
+    }
+
+    // Custom end-bay spacing for the active elevation. Re-laying the bays
+    // invalidates the protected-bay indices, so clear them and re-assess.
+    function updateEndSpacing(patch) {
+        setEndSpacingForElev(active, patch)
+        setProtectedForElev(active, [])
+        setSuggestNote(null)
+        setTimeout(() => assessElev(active, []), 0)
     }
 
     function updateRegionBand(id, patch) {
@@ -253,6 +278,48 @@ const EfsPopup = ({ onClose }) => {
                 {numberField('Elevation height (m)', height, setHeight)}
                 {numberField('Fire temperature (°C)', fireTempC, setFireTempC)}
                 {numberField('Column spacing (m)', columnSpacing, setColumnSpacing)}
+
+                {/* Custom end-bay spacing for the active elevation (tick boxes). */}
+                <div className="mb-3 text-sm space-y-1">
+                    <p className="text-xs text-gray-500">End bays{elevations.length > 1 ? ` (Elevation ${elevations[active]?.index})` : ''}</p>
+                    <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-1">
+                            <input
+                                type="checkbox"
+                                checked={!!endCfg.firstEnabled}
+                                onChange={(e) => updateEndSpacing({ firstEnabled: e.target.checked, firstSpacing: endCfg.firstSpacing ?? columnSpacing })}
+                            />
+                            Custom first bay
+                        </label>
+                        {endCfg.firstEnabled && (
+                            <input
+                                type="number"
+                                value={endCfg.firstSpacing ?? columnSpacing}
+                                onChange={(e) => updateEndSpacing({ firstSpacing: e.target.value })}
+                                className="w-20 border border-gray-300 px-2 py-1 rounded"
+                            />
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-1">
+                            <input
+                                type="checkbox"
+                                checked={!!endCfg.lastEnabled}
+                                onChange={(e) => updateEndSpacing({ lastEnabled: e.target.checked, lastSpacing: endCfg.lastSpacing ?? columnSpacing })}
+                            />
+                            Custom last bay
+                        </label>
+                        {endCfg.lastEnabled && (
+                            <input
+                                type="number"
+                                value={endCfg.lastSpacing ?? columnSpacing}
+                                onChange={(e) => updateEndSpacing({ lastSpacing: e.target.value })}
+                                className="w-20 border border-gray-300 px-2 py-1 rounded"
+                            />
+                        )}
+                    </div>
+                </div>
+
                 <p className="text-xs text-gray-500 mb-3">Radiation threshold fixed at 12.6 kW/m² (BR 187).</p>
 
                 {/* Elevation tabs (issue #10): one per face of the drawn outline. */}

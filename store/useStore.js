@@ -59,6 +59,9 @@ const useStore = create(persist((set, get) => {
         efsActiveElevation: 0,
         efsProtectedByElev: {},   // { [elevIdx]: number[] } protected bays per face
         efsRequiredByElev: {},    // { [elevIdx]: number[] } needed-boundary locus
+        // Optional custom end-bay spacing per elevation (tick-box driven):
+        // { [elevIdx]: { firstEnabled, firstSpacing, lastEnabled, lastSpacing } }.
+        efsEndSpacingByElev: {},
         // Per-region vertical band (issue #11), keyed by the drawn region
         // element's id: { base, top } in metres (default 0..elevation height).
         efsRegionConfig: {},
@@ -271,6 +274,9 @@ const useStore = create(persist((set, get) => {
             efsRequiredByElev: { ...state.efsRequiredByElev, [i]: arr },
         })),
         setEfsCornersFirst: (v) => set(() => ({ efsCornersFirst: v })),
+        setEfsEndSpacingForElev: (i, patch) => set((state) => ({
+            efsEndSpacingByElev: { ...state.efsEndSpacingByElev, [i]: { ...state.efsEndSpacingByElev[i], ...patch } },
+        })),
         setEfsRegionBand: (id, band) => set((state) => ({
             efsRegionConfig: { ...state.efsRegionConfig, [id]: { ...state.efsRegionConfig[id], ...band } },
         })),
@@ -493,6 +499,7 @@ const useStore = create(persist((set, get) => {
                 efsActiveElevation: 0,
                 efsProtectedByElev: {},
                 efsRequiredByElev: {},
+                efsEndSpacingByElev: {},
                 efsRegionConfig: {},
                 efsCalcDone: false,
                 pdfData: null,
