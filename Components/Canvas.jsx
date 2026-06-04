@@ -274,6 +274,7 @@ function Canvas({dimensions, isDevMode}) {
     const efsColumnSpacing = useStore((state) => state.efsColumnSpacing)
     const efsPopupOpen = useStore((state) => state.efsPopupOpen)
     const efsCalcDone = useStore((state) => state.efsCalcDone)
+    const efsProtectedBays = useStore((state) => state.efsProtectedBays)
     const setPixelsPerMesh = useStore((state) => state.setPixelsPerMesh)
 
 
@@ -1224,6 +1225,41 @@ function Canvas({dimensions, isDevMode}) {
                 // gridline number so they line up with the popup table.
                 const showGridlineLabels = efsPopupOpen || efsCalcDone
                 const stations = gridlineStations(wall.points, spacingM * pxPerM)
+
+                // Protected (fire-rated) bays (issue #8): shade the span between the
+                // two bounding columns so manual + auto-suggested protection both
+                // read off the canvas. Bay i sits between station i and station i+1.
+                if (Array.isArray(efsProtectedBays) && efsProtectedBays.length) {
+                    efsProtectedBays.forEach((bay) => {
+                        const a = stations[bay - 1]
+                        const b = stations[bay]
+                        if (!a || !b) return
+                        const ang = Math.atan2(b.point.y - a.point.y, b.point.x - a.point.x)
+                        const w = 14 // hatch band half-width (px)
+                        const nx = -Math.sin(ang) * w
+                        const ny = Math.cos(ang) * w
+                        context.save()
+                        context.fillStyle = 'rgba(120,120,120,0.35)'
+                        context.strokeStyle = '#374151'
+                        context.lineWidth = 1.5
+                        context.beginPath()
+                        context.moveTo(a.point.x + nx, a.point.y + ny)
+                        context.lineTo(b.point.x + nx, b.point.y + ny)
+                        context.lineTo(b.point.x - nx, b.point.y - ny)
+                        context.lineTo(a.point.x - nx, a.point.y - ny)
+                        context.closePath()
+                        context.fill()
+                        context.stroke()
+                        // "P" label at the bay midpoint
+                        const mx = (a.point.x + b.point.x) / 2
+                        const my = (a.point.y + b.point.y) / 2
+                        context.font = 'bold 11px sans-serif'
+                        context.fillStyle = '#111827'
+                        context.fillText(`P${bay}`, mx - 6, my + 4)
+                        context.restore()
+                    })
+                }
+
                 stations.forEach((st) => {
                     const r = 5
                     context.save()
@@ -1415,7 +1451,7 @@ function Canvas({dimensions, isDevMode}) {
             context.restore()
         }
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, debugRects, snapGuides, candidateCycleState])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsProtectedBays, debugRects, snapGuides, candidateCycleState])
 
     // Generate thumbnail by compositing PDF + drawing canvases
     const thumbnailTimerRef = useRef(null)

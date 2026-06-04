@@ -279,6 +279,265 @@ export function boundaryDistanceOutward(wallPoints, dist, boundaryPoints) {
     return { from, point: c.point, distance: c.distance, outward: false }
 }
 
+// --- partial emitter (protected bays) -----------------------------------------
+//
+// Issue #8: when a column bay is made fire-rated ("protected") it is taken OUT of
+// the emitter set. The emitter is then the union of the UNPROTECTED bays — a
+// rectangle with holes. `totalViewFactor` above assumes a continuous emitter from
+// the receiver out to both edges; `totalViewFactorPartial` generalises it to an
+// arbitrary set of horizontal emitter intervals (bays), each `[a, b]` in
+// width/arc-length space, for a receiver at horizontal position `xR`.
+
+// View-factor contribution of one emitter strip [a, b] of height h to a receiver
+// at xR, separation S. Mirrors the left/right corner-rectangle split used by
+// `totalViewFactor`, generalised so the strip need not touch the receiver normal.
+export function bayStrip(xR, a, b, h, S) {
+    if (b <= xR) return viewFactorRect(xR - a, h, S) - viewFactorRect(xR - b, h, S)
+    if (a >= xR) return viewFactorRect(b - xR, h, S) - viewFactorRect(a - xR, h, S)
+    // straddling: the receiver normal falls inside the bay
+    return viewFactorRect(xR - a, h, S) + viewFactorRect(b - xR, h, S)
+}
+
+// Total view factor from the receiver at xR to the holed emitter `bays`
+// (array of [a, b]), summing the bottom and top corner rectangles (receiver at
+// mid-height, so bottomH = topH = height/2). With a single bay [0, width] this
+// reproduces totalViewFactor(xR, width - xR, ...) exactly (regression guard).
+export function totalViewFactorPartial(xR, bays, S, bottomH, topH) {
+    let f = 0
+    for (const [a, b] of bays) {
+        f += bayStrip(xR, a, b, bottomH, S) + bayStrip(xR, a, b, topH, S)
+    }
+    return f
+}
+
+// Goal-seek S for the partial (holed) emitter — same monotone bisection as
+// solveSForTarget. With no emitter (all bays protected) the flux is zero and the
+// required separation collapses to 0.
+export function solveSForTargetPartial(
+    xR, bays, bottomH, topH, T, targetIs = DEFAULT_TARGET_IS,
+    { sLo = 1e-4, sHi = 5000, tol = 1e-4, maxIter = 300 } = {},
+) {
+    if (!bays.length) return 0
+    const f = (S) => emissivePower(T) * totalViewFactorPartial(xR, bays, S, bottomH, topH) - targetIs
+    let hi = sHi
+    while (f(hi) > 0 && hi < 1e7) hi *= 2
+    if (f(sLo) < 0) return sLo
+    let lo = sLo
+    for (let i = 0; i < maxIter && (hi - lo) > tol; i++) {
+        const mid = (lo + hi) / 2
+        if (f(mid) > 0) lo = mid
+        else hi = mid
+    }
+    return (lo + hi) / 2
+}
+
+// Column gridline x-positions along an elevation of `width`: 0, spacing, ...,
+// width (far edge always included). Bay i (1-indexed) spans [xs[i-1], xs[i]].
+export function columnPositions(width, spacing) {
+    const xs = [0]
+    while (xs[xs.length - 1] + spacing < width) xs.push(xs[xs.length - 1] + spacing)
+    if (xs[xs.length - 1] < width) xs.push(width)
+    return xs
+}
+
+// Golden-section search for the maximum of a (locally unimodal) function on
+// [lo, hi]. Used to refine the worst margin / required distance inside a bay.
+function goldenSectionMax(f, lo, hi, iters = 40) {
+    const gr = (Math.sqrt(5) - 1) / 2
+    let a = lo, b = hi
+    let c = b - gr * (b - a)
+    let d = a + gr * (b - a)
+    let fc = f(c), fd = f(d)
+    for (let i = 0; i < iters; i++) {
+        if (fc > fd) { b = d; d = c; fd = fc; c = b - gr * (b - a); fc = f(c) }
+        else { a = c; c = d; fc = fd; d = a + gr * (b - a); fd = f(d) }
+    }
+    const x = (a + b) / 2
+    return { x, value: f(x) }
+}
+
+// Arc-length along a wall polyline of the point on it closest to p. Used to seed
+// the critical-point set with the projections of boundary vertices (where the
+// perpendicular boundary distance kinks).
+export function arcLengthOfClosestPoint(points, p) {
+    let acc = 0
+    let best = { d: Infinity, s: 0 }
+    for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1]
+        const b = points[i]
+        const dx = b.x - a.x
+        const dy = b.y - a.y
+        const len2 = dx * dx + dy * dy
+        let t = len2 === 0 ? 0 : ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2
+        t = Math.max(0, Math.min(1, t))
+        const cx = a.x + t * dx
+        const cy = a.y + t * dy
+        const d = Math.hypot(p.x - cx, p.y - cy)
+        const seg = Math.hypot(dx, dy)
+        if (d < best.d) best = { d, s: acc + t * seg }
+        acc += seg
+    }
+    return best.s
+}
+
+// Per-bay assessment with protected bays removed from the emitter. The unit is the
+// column bay (segment between two columns); the popup table and the canvas arrows
+// both work per-bay so they agree. For each bay the governing case is the WORST
+// margin (required - actual) over the bay's wall span, found from the bay
+// endpoints + boundary-vertex projections + a golden-section refinement (no
+// blanket fixed-step sampling). Protected bays are compliant by construction.
+export function assessElevationBays({
+    wallPoints, boundaryPoints, height, T, spacing, protectedBays = [], targetIs = DEFAULT_TARGET_IS,
+}) {
+    if (!wallPoints || wallPoints.length < 2) {
+        throw new Error('assessElevationBays requires a wall line of >= 2 points')
+    }
+    if (!(height > 0) || !(spacing > 0)) {
+        throw new Error('assessElevationBays requires positive height and spacing')
+    }
+    const width = polylineLength(wallPoints)
+    const hh = height / 2
+    const xs = columnPositions(width, spacing)
+    const nBays = xs.length - 1
+    const protectedSet = new Set(protectedBays)
+    const hasBoundary = Boolean(boundaryPoints && boundaryPoints.length >= 2)
+
+    // Emitter = the unprotected bays (intervals in width space).
+    const bays = []
+    for (let i = 1; i <= nBays; i++) {
+        if (!protectedSet.has(i)) bays.push([xs[i - 1], xs[i]])
+    }
+
+    const vertexProjections = hasBoundary
+        ? boundaryPoints.map((v) => arcLengthOfClosestPoint(wallPoints, v))
+        : []
+    const actualAt = (xR) => (hasBoundary
+        ? boundaryDistanceOutward(wallPoints, xR, boundaryPoints).distance
+        : null)
+    const requiredAt = (xR) => solveSForTargetPartial(xR, bays, hh, hh, T, targetIs) / 2
+
+    const rows = []
+    for (let i = 1; i <= nBays; i++) {
+        const x0 = xs[i - 1]
+        const x1 = xs[i]
+        const isProtected = protectedSet.has(i)
+        const marginAt = (xR) => {
+            const required = requiredAt(xR)
+            const actual = actualAt(xR)
+            return actual == null ? required : required - actual
+        }
+        let worst = null
+        const consider = (xR) => {
+            if (xR < x0 || xR > x1) return
+            const required = requiredAt(xR)
+            const actual = actualAt(xR)
+            const margin = actual == null ? required : required - actual
+            if (!worst || margin > worst.margin) worst = { xR, required, actual, margin }
+        }
+        consider(x0)
+        consider(x1)
+        for (const p of vertexProjections) consider(p)
+        // refine the interior worst point (required is unimodal; actual is
+        // piecewise-linear, so the margin is smooth between vertex projections)
+        consider(goldenSectionMax(hasBoundary ? marginAt : requiredAt, x0, x1).x)
+
+        const required = worst.required
+        const actual = worst.actual
+        const S = required * 2
+        const vf = totalViewFactorPartial(worst.xR, bays, S, hh, hh)
+        const incident = emissivePower(T) * vf
+        const out = hasBoundary ? boundaryDistanceOutward(wallPoints, worst.xR, boundaryPoints) : null
+        rows.push({
+            bay: i,
+            leftCol: i,
+            rightCol: i + 1,
+            xWorst: worst.xR,
+            leftW: worst.xR,
+            rightW: width - worst.xR,
+            bottomH: hh,
+            topH: hh,
+            viewFactorTotal: vf,
+            incident,
+            S,
+            requiredBoundaryDistance: required,
+            actualBoundaryDistance: actual,
+            point: pointAtDistanceAlong(wallPoints, worst.xR),
+            to: out ? out.point : null,
+            protected: isProtected,
+            pass: isProtected ? true : (actual == null ? null : actual >= required),
+        })
+    }
+
+    const governingRequiredBoundaryDistance = rows.reduce(
+        (m, r) => Math.max(m, r.requiredBoundaryDistance), 0,
+    )
+    const failingCount = rows.filter((r) => r.protected === false && r.pass === false).length
+
+    return {
+        width,
+        nBays,
+        rows,
+        governingRequiredBoundaryDistance,
+        hasBoundary,
+        failingCount,
+        allPass: hasBoundary ? failingCount === 0 : null,
+        protectedBays: [...protectedSet].sort((a, b) => a - b),
+    }
+}
+
+// Auto-protect loop (issue #8): protect one bay at a time, recomputing after each
+// step (protecting a bay lowers `required` for ALL positions, so the worst point
+// moves), until every unprotected bay passes or no candidates remain. Ordering:
+// worst-shortfall (required/actual ratio) descending; with `cornersFirst` the two
+// end bays sort ahead. Returns the protected set, the ordered `steps`, whether
+// compliance was achieved, and the final assessment.
+export function suggestProtection({
+    wallPoints, boundaryPoints, height, T, spacing, cornersFirst = true, targetIs = DEFAULT_TARGET_IS,
+}) {
+    const run = (protectedBays) => assessElevationBays({
+        wallPoints, boundaryPoints, height, T, spacing, protectedBays, targetIs,
+    })
+    let assessment = run([])
+    if (!assessment.hasBoundary) {
+        return { protectedBays: [], steps: [], achievable: false, reason: 'no-boundary', assessment }
+    }
+    const nBays = assessment.nBays
+    const protectedSet = new Set()
+    const steps = []
+    const ratio = (r) => (r.actualBoundaryDistance > 0
+        ? r.requiredBoundaryDistance / r.actualBoundaryDistance
+        : Infinity)
+
+    let guard = 0
+    while (assessment.failingCount > 0 && guard++ <= nBays) {
+        const cands = assessment.rows.filter((r) => r.protected === false)
+        if (!cands.length) {
+            return { protectedBays: [...protectedSet].sort((a, b) => a - b), steps, achievable: false, reason: 'exhausted', assessment }
+        }
+        cands.sort((a, b) => {
+            if (cornersFirst) {
+                const aCorner = (a.bay === 1 || a.bay === nBays) ? 1 : 0
+                const bCorner = (b.bay === 1 || b.bay === nBays) ? 1 : 0
+                if (aCorner !== bCorner) return bCorner - aCorner
+            }
+            return ratio(b) - ratio(a)
+        })
+        const pick = cands[0].bay
+        protectedSet.add(pick)
+        steps.push(pick)
+        assessment = run([...protectedSet])
+    }
+
+    const achievable = assessment.failingCount === 0
+    return {
+        protectedBays: [...protectedSet].sort((a, b) => a - b),
+        steps,
+        achievable,
+        reason: achievable ? 'compliant' : 'not-achievable',
+        assessment,
+    }
+}
+
 // Arc-length stations of the column gridlines along the wall: 0, spacing, ...,
 // width (the far edge is always included). Returns [{ gridline, dist, point }].
 export function gridlineStations(wallPoints, spacing) {
