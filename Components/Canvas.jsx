@@ -8,6 +8,7 @@ import { calcDistance } from '@/utils/helperFunctions'
 import { computeShaftRect } from '@/utils/shaftGeometry'
 import { computeAutoSprinklerPositions, shouldShowAutoSprinklers } from '@/utils/autoSprinklers'
 import { computeTimeEqLabels } from '@/utils/timeEqLabels'
+import { buildBoundaryArrows, gridlineStations } from '@/utils/efsViewFactor'
 import { get } from 'http'
 
 /**
@@ -34,7 +35,9 @@ const elementConfig = {
     "landing": "blue",
     "sprinkler": "#3b82f6",
     "sensorTree": "#00ff88",
-    "fsaSensor": "#ff9900"
+    "fsaSensor": "#ff9900",
+    "efsWall": "#eab308",
+    "efsBoundary": "#ef4444"
 }
 
 // --- module-level pure helpers for point-alignment snap (testable from tests) ---
@@ -268,6 +271,7 @@ function Canvas({dimensions, isDevMode}) {
     const isSprinklered = useStore((state) => state.isSprinklered)
     const debugRects = useStore((state) => state.debugRects)
     const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
+    const efsColumnSpacing = useStore((state) => state.efsColumnSpacing)
     const setPixelsPerMesh = useStore((state) => state.setPixelsPerMesh)
 
 
@@ -438,15 +442,12 @@ function Canvas({dimensions, isDevMode}) {
         // Waterfall hover used by point / polyline / non-mesh rect. Matches
         // snapVertexWithPointPriority's click-side logic axis-for-axis so the
         // marker always lands where a click would. Per docs/first-click-feedback.md.
-        //   - radiation mode: no snap at all → marker at raw cursor
         //   - Shift: alignment suppressed, grid-only → marker + axis guides
         //            at the nearest grid intersection
         //   - default: full waterfall → alignment guides + marker at snapped
         //            cursor (grid fallback per axis)
+        // Snapping is active in every mode (fdsGen, radiation, timeEq).
         const computeHoverFromCursor = (raw, inProgress) => {
-            if (currentMode === 'radiation') {
-                return { guideLine: raw, snapGuides: [] }
-            }
             if (isShiftPressed) {
                 const grid = applyGridFallback({ raw, snapped: raw, guides: [], pixelsPerMesh })
                 return {
@@ -1207,6 +1208,66 @@ function Canvas({dimensions, isDevMode}) {
             openings.forEach((o) => drawTimeEqLabel(o.text, o.x, o.y, elementConfig['opening']))
         }
 
+        // External Fire Spread mode: mark each column gridline on the wall, and
+        // (if a boundary is drawn) draw an arrow from each column outward to the
+        // boundary, labelled with the distance in metres.
+        if (currentMode === 'efs') {
+            const wall = elements.find((el) => el.comments === 'efsWall')
+            const boundary = elements.find((el) => el.comments === 'efsBoundary')
+            const pxPerM = pixelsPerMesh * 10
+            const spacingM = Number(efsColumnSpacing)
+            if (wall?.points?.length >= 2 && spacingM > 0 && pxPerM > 0) {
+                // Column markers (filled squares) at each gridline.
+                const stations = gridlineStations(wall.points, spacingM * pxPerM)
+                stations.forEach((st) => {
+                    const r = 5
+                    context.save()
+                    context.fillStyle = elementConfig['efsWall']
+                    context.strokeStyle = 'black'
+                    context.lineWidth = 1.5
+                    context.beginPath()
+                    context.rect(st.point.x - r, st.point.y - r, r * 2, r * 2)
+                    context.fill()
+                    context.stroke()
+                    context.restore()
+                })
+
+                const drawBoundaryArrow = (from, to, distM) => {
+                    context.save()
+                    context.strokeStyle = elementConfig['efsBoundary']
+                    context.fillStyle = elementConfig['efsBoundary']
+                    context.lineWidth = 1.5
+                    context.beginPath()
+                    context.moveTo(from.x, from.y)
+                    context.lineTo(to.x, to.y)
+                    context.stroke()
+                    // arrowhead at the boundary end
+                    const ang = Math.atan2(to.y - from.y, to.x - from.x)
+                    const head = 8
+                    context.beginPath()
+                    context.moveTo(to.x, to.y)
+                    context.lineTo(to.x - head * Math.cos(ang - Math.PI / 6), to.y - head * Math.sin(ang - Math.PI / 6))
+                    context.lineTo(to.x - head * Math.cos(ang + Math.PI / 6), to.y - head * Math.sin(ang + Math.PI / 6))
+                    context.closePath()
+                    context.fill()
+                    // distance label at the midpoint
+                    const mx = (from.x + to.x) / 2
+                    const my = (from.y + to.y) / 2
+                    const label = `${distM.toFixed(1)} m`
+                    context.font = 'bold 12px sans-serif'
+                    context.lineWidth = 3
+                    context.strokeStyle = 'black'
+                    context.strokeText(label, mx + 4, my - 4)
+                    context.fillStyle = 'white'
+                    context.fillText(label, mx + 4, my - 4)
+                    context.restore()
+                }
+                // 0.1 m sampling along each segment to find the worst case
+                const arrows = buildBoundaryArrows(wall.points, boundary?.points, spacingM * pxPerM, 0.1 * pxPerM)
+                arrows.forEach((a) => drawBoundaryArrow(a.from, a.to, a.distance / pxPerM))
+            }
+        }
+
         // Debug: draw decomposed rectangles
         if (debugRects && debugRects.length >= 4) {
             const colors = ['rgba(255,0,0,0.3)', 'rgba(0,0,255,0.3)', 'rgba(255,255,0,0.3)', 'rgba(0,255,255,0.3)', 'rgba(255,0,255,0.3)', 'rgba(128,255,0,0.3)']
@@ -1340,7 +1401,7 @@ function Canvas({dimensions, isDevMode}) {
             context.restore()
         }
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, debugRects, snapGuides, candidateCycleState])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, debugRects, snapGuides, candidateCycleState])
 
     // Generate thumbnail by compositing PDF + drawing canvases
     const thumbnailTimerRef = useRef(null)
@@ -1433,7 +1494,6 @@ function Canvas({dimensions, isDevMode}) {
 
     }
     function snapVertexToGrid(vertex) {
-        if (currentMode === 'radiation') return vertex
         // snap to grid using pixels per mesh -> use 1
         vertex.x = (Math.round(vertex.x / pixelsPerMesh)) * pixelsPerMesh
         vertex.y = (Math.round(vertex.y / pixelsPerMesh)) * pixelsPerMesh
@@ -1516,12 +1576,8 @@ function Canvas({dimensions, isDevMode}) {
     // earlier clicks of the same draw), then falls back to grid per-axis.
     //
     // Shift-held suppresses alignment and goes straight to grid.
-    // In radiation mode, vertex is returned unchanged (match snapVertexToGrid).
+    // Snapping is active in every mode (fdsGen, radiation, timeEq).
     function snapVertexWithPointPriority(vertex, excludeId = null, inProgressPoints = [], suppressAlignment = false) {
-        if (currentMode === 'radiation') {
-            setSnapGuides([])
-            return vertex
-        }
         if (suppressAlignment) {
             vertex.x = (Math.round(vertex.x / pixelsPerMesh)) * pixelsPerMesh
             vertex.y = (Math.round(vertex.y / pixelsPerMesh)) * pixelsPerMesh

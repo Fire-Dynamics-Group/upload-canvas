@@ -4,6 +4,7 @@ import WalkingSpeedPopup from './WalkingSpeedPopup'
 import FireInputsPopup from './FireInputsPopup'
 import FDSInputsPopup from './FDSInputsPopup.tsx'
 import TimeEquivalenceInputPopup from './TimeEquivalenceInputPopup'
+import EfsPopup from './EfsPopup'
 import {sendFdsData} from './ApiCalls'
 import { computeAutoSprinklerPositions } from '@/utils/autoSprinklers'
 import { computeCenterlinePoints, findCorridorObstruction, computeStairSensorPositions } from '@/utils/corridorCenterline'
@@ -79,6 +80,7 @@ const Toolbar = ({setShowModePopup}) => {
 
     const [showFireInputsPopup, setShowFireInputsPopup] = useState(false)
     const [showFDSInputsPopup, setShowFDSInputsPopup] = useState(false)
+    const [showEfsPopup, setShowEfsPopup] = useState(false)
 
     const totalHeatFlux = useStore((state) => state.totalHeatFlux)
     const heatEndPoint = useStore((state) => state.heatEndPoint)
@@ -109,9 +111,13 @@ const [errorList, setErrorList] = useState(defaultErrorList)
 
         if (elements) {
           if (elements.length === 0) {
-            // below for radiation mode
-            // should access error object dependant on mode
-            setErrorList([defaultErrorList[1], defaultErrorList[2]])
+            if (currentMode === 'efs') {
+              setErrorList(["please draw a wall line"])
+            } else {
+              // below for radiation mode
+              // should access error object dependant on mode
+              setErrorList([defaultErrorList[1], defaultErrorList[2]])
+            }
             setShowErrorPopup(true)
             return
           }
@@ -135,6 +141,15 @@ const [errorList, setErrorList] = useState(defaultErrorList)
             // assignment for opening heights
             // cycle through -> point at each one
             // mvp have all walls and opening form lines
+          } else if (currentMode === 'efs') {
+            const wall = elements.find(el => el.comments === 'efsWall')
+            if (!wall) {
+              setErrorList(["please draw a wall line"])
+              setShowErrorPopup(true)
+              return
+            }
+            setConvertedPoints()
+            setShowEfsPopup(true)
           }
         } else {
           setShowErrorPopup(true)
@@ -385,14 +400,37 @@ const [errorList, setErrorList] = useState(defaultErrorList)
     const radiationTools = (
         <>
                 {/*  escape path */}
-                <input type="radio" 
-                id="line" 
-                checked={tool === "polyline" && comment == 'escapeRoute'} 
+                <input type="radio"
+                id="line"
+                checked={tool === "polyline" && comment == 'escapeRoute'}
                 onChange={() => {
                 setTool("polyline")
                 setComment("escapeRoute")
                 }} />
                 <label htmlFor="line">Escape Route</label>
+        </>
+    )
+
+    const efsTools = (
+        <>
+                {/* external wall / elevation line */}
+                <input type="radio"
+                id="efsWall"
+                checked={tool === "polyline" && comment == 'efsWall'}
+                onChange={() => {
+                setTool("polyline")
+                setComment("efsWall")
+                }} />
+                <label htmlFor="efsWall">Wall</label>
+                {/* relevant-boundary polyline */}
+                <input type="radio"
+                id="efsBoundary"
+                checked={tool === "polyline" && comment == 'efsBoundary'}
+                onChange={() => {
+                setTool("polyline")
+                setComment("efsBoundary")
+                }} />
+                <label htmlFor="efsBoundary">Boundary</label>
         </>
     )
     return (
@@ -403,6 +441,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
       {showTimeEqPopup && <TimeEquivalenceInputPopup mockData={null}/>}
       {showFireInputsPopup && <FireInputsPopup handleUserInput={handleFireInput}/>}
       {showWalkingPopup && <WalkingSpeedPopup handleUserInput={handleWalkingInput} onClose={() => setShowWalkingPopup(false)}/>}
+      {showEfsPopup && <EfsPopup onClose={() => setShowEfsPopup(false)}/>}
         <div className="text-center">
           <button
             onClick={handleModeButtonClick}
@@ -433,36 +472,40 @@ const [errorList, setErrorList] = useState(defaultErrorList)
             }}
           />
           <label htmlFor="selection">Selection</label>
-          {/* non stair obstructions */}
-          <input type="radio" id="line" 
-          checked={tool === "polyline" && comment == 'obstruction'} 
+          {/* non stair obstructions — not an EFS concept (a wall is drawn with the Wall tool) */}
+          { currentMode !== 'efs' && <>
+          <input type="radio" id="line"
+          checked={tool === "polyline" && comment == 'obstruction'}
           onChange={() => {
             setTool("polyline")
             setComment("obstruction")
             }} />
           <label htmlFor="line">Obstruction</label>
+          </> }
 
           { currentMode === 'fdsGen' ?
             fdsGenTools
 
             : currentMode === 'radiation' ?
                 radiationTools
+                : currentMode === 'efs' ?
+                efsTools
                 : <>
-                <input type="radio" id="opening" 
-                checked={tool === "opening" && comment == 'opening'} 
+                <input type="radio" id="opening"
+                checked={tool === "opening" && comment == 'opening'}
                 onChange={() => {
                   setTool("polyline")
                   setComment("opening")
                   }} />
                 <label htmlFor="opening">Opening</label>
-                </> 
+                </>
           }
           {/* Point  
                 * if point & stair-> point for stair climb
                 * if point & not stair -> fire (can be centre of box), inlet (can be polyline with two points)
           */}
-          {/* fire not needed for timeEq */}
-          { currentMode !== 'timeEq' && <>
+          {/* fire not needed for timeEq or efs */}
+          { currentMode !== 'timeEq' && currentMode !== 'efs' && <>
             <input
               type="radio"
               id="fire"

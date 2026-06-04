@@ -11,9 +11,9 @@ import {
 // "is this mode DB-backed?". Adding a mode to the DB later must be an additive
 // change (flip a flag / add an entry), never a scattered edit of `=== 'fdsGen'`.
 describe('persistence mode registry', () => {
-    it('registers all three current modes', () => {
+    it('registers all current modes', () => {
         expect(Object.keys(MODE_PERSISTENCE).sort()).toEqual(
-            ['fdsGen', 'radiation', 'timeEq'].sort()
+            ['fdsGen', 'radiation', 'timeEq', 'efs'].sort()
         )
     })
 
@@ -21,9 +21,10 @@ describe('persistence mode registry', () => {
         expect(isDbBacked('fdsGen')).toBe(true)
     })
 
-    it('marks radiation and timeEq as NOT DB-backed (yet)', () => {
+    it('marks radiation, timeEq and efs as NOT DB-backed (yet)', () => {
         expect(isDbBacked('radiation')).toBe(false)
         expect(isDbBacked('timeEq')).toBe(false)
+        expect(isDbBacked('efs')).toBe(false)
     })
 
     it('treats unknown/undefined modes as not DB-backed', () => {
@@ -70,6 +71,7 @@ describe('persisted-state migration', () => {
             fdsGen: [{ id: 1, comments: 'mesh' }],
             radiation: [],
             timeEq: [],
+            efs: [],
         })
         // legacy field left intact (it's the active fdsGen checkout)
         expect(migrated.elements).toEqual([{ id: 1, comments: 'mesh' }])

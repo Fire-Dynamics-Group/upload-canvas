@@ -18,6 +18,7 @@ const ModePopup = ({ setToggleShowPopup, onModeSelected }) => {
       { key: 'fdsGen', label: 'FDS Generation' },
       { key: 'radiation', label: 'Radiation' },
       { key: 'timeEq', label: 'Time Equivalence' },
+      { key: 'efs', label: 'External Fire Spread' },
     ]
 
     return (

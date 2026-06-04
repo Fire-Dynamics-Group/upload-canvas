@@ -46,3 +46,9 @@ __pycache__/
 
 # FDS reference files
 *.fds
+
+# Playwright local browsers + run artifacts
+pw-browsers/
+pw-manual/
+test-results/
+playwright-report/

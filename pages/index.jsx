@@ -32,6 +32,54 @@ if (isBrowser) {
   pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.js';
 }
 
+// Error thrown by loadPdfDocument with a user-facing `message` already chosen.
+class PdfLoadError extends Error {
+  constructor(message, cause) {
+    super(message)
+    this.name = 'PdfLoadError'
+    this.cause = cause
+  }
+}
+
+// A 502/503/504 from the storage edge, or a "Failed to fetch" TypeError from a
+// CORS/network failure, both mean the S3/MinIO bucket is unreachable right now
+// (e.g. cold-starting or down). These are worth retrying.
+const isTransientPdfError = (err) => {
+  if (err?.status === 502 || err?.status === 503 || err?.status === 504) return true
+  const msg = `${err?.message || ''} ${err?.details || ''}`
+  return /failed to fetch|networkerror|load failed|network error/i.test(msg)
+}
+
+// Map a raw pdfjs/network error to a message a user can act on. A bucket outage
+// surfaces in the browser as a CORS error, which is misleading — say what's
+// actually wrong instead.
+const friendlyPdfError = (err) => {
+  if (isTransientPdfError(err)) {
+    return 'The file storage service is temporarily unavailable. Please try again in a moment.'
+  }
+  if (err?.name === 'MissingPDFException' || err?.status === 404) {
+    return 'The plan PDF could not be found in storage.'
+  }
+  return err?.message || 'Failed to load the plan PDF.'
+}
+
+// Load a PDF, retrying transient storage/network failures with a short backoff
+// before giving up. On failure throws a PdfLoadError whose message is safe to
+// show the user.
+const loadPdfDocument = async (pdfjs, source, maxAttempts = 3) => {
+  let lastErr
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await pdfjs.getDocument(source).promise
+    } catch (err) {
+      lastErr = err
+      if (!isTransientPdfError(err) || attempt === maxAttempts) break
+      await new Promise((resolve) => setTimeout(resolve, attempt * 1000))
+    }
+  }
+  throw new PdfLoadError(friendlyPdfError(lastErr), lastErr)
+}
+
 export default function Home() {
   let dev_mode = true
   const [hasMounted, setHasMounted] = useState(false)
@@ -169,8 +217,7 @@ export default function Home() {
 
     // pdfjs accepts a URL string or {data: ArrayBuffer}
     const source = typeof pdfSource === 'string' ? pdfSource : { data: pdfSource }
-    const loadingTask = pdfjs.getDocument(source)
-    const pdf = await loadingTask.promise
+    const pdf = await loadPdfDocument(pdfjs, source)
     const page = await pdf.getPage(1)
 
     const canvas = pdfCanvasRef.current
@@ -210,16 +257,19 @@ export default function Home() {
     const file = event.target.files[0]
     if (!file) return
 
-    // Save raw PDF bytes to IndexedDB for later restore
     const arrayBuffer = await file.arrayBuffer()
-    savePdfToIndexedDB(arrayBuffer)
 
     // Render using a URL (pdfjs prefers this for File objects)
     await renderPdf(URL.createObjectURL(file), isContinuing)
 
-    // Only create project and upload to S3 for DB-backed modes
+    // Only persist/upload the PDF for DB-backed modes. Non-DB modes
+    // (radiation/timeEq) are scratch — the plan must not survive a reload, so
+    // it never reaches IndexedDB or S3. See persistenceModes.js.
     const mode = useStore.getState().currentMode
     if (isDbBacked(mode)) {
+      // Cache raw PDF bytes in IndexedDB for later restore
+      savePdfToIndexedDB(arrayBuffer)
+
       let currentProjectId = useStore.getState().projectId
       let currentFloorId = useStore.getState().floorId
 
@@ -336,7 +386,8 @@ export default function Home() {
       }
     } catch (err) {
       console.error('Failed to load project:', err)
-      alert('Failed to load project: ' + err.message)
+      // PdfLoadError.message is already user-facing; other errors get a prefix.
+      alert(err instanceof PdfLoadError ? err.message : 'Failed to load project: ' + err.message)
     } finally {
       setIsLoadingFromServer(false)
     }

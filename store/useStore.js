@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 import {findOriginPixels, returnFinalCoordinates} from '../utils/pointManipulation'
 import { clearPdfFromIndexedDB } from '../utils/pdfStorage'
 import { defaultDoorTimings } from './defaultDoorTimings'
-import { isDbBacked, MODE_PERSISTENCE, PERSIST_VERSION, migratePersistedState, mergePersistedState } from './persistenceModes'
+import { isDbBacked, MODE_PERSISTENCE, PERSIST_VERSION, migratePersistedState, mergePersistedState, partializeState } from './persistenceModes'
 
 const useStore = create(persist((set, get) => {
     const defaultStairObject = {"fire_floor": 0, "total_floors": 5, "stair_roof_z": 25, "top_storey_height": 21}
@@ -28,7 +28,7 @@ const useStore = create(persist((set, get) => {
         // Per-mode geometry buckets. `elements` is the live "checkout" of the
         // active mode's bucket; setCurrentMode stashes/restores between them so
         // modes can't clobber each other's shapes. See docs/phase2-*.md.
-        elementsByMode: { fdsGen: [], radiation: [], timeEq: [] },
+        elementsByMode: { fdsGen: [], radiation: [], timeEq: [], efs: [] },
         tool: "scale",
         selectedElement: null,
         currentMode: "fdsGen",
@@ -44,6 +44,9 @@ const useStore = create(persist((set, get) => {
         thumbnail: null,
         totalHeatFlux: 476,
         heatEndpoint: 1.3333,
+        // EFS view-factor mode: column spacing (m) along the elevation. Shared by
+        // the EFS popup and the canvas boundary-distance overlay.
+        efsColumnSpacing: 8,
 
         // Fire configuration
         fireHRR: 1000,              // kW
@@ -190,12 +193,35 @@ const useStore = create(persist((set, get) => {
         // Switching modes checks out the new mode's geometry bucket into the
         // live `elements` array. The outgoing mode's bucket is already current
         // (writeElements keeps it in sync), so no stash step is needed.
+        //
+        // The PDF + scale (pdfData, pixelsPerMesh, canvasDimensions,
+        // convertedPoints, originPixels) are global, not bucketed. A non-DB mode
+        // (radiation/timeEq) is ephemeral scratch and must NOT inherit them from
+        // the mode you came from — it starts from a fresh upload + scale step.
+        // We only reset for non-DB targets: fdsGen re-hydrates from its project,
+        // and blanking its scale here would let auto-save clobber the project
+        // with defaults. See persistenceModes.js.
         setCurrentMode: (newMode) => set((state) => {
             if (newMode === state.currentMode) return {}
-            return {
+            const next = {
                 currentMode: newMode,
                 elements: state.elementsByMode?.[newMode] ?? [],
             }
+            if (!isDbBacked(newMode)) {
+                return {
+                    ...next,
+                    pdfData: null,
+                    pdfIsGreyscale: false,
+                    pixelsPerMesh: 1,
+                    canvasDimensions: {},
+                    convertedPoints: [],
+                    originPixels: null,
+                    hasDoor: false,
+                    tool: 'scale',
+                    selectedElement: null,
+                }
+            }
+            return next
         }),
         setComment: (newComment) => set(() => ({
             comment: newComment
@@ -206,6 +232,7 @@ const useStore = create(persist((set, get) => {
         setPixelsPerMesh: (pxPerMesh) => set(() => ({
             pixelsPerMesh: pxPerMesh
         })),
+        setEfsColumnSpacing: (v) => set(() => ({ efsColumnSpacing: v })),
 
         setConvertedPoints: () => set((state) => {
             let tempOrigin = findOriginPixels(state.elements, state.canvasDimensions.height)
@@ -413,7 +440,7 @@ const useStore = create(persist((set, get) => {
                 projectName: null,
                 saveStatus: null,
                 elements: [],
-                elementsByMode: { fdsGen: [], radiation: [], timeEq: [] },
+                elementsByMode: { fdsGen: [], radiation: [], timeEq: [], efs: [] },
                 tool: "scale",
                 selectedElement: null,
                 comment: "",
@@ -475,60 +502,15 @@ const useStore = create(persist((set, get) => {
     version: PERSIST_VERSION,
     migrate: migratePersistedState,
     merge: mergePersistedState,
-    partialize: (state) => ({
-        projectId: state.projectId,
-        floorId: state.floorId,
-        projectName: state.projectName,
-        elements: state.elements,
-        elementsByMode: state.elementsByMode,
-        tool: state.tool,
-        canvasDimensions: state.canvasDimensions,
-        pixelsPerMesh: state.pixelsPerMesh,
-        comment: state.comment,
-        convertedPoints: state.convertedPoints,
-        originPixels: state.originPixels,
-        hasDoor: state.hasDoor,
-        totalHeatFlux: state.totalHeatFlux,
-        heatEndpoint: state.heatEndpoint,
-        fireHRR: state.fireHRR,
-        fireDimension: state.fireDimension,
-        fireHeightAboveFloor: state.fireHeightAboveFloor,
-        fireBase: state.fireBase,
-        fireType: state.fireType,
-        fireGrowthRate: state.fireGrowthRate,
-        fireCustomAlpha: state.fireCustomAlpha,
-        fireFloorZ: state.fireFloorZ,
-        fireFloorNumber: state.fireFloorNumber,
-        totalFloors: state.totalFloors,
-        wallHeight: state.wallHeight,
-        stairRoofZ: state.stairRoofZ,
-        topStoreyHeight: state.topStoreyHeight,
-        numberOfStairs: state.numberOfStairs,
-        stairObject: state.stairObject,
-        commonCorridorMode: state.commonCorridorMode,
-        scenarioType: state.scenarioType,
-        simEndTime: state.simEndTime,
-        includeSensors: state.includeSensors,
-        corridorSensorHeights: state.corridorSensorHeights,
-        stairSensorHeights: state.stairSensorHeights,
-        fsaSensorHeights: state.fsaSensorHeights,
-        isSprinklered: state.isSprinklered,
-        doorRoles: state.doorRoles,
-        doorLeakagesEnabled: state.doorLeakagesEnabled,
-        doorLeakageConfig: state.doorLeakageConfig,
-        doorOpenings: state.doorOpenings,
-        landingRoles: state.landingRoles,
-        landingUpSide: state.landingUpSide,
-        stairStyle: state.stairStyle,
-        extractConfig: state.extractConfig,
-        inletConfig: state.inletConfig,
-        zoneConfig: state.zoneConfig,
-        sliceZHeight: state.sliceZHeight,
-        aovMode: state.aovMode,
-        aovActivationTime: state.aovActivationTime,
-        obstructionTransparency: state.obstructionTransparency,
-    }),
+    // Registry-driven: non-DB modes leave nothing behind to restore on reload.
+    partialize: partializeState,
 }))
+
+// Dev/test only: expose the store so Playwright e2e can read/seed state.
+// Never attached in production builds.
+if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+    window.__useStore = useStore
+}
 
 export { defaultDoorTimings }
 export default useStore

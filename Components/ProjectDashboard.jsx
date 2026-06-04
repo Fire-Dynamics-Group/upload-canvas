@@ -110,6 +110,7 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
     { key: 'fdsGen', label: 'FDS Generation' },
     { key: 'radiation', label: 'Radiation' },
     { key: 'timeEq', label: 'Time Equivalence' },
+    { key: 'efs', label: 'External Fire Spread' },
   ]
 
   const handleModeClick = (mode) => {

@@ -89,7 +89,7 @@ describe('per-mode geometry isolation', () => {
         ])
     })
 
-    it('resetProject clears all three buckets and live elements', () => {
+    it('resetProject clears all buckets and live elements', () => {
         const store = useStore.getState
         store().addElement({ id: 1, type: 'rect', comments: 'mesh', points: [] })
 
@@ -97,7 +97,7 @@ describe('per-mode geometry isolation', () => {
 
         expect(store().elements).toEqual([])
         expect(store().elementsByMode).toEqual({
-            fdsGen: [], radiation: [], timeEq: [],
+            fdsGen: [], radiation: [], timeEq: [], efs: [],
         })
     })
 })
