@@ -246,31 +246,34 @@ export function lineOfSightClear(P, C, wallPoints) {
     return true
 }
 
-// Boundary distance measured OUTWARD from the facade at arc-length `dist`: the
-// CLOSEST point on the boundary whose straight line to the wall point does not
-// pass through the building (line-of-sight clear against the wall polyline). This
-// allows a diagonal shortest line — not just perpendicular — while rejecting any
-// line that would cut through the building footprint. Candidates are each
-// boundary segment's closest point plus every boundary vertex (so a vertex stays
-// reachable when a segment's closest point is blocked). Falls back to the
-// unconstrained nearest point (flagged `outward: false`) only if nothing is
-// visible.
+// Boundary distance measured PERPENDICULAR to the elevation at arc-length `dist`
+// (per BR 187 practice — the boundary distance is taken normal to the facade, not
+// as a shortest diagonal). Cast the two perpendiculars to the wall segment at the
+// sample point, intersect each with the boundary polyline, and keep the nearest
+// hit whose line is line-of-sight clear against the wall (so the outward normal
+// wins and a normal that would cut back through the building is rejected). Falls
+// back to the unconstrained nearest point (flagged `outward: false`) only if no
+// perpendicular hits the boundary.
 export function boundaryDistanceOutward(wallPoints, dist, boundaryPoints) {
     const from = pointAtDistanceAlong(wallPoints, dist)
+    const dir = segmentDirAt(wallPoints, dist)
 
-    const candidates = []
-    for (let i = 1; i < boundaryPoints.length; i++) {
-        candidates.push(closestPointOnSegment(from, boundaryPoints[i - 1], boundaryPoints[i]))
+    if (dir) {
+        const normals = [
+            { x: -dir.y, y: dir.x },
+            { x: dir.y, y: -dir.x },
+        ]
+        let best = null
+        for (const n of normals) {
+            const hit = rayPolylineIntersection(from, n, boundaryPoints)
+            if (!hit) continue
+            if (!lineOfSightClear(from, hit.point, wallPoints)) continue
+            if (!best || hit.distance < best.distance) {
+                best = { point: hit.point, distance: hit.distance }
+            }
+        }
+        if (best) return { from, point: best.point, distance: best.distance, outward: true }
     }
-    for (const v of boundaryPoints) candidates.push({ x: v.x, y: v.y })
-
-    let best = null
-    for (const c of candidates) {
-        if (!lineOfSightClear(from, c, wallPoints)) continue
-        const d = Math.hypot(from.x - c.x, from.y - c.y)
-        if (!best || d < best.distance) best = { point: c, distance: d }
-    }
-    if (best) return { from, point: best.point, distance: best.distance, outward: true }
 
     const c = closestPointOnPolyline(from, boundaryPoints)
     return { from, point: c.point, distance: c.distance, outward: false }
@@ -351,6 +354,8 @@ export function assessElevation({
         const leftW = d
         const rightW = width - d
         const S = solveSForTarget(leftW, rightW, halfH, halfH, T, targetIs)
+        const viewFactorTotal = totalViewFactor(leftW, rightW, S, halfH, halfH)
+        const incident = incidentRadiation(leftW, rightW, S, halfH, halfH, T)
         const required = requiredBoundaryDistance(S)
         const point = pointAtDistanceAlong(wallPoints, d)
         const actual = hasBoundary
@@ -361,6 +366,10 @@ export function assessElevation({
             gridline: i + 1,
             leftW,
             rightW,
+            bottomH: halfH,
+            topH: halfH,
+            viewFactorTotal,
+            incident,
             S,
             point,
             requiredBoundaryDistance: required,

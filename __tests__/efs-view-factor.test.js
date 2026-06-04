@@ -109,6 +109,18 @@ describe('assessElevation — actual boundary distance + pass/fail', () => {
         expect(r.rows[0].pass).toBe(true) // edge required 27.94 < 30
     })
 
+    it('exposes the spreadsheet per-gridline columns (Bottom_h, Top_h, View Factor, Is, S)', () => {
+        // wall 96 m wide, 18 m high, 8 m spacing -> centre gridline is the 48/48 split
+        const r = assessElevation({ wallPoints, boundaryPoints: [], height: 18, T, spacing: 8 })
+        const centre = r.rows.find((row) => row.leftW === 48)
+        expect(centre.bottomH).toBeCloseTo(9, 6)        // height/2 (EFS.xlsx E22)
+        expect(centre.topH).toBeCloseTo(9, 6)           // height/2 (EFS.xlsx F22)
+        expect(centre.viewFactorTotal).toBeCloseTo(0.074770, 5) // EFS.xlsx S22
+        expect(centre.incident).toBeCloseTo(12.6, 3)    // EFS.xlsx T22 (goal-seek target)
+        expect(centre.S).toBeCloseTo(76.682, 2)         // EFS.xlsx U22
+        expect(centre.requiredBoundaryDistance).toBeCloseTo(38.341, 2) // EFS.xlsx V22
+    })
+
     it('returns null actual distance / pass when no boundary is supplied', () => {
         const r = assessElevation({ wallPoints, boundaryPoints: [], height: 18, T, spacing: 8 })
         expect(r.hasBoundary).toBe(false)
@@ -143,10 +155,10 @@ describe('buildBoundaryArrows — per-segment worst-case arrows', () => {
     })
 })
 
-describe('boundaryDistanceOutward — closest on the outward side (diagonal allowed)', () => {
+describe('boundaryDistanceOutward — perpendicular to the elevation', () => {
     const wall = [{ x: 0, y: 0 }, { x: 40, y: 0 }]
 
-    it('is perpendicular for a parallel boundary (closest happens to be straight out)', () => {
+    it('is the perpendicular distance for a parallel boundary', () => {
         const boundary = [{ x: -10, y: -20 }, { x: 50, y: -20 }] // parallel, below
         const r = boundaryDistanceOutward(wall, 20, boundary) // gridline at (20,0)
         expect(r.outward).toBe(true)
@@ -155,13 +167,23 @@ describe('boundaryDistanceOutward — closest on the outward side (diagonal allo
         expect(r.point.y).toBeCloseTo(-20, 6)
     })
 
-    it('takes the closest boundary point even when it is diagonal, not perpendicular', () => {
-        const boundary = [{ x: 0, y: -10 }, { x: 0, y: -50 }] // off to the left, below
-        const r = boundaryDistanceOutward(wall, 40, boundary) // from the right end (40,0)
+    it('measures straight out (not the shorter diagonal) for an angled boundary', () => {
+        // boundary slants; at x=20 it sits at y=-20, so the perpendicular hit is
+        // (20,-20) even though a diagonal to a nearer part of the line is shorter.
+        const boundary = [{ x: 0, y: -10 }, { x: 40, y: -30 }]
+        const r = boundaryDistanceOutward(wall, 20, boundary) // from (20,0)
         expect(r.outward).toBe(true)
-        expect(r.point.x).toBeCloseTo(0, 4)
-        expect(r.point.y).toBeCloseTo(-10, 4)
-        expect(r.distance).toBeCloseTo(Math.hypot(40, 10), 4) // diagonal, ~41.2
+        expect(r.point.x).toBeCloseTo(20, 6)
+        expect(r.point.y).toBeCloseTo(-20, 6)
+        expect(r.distance).toBeCloseTo(20, 6)
+    })
+
+    it('falls back (outward:false) when no perpendicular meets the boundary', () => {
+        // boundary is off to the side of the right end — the perpendicular at
+        // (40,0) runs straight down x=40 and never meets the x=0 line.
+        const boundary = [{ x: 0, y: -10 }, { x: 0, y: -50 }]
+        const r = boundaryDistanceOutward(wall, 40, boundary)
+        expect(r.outward).toBe(false)
     })
 })
 

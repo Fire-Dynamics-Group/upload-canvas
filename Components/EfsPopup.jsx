@@ -70,7 +70,7 @@ const EfsPopup = ({ onClose }) => {
             onClick={() => onClose && onClose()}
         >
             <div
-                className="relative bg-white p-5 rounded-lg shadow-lg text-black w-full max-w-md max-h-[85vh] overflow-auto"
+                className="relative bg-white p-5 rounded-lg shadow-lg text-black w-full max-w-3xl max-h-[85vh] overflow-auto"
                 onClick={(e) => e.stopPropagation()}
             >
                 <button
@@ -115,37 +115,49 @@ const EfsPopup = ({ onClose }) => {
                                 Draw a Boundary polyline to check actual distances.
                             </p>
                         )}
-                        <table className="w-full text-xs mt-3 border-collapse">
-                            <thead>
-                                <tr className="text-left border-b">
-                                    <th className="py-1 pr-2">Gridline</th>
-                                    <th className="py-1 pr-2">Left (m)</th>
-                                    <th className="py-1 pr-2">Right (m)</th>
-                                    <th className="py-1 pr-2">Required (m)</th>
-                                    <th className="py-1 pr-2">Actual (m)</th>
-                                    <th className="py-1 pr-2">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {result.rows.map((r) => (
-                                    <tr
-                                        key={r.gridline}
-                                        className={`border-b ${r.pass === false ? 'bg-red-50' : ''}`}
-                                    >
-                                        <td className="py-1 pr-2">{r.gridline}</td>
-                                        <td className="py-1 pr-2">{r.leftW.toFixed(1)}</td>
-                                        <td className="py-1 pr-2">{r.rightW.toFixed(1)}</td>
-                                        <td className="py-1 pr-2">{r.requiredBoundaryDistance.toFixed(2)}</td>
-                                        <td className="py-1 pr-2">
-                                            {r.actualBoundaryDistance == null ? '—' : r.actualBoundaryDistance.toFixed(2)}
-                                        </td>
-                                        <td className="py-1 pr-2">
-                                            {r.pass == null ? '—' : (r.pass ? 'OK' : 'FAIL')}
-                                        </td>
+                        <div className="overflow-x-auto mt-3">
+                            <table className="text-xs border-collapse whitespace-nowrap">
+                                <thead>
+                                    <tr className="text-left border-b">
+                                        <th className="py-1 pr-2">Gridline</th>
+                                        <th className="py-1 pr-2">Left width (m)</th>
+                                        <th className="py-1 pr-2">Right width (m)</th>
+                                        <th className="py-1 pr-2">Bottom_h (m)</th>
+                                        <th className="py-1 pr-2">Top_h (m)</th>
+                                        <th className="py-1 pr-2">View factor</th>
+                                        <th className="py-1 pr-2">I<sub>s</sub> (kW/m²)</th>
+                                        <th className="py-1 pr-2">S (m)</th>
+                                        <th className="py-1 pr-2">Required (m)</th>
+                                        <th className="py-1 pr-2">Actual (m)</th>
+                                        <th className="py-1 pr-2">Status</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    {result.rows.map((r) => (
+                                        <tr
+                                            key={r.gridline}
+                                            className={`border-b ${r.pass === false ? 'bg-red-50' : ''}`}
+                                        >
+                                            <td className="py-1 pr-2">{r.gridline}</td>
+                                            <td className="py-1 pr-2">{r.leftW.toFixed(1)}</td>
+                                            <td className="py-1 pr-2">{r.rightW.toFixed(1)}</td>
+                                            <td className="py-1 pr-2">{r.bottomH.toFixed(1)}</td>
+                                            <td className="py-1 pr-2">{r.topH.toFixed(1)}</td>
+                                            <td className="py-1 pr-2">{r.viewFactorTotal.toFixed(5)}</td>
+                                            <td className="py-1 pr-2">{r.incident.toFixed(2)}</td>
+                                            <td className="py-1 pr-2">{r.S.toFixed(2)}</td>
+                                            <td className="py-1 pr-2">{r.requiredBoundaryDistance.toFixed(2)}</td>
+                                            <td className="py-1 pr-2">
+                                                {r.actualBoundaryDistance == null ? '—' : r.actualBoundaryDistance.toFixed(2)}
+                                            </td>
+                                            <td className="py-1 pr-2">
+                                                {r.pass == null ? '—' : (r.pass ? 'OK' : 'FAIL')}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 )}
             </div>
