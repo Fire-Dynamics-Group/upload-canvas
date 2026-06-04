@@ -15,6 +15,7 @@ import {
     boundaryDistanceOutward,
     gridlineStations,
     lineOfSightClear,
+    elevationsFromWall,
 } from '../utils/efsViewFactor'
 
 // Ground truth from EFS.xlsx (South sheet): elevation 96 m wide x 18 m high,
@@ -261,5 +262,35 @@ describe('gridlineStations — column positions along the wall', () => {
         expect(st[0].point).toEqual({ x: 0, y: 0 })
         expect(st[st.length - 1].point).toEqual({ x: 40, y: 0 })
         expect(st[2].point).toEqual({ x: 16, y: 0 })
+    })
+})
+
+describe('elevationsFromWall — one elevation per wall segment (corners)', () => {
+    it('splits an L-shaped wall into two elevations with segment-length widths', () => {
+        const wall = [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 40 }]
+        const els = elevationsFromWall(wall, [])
+        expect(els).toHaveLength(2)
+        expect(els[0].width).toBeCloseTo(60)
+        expect(els[1].width).toBeCloseTo(40)
+        // No boundary supplied -> distance is null (engineer must enter it).
+        expect(els[0].boundaryDistance).toBeNull()
+    })
+
+    it('takes the smallest outward distance along each elevation to the boundary', () => {
+        // Wall along the x-axis; boundary slants from 10 m away (left) to 5 m (right),
+        // so the closest approach over the elevation is 5 m.
+        const wall = [{ x: 0, y: 0 }, { x: 40, y: 0 }]
+        const boundary = [{ x: 0, y: 10 }, { x: 40, y: 5 }]
+        const els = elevationsFromWall(wall, boundary, 0.5)
+        expect(els).toHaveLength(1)
+        expect(els[0].width).toBeCloseTo(40)
+        expect(els[0].boundaryDistance).toBeCloseTo(5, 1)
+    })
+
+    it('skips degenerate (duplicate) vertices', () => {
+        const wall = [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 30, y: 0 }]
+        const els = elevationsFromWall(wall, [])
+        expect(els).toHaveLength(1)
+        expect(els[0].width).toBeCloseTo(30)
     })
 })

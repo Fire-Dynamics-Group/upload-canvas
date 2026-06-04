@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import useStore from '../store/useStore'
-import { assessElevation, celsiusToKelvin, polylineLength } from '../utils/efsViewFactor'
+import { assessElevation, celsiusToKelvin, elevationsFromWall } from '../utils/efsViewFactor'
 import { calculateEfs, downloadEfsReport } from './ApiCalls'
 
 // EFS (External Fire Spread) inputs + results popup. Two methods live behind
@@ -61,62 +61,62 @@ const EfsPopup = ({ onClose }) => {
     }
 
     // ---- Enclosing rectangle (BRE 135) tab state ----
-    // Seed the first elevation's width from the drawn wall when available so the
-    // two methods stay tied to the same drawing.
-    const drawnWallWidth = (() => {
+    // Elevations are derived from the corners of the drawn wall polyline: each
+    // straight segment is one elevation (width = its segment length, area =
+    // width × height). The boundary distance defaults to the closest approach of
+    // that elevation to the drawn boundary (smallest distance along the segment);
+    // the engineer can override it. Height and suppression are global.
+    const derivedElevations = useMemo(() => {
         const wall = (convertedPoints || []).find((el) => el.comments === 'efsWall')
-        if (wall && wall.finalPoints && wall.finalPoints.length >= 2) {
-            return Math.round(polylineLength(wall.finalPoints) * 10) / 10
-        }
-        return ''
-    })()
+        const boundary = (convertedPoints || []).find((el) => el.comments === 'efsBoundary')
+        if (!wall || !wall.finalPoints) return []
+        return elevationsFromWall(wall.finalPoints, boundary ? boundary.finalPoints : [])
+    }, [convertedPoints])
 
     const [isCommercial, setIsCommercial] = useState(true)
-    const [elevations, setElevations] = useState([
-        { boundary_distance: 6, width: drawnWallWidth, height: 18, has_suppression: false },
-    ])
+    const [breHeight, setBreHeight] = useState(18)
+    const [breSuppression, setBreSuppression] = useState(false)
+    // Editable boundary distances (one string per derived elevation), re-seeded
+    // from the drawing whenever the derived elevations change.
+    const [bdInputs, setBdInputs] = useState([])
     const [breResult, setBreResult] = useState(null)
     const [breError, setBreError] = useState(null)
     const [breLoading, setBreLoading] = useState(false)
     const [reportLoading, setReportLoading] = useState(false)
 
-    const updateElevation = (idx, field, value) => {
-        setElevations((rows) =>
-            rows.map((r, i) => (i === idx ? { ...r, [field]: value } : r)),
+    useEffect(() => {
+        setBdInputs(
+            derivedElevations.map((e) =>
+                e.boundaryDistance == null ? '' : String(Math.round(e.boundaryDistance * 10) / 10),
+            ),
         )
-    }
+    }, [derivedElevations])
 
-    const addElevation = () => {
-        setElevations((rows) => [
-            ...rows,
-            { boundary_distance: 6, width: '', height: 18, has_suppression: false },
-        ])
-    }
-
-    const removeElevation = (idx) => {
-        setElevations((rows) => (rows.length > 1 ? rows.filter((_, i) => i !== idx) : rows))
+    const updateBd = (idx, value) => {
+        setBdInputs((rows) => rows.map((r, i) => (i === idx ? value : r)))
     }
 
     const buildPayload = () => {
-        const payload = elevations.map((r) => ({
-            boundary_distance: Number(r.boundary_distance),
-            width: Number(r.width),
-            height: Number(r.height),
-            has_suppression: !!r.has_suppression,
-        }))
-        const bad = payload.some(
-            (e) =>
-                !Number.isFinite(e.boundary_distance) ||
-                !(e.width > 0) ||
-                !(e.height > 0),
-        )
+        const payload = derivedElevations.map((e, i) => {
+            const raw = (bdInputs[i] ?? '').trim()
+            return {
+                boundary_distance: raw === '' ? NaN : Number(raw),
+                width: e.width,
+                height: Number(breHeight),
+                has_suppression: breSuppression,
+            }
+        })
+        const bad =
+            payload.length === 0 ||
+            !(Number(breHeight) > 0) ||
+            payload.some((e) => !Number.isFinite(e.boundary_distance) || !(e.width > 0))
         return { payload, bad }
     }
 
     async function handleBreCalc() {
         const { payload, bad } = buildPayload()
         if (bad) {
-            setBreError('Each elevation needs a boundary distance and positive width/height.')
+            setBreError('Draw a wall polyline, set a positive elevation height, and give each elevation a boundary distance.')
             return
         }
         setBreError(null)
@@ -135,7 +135,7 @@ const EfsPopup = ({ onClose }) => {
     async function handleBreReport() {
         const { payload, bad } = buildPayload()
         if (bad) {
-            setBreError('Each elevation needs a boundary distance and positive width/height.')
+            setBreError('Draw a wall polyline, set a positive elevation height, and give each elevation a boundary distance.')
             return
         }
         setBreError(null)
@@ -338,81 +338,67 @@ const EfsPopup = ({ onClose }) => {
                             </label>
                         </div>
 
-                        <div className="overflow-x-auto">
-                            <table className="text-xs border-collapse w-full">
-                                <thead>
-                                    <tr className="text-left border-b">
-                                        <th className="py-1 pr-2">#</th>
-                                        <th className="py-1 pr-2">Boundary dist (m)</th>
-                                        <th className="py-1 pr-2">ER width (m)</th>
-                                        <th className="py-1 pr-2">ER height (m)</th>
-                                        <th className="py-1 pr-2">Suppression</th>
-                                        <th className="py-1 pr-2"></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {elevations.map((r, idx) => (
-                                        <tr key={idx} className="border-b">
-                                            <td className="py-1 pr-2">{idx + 1}</td>
-                                            <td className="py-1 pr-2">
-                                                <input
-                                                    type="number"
-                                                    value={r.boundary_distance}
-                                                    onChange={(e) => updateElevation(idx, 'boundary_distance', e.target.value)}
-                                                    className="w-24 border border-gray-300 px-2 py-1 rounded"
-                                                />
-                                            </td>
-                                            <td className="py-1 pr-2">
-                                                <input
-                                                    type="number"
-                                                    value={r.width}
-                                                    onChange={(e) => updateElevation(idx, 'width', e.target.value)}
-                                                    className="w-24 border border-gray-300 px-2 py-1 rounded"
-                                                />
-                                            </td>
-                                            <td className="py-1 pr-2">
-                                                <input
-                                                    type="number"
-                                                    value={r.height}
-                                                    onChange={(e) => updateElevation(idx, 'height', e.target.value)}
-                                                    className="w-24 border border-gray-300 px-2 py-1 rounded"
-                                                />
-                                            </td>
-                                            <td className="py-1 pr-2 text-center">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={!!r.has_suppression}
-                                                    onChange={(e) => updateElevation(idx, 'has_suppression', e.target.checked)}
-                                                />
-                                            </td>
-                                            <td className="py-1 pr-2">
-                                                <button
-                                                    type="button"
-                                                    aria-label="Remove elevation"
-                                                    className="text-gray-400 hover:text-red-600"
-                                                    onClick={() => removeElevation(idx)}
-                                                >
-                                                    &times;
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                        <div className="flex flex-wrap items-center gap-6 mb-3">
+                            <label className="flex items-center gap-2 text-sm">
+                                <span className="font-medium">Elevation height (m)</span>
+                                <input
+                                    type="number"
+                                    value={breHeight}
+                                    onChange={(e) => setBreHeight(e.target.value)}
+                                    className="w-24 border border-gray-300 px-2 py-1 rounded"
+                                />
+                            </label>
+                            <label className="flex items-center gap-2 text-sm">
+                                <input
+                                    type="checkbox"
+                                    checked={breSuppression}
+                                    onChange={(e) => setBreSuppression(e.target.checked)}
+                                />
+                                <span className="font-medium">Sprinklered (doubles boundary distance)</span>
+                            </label>
                         </div>
 
-                        <button
-                            type="button"
-                            className="mt-2 text-sm text-blue-600 hover:text-blue-800"
-                            onClick={addElevation}
-                        >
-                            + Add elevation
-                        </button>
+                        {derivedElevations.length === 0 ? (
+                            <p className="text-sm text-gray-600 mb-3">
+                                Draw a wall polyline first — its corners define the elevations.
+                            </p>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="text-xs border-collapse w-full">
+                                    <thead>
+                                        <tr className="text-left border-b">
+                                            <th className="py-1 pr-2">Elevation</th>
+                                            <th className="py-1 pr-2">Width (m)</th>
+                                            <th className="py-1 pr-2">Boundary dist (m)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {derivedElevations.map((e, idx) => (
+                                            <tr key={idx} className="border-b">
+                                                <td className="py-1 pr-2">{idx + 1}</td>
+                                                <td className="py-1 pr-2">{e.width.toFixed(1)}</td>
+                                                <td className="py-1 pr-2">
+                                                    <input
+                                                        type="number"
+                                                        value={bdInputs[idx] ?? ''}
+                                                        placeholder={e.boundaryDistance == null ? 'enter' : ''}
+                                                        onChange={(ev) => updateBd(idx, ev.target.value)}
+                                                        className="w-24 border border-gray-300 px-2 py-1 rounded"
+                                                    />
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
 
                         <p className="text-xs text-gray-500 mt-2 mb-3">
-                            BRE 135 enclosing-rectangle method. Where suppression is provided the
-                            boundary distance is doubled before the BRE 135 lookup (a more
-                            permissive allowable unprotected area).
+                            BRE 135 enclosing-rectangle method. Elevations come from the corners of
+                            the drawn wall (width = each segment&apos;s length, area = width × height).
+                            Boundary distance defaults to the closest approach of each elevation to
+                            the drawn boundary line — edit to override. Where the building is
+                            sprinklered the boundary distance is doubled before the BRE 135 lookup.
                         </p>
 
                         {breError && <p className="text-red-600 text-sm mb-2">{breError}</p>}

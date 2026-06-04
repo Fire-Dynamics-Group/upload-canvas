@@ -38,43 +38,59 @@ describe('EfsPopup — whole-elevation required boundary distance', () => {
 })
 
 // The BRE 135 tab posts the per-elevation inputs to the backend and renders the
-// returned unprotected-area table.
+// returned unprotected-area table. Elevations are derived from the drawn wall's
+// corners; boundary distance is the closest approach to the drawn boundary.
 describe('EfsPopup — BRE 135 enclosing-rectangle tab', () => {
     beforeEach(() => {
         useStore.setState({
             convertedPoints: [
-                { id: 1, comments: 'efsWall', finalPoints: [{ x: 0, y: 0 }, { x: 96, y: 0 }] },
+                // L-shaped wall: two straight segments -> two elevations (60 m, 40 m).
+                { id: 1, comments: 'efsWall', finalPoints: [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 40 }] },
+                // Boundary 10 m off the first segment (parallel, in +y).
+                { id: 2, comments: 'efsBoundary', finalPoints: [{ x: 0, y: 10 }, { x: 60, y: 10 }] },
             ],
         })
     })
 
-    it('calls calculateEfs and shows the per-elevation results table', async () => {
+    it('derives elevations from the wall corners and calls calculateEfs', async () => {
         calculateEfs.mockResolvedValue({
             elevations: [
                 {
                     elevation_number: 1,
-                    boundary_distance: '6.0',
-                    er_width: '96.0',
+                    boundary_distance: '10.0',
+                    er_width: '60.0',
                     er_height: '18.0',
-                    bre_width: '100',
+                    bre_width: '60',
                     bre_height: '18',
                     bre_percentage: '22.5%',
-                    allowable_area: '405.0',
-                    actual_area: '1728.0',
-                    actual_protected_area: '1323.0',
-                    actual_percentage: '77.0%',
+                    allowable_area: '243.0',
+                    actual_area: '1080.0',
+                    actual_protected_area: '837.0',
+                    actual_percentage: '77.5%',
                 },
             ],
         })
 
         render(<EfsPopup onClose={() => {}} />)
         fireEvent.click(screen.getByText('Enclosing rectangle (BRE 135)'))
-        // Width is seeded from the drawn wall (96 m).
         fireEvent.click(screen.getByText('Calc'))
 
         await waitFor(() => expect(calculateEfs).toHaveBeenCalled())
-        const [elevationsArg] = calculateEfs.mock.calls[0]
-        expect(elevationsArg[0].width).toBe(96)
+        const [elevationsArg, isCommercialArg] = calculateEfs.mock.calls[0]
+        // Two segments -> two elevations, widths 60 and 40.
+        expect(elevationsArg).toHaveLength(2)
+        expect(elevationsArg[0].width).toBeCloseTo(60)
+        expect(elevationsArg[1].width).toBeCloseTo(40)
+        // First elevation's boundary distance auto-derived from the drawn boundary.
+        expect(elevationsArg[0].boundary_distance).toBeCloseTo(10)
+        expect(isCommercialArg).toBe(true)
         expect(await screen.findByText('22.5%')).toBeTruthy()
+    })
+
+    it('shows guidance when no wall has been drawn', () => {
+        useStore.setState({ convertedPoints: [] })
+        render(<EfsPopup onClose={() => {}} />)
+        fireEvent.click(screen.getByText('Enclosing rectangle (BRE 135)'))
+        expect(screen.getByText(/Draw a wall polyline first/)).toBeTruthy()
     })
 })

@@ -392,3 +392,48 @@ export function assessElevation({
         allPass: hasBoundary ? failingCount === 0 : null,
     }
 }
+
+// Split the drawn wall polyline into one elevation per straight segment (i.e.
+// per pair of consecutive corners). Each elevation's width is its segment
+// length; its boundary distance is the SMALLEST outward boundary distance
+// sampled along that segment (the worst-case closest approach), measured
+// against the drawn boundary polyline. boundaryDistance is null when no usable
+// boundary is supplied. Metre-space in, metre-space out. Used by the BRE 135
+// (enclosing-rectangle) calc so the elevations come straight off the drawing.
+export function elevationsFromWall(wallPoints, boundaryPoints, sampleStep = 0.5) {
+    if (!wallPoints || wallPoints.length < 2) return []
+    const hasBoundary = Boolean(boundaryPoints && boundaryPoints.length >= 2)
+
+    const elevations = []
+    let acc = 0
+    for (let i = 1; i < wallPoints.length; i++) {
+        const a = wallPoints[i - 1]
+        const b = wallPoints[i]
+        const segLen = Math.hypot(b.x - a.x, b.y - a.y)
+        const d0 = acc
+        acc += segLen
+        if (segLen === 0) continue // skip degenerate (duplicate) vertices
+
+        let boundaryDistance = null
+        if (hasBoundary) {
+            const step = sampleStep > 0 ? sampleStep : segLen / 50
+            let min = Infinity
+            const consider = (d) => {
+                const r = boundaryDistanceOutward(wallPoints, d, boundaryPoints)
+                if (r && Number.isFinite(r.distance)) min = Math.min(min, r.distance)
+            }
+            for (let d = d0; d < acc; d += step) consider(d)
+            consider(acc) // always include the far corner
+            boundaryDistance = Number.isFinite(min) ? min : null
+        }
+
+        elevations.push({
+            elevationNumber: elevations.length + 1,
+            width: segLen,
+            from: { x: a.x, y: a.y },
+            to: { x: b.x, y: b.y },
+            boundaryDistance,
+        })
+    }
+    return elevations
+}
