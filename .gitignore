@@ -27,9 +27,28 @@ yarn-error.log*
 # local env files
 .env*.local
 
+# backend lives in its own repo (backendForNextApp on Railway)
+backend/
+
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python
+__pycache__/
+*.pyc
+
+# claude code local settings
+.claude/settings.local.json
+
+# FDS reference files
+*.fds
+
+# Playwright local browsers + run artifacts
+pw-browsers/
+pw-manual/
+test-results/
+playwright-report/

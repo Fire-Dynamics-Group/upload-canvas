@@ -1,11 +1,34 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import {findOriginPixels, returnFinalCoordinates} from '../utils/pointManipulation'
+import { clearPdfFromIndexedDB } from '../utils/pdfStorage'
+import { defaultDoorTimings } from './defaultDoorTimings'
+import { isDbBacked, MODE_PERSISTENCE, PERSIST_VERSION, migratePersistedState, mergePersistedState, partializeState } from './persistenceModes'
 
-const useStore = create((set) => {
+const useStore = create(persist((set, get) => {
     const defaultStairObject = {"fire_floor": 0, "total_floors": 5, "stair_roof_z": 25, "top_storey_height": 21}
+
+    // Write the active mode's geometry: update the live `elements` array AND keep
+    // the active mode's bucket (elementsByMode[currentMode]) in sync. The bucket
+    // is the source of truth across reloads; `elements` is its live checkout.
+    const writeElements = (state, nextElements) => ({
+        elements: nextElements,
+        elementsByMode: { ...state.elementsByMode, [state.currentMode]: nextElements },
+    })
+
     return {
 
+        // Project persistence
+        projectId: null,
+        floorId: null,
+        projectName: null,
+        saveStatus: null, // null | "saving" | "saved" | "error"
+
         elements: [],
+        // Per-mode geometry buckets. `elements` is the live "checkout" of the
+        // active mode's bucket; setCurrentMode stashes/restores between them so
+        // modes can't clobber each other's shapes. See docs/phase2-*.md.
+        elementsByMode: { fdsGen: [], radiation: [], timeEq: [], efs: [] },
         tool: "scale",
         selectedElement: null,
         currentMode: "fdsGen",
@@ -18,8 +41,26 @@ const useStore = create((set) => {
         pdfData: null,
         pdfIsGreyscale: false,
         pdfCanvasRef: null,
+        thumbnail: null,
         totalHeatFlux: 476,
         heatEndpoint: 1.3333,
+        // EFS view-factor mode: column spacing (m) along the elevation. Shared by
+        // the EFS popup and the canvas boundary-distance overlay.
+        efsColumnSpacing: 8,
+        // Whether the EFS popup is open, and whether a calc has been run — either
+        // shows the gridline number labels on the canvas.
+        efsPopupOpen: false,
+        efsCalcDone: false,
+
+        // Fire configuration
+        fireHRR: 1000,              // kW
+        fireDimension: 1.4,         // m (square fire side length)
+        fireHeightAboveFloor: 0.5,  // m
+        fireBase: 0.0,              // m
+        fireType: "growing",        // "growing" or "steady_state"
+        fireGrowthRate: "medium",   // "slow", "medium", "fast", "ultra_fast", "custom"
+        fireCustomAlpha: null,      // kW/s², only used when fireGrowthRate is "custom"
+
         fireFloorZ: 0,
         fireFloorNumber: 0,
         showTimeEqPopup: false,
@@ -28,7 +69,67 @@ const useStore = create((set) => {
         stairRoofZ: 25,
         wallHeight: 3,
         topStoreyHeight: 20,
-        
+
+        // Common corridor mode
+        commonCorridorMode: false,
+
+        // Scenario settings (common corridor only)
+        scenarioType: "MOE", // "MOE", "FSA", or "Both"
+        simEndTime: 300,
+
+        // Device settings
+        includeSensors: true,
+        corridorSensorHeights: [2.0], // above fire floor, all types (temp, pressure, vis, velocity)
+        stairSensorHeights: [0.5, 1.0, 1.5, 2.0], // above fire floor, tree of sensors at each stair position
+        fsaSensorHeights: [1.5], // above fire floor, FSA path sensors (2m/4m/15m from apt door)
+        isSprinklered: true,
+
+        // Door role assignment: { [doorId]: "apartment" | "stair" | "lobby" | "other" }
+        doorRoles: {},
+        highlightedDoorId: null,
+
+        // Door leakage settings
+        doorLeakagesEnabled: true,
+        doorLeakageConfig: {}, // per-door: { [doorId]: { enabled: true, doorType: "single_smoke_sealed", bothSides: false } }
+
+        // Door openings - defaults per scenario type
+        doorOpenings: { ...defaultDoorTimings.MOE },
+
+        // Landing role assignment: { [landingId]: "floor" | "half" }
+        landingRoles: {},
+        highlightedLandingId: null,
+        // Which half of the floor landing goes up: "left"|"right"|"top"|"bottom"
+        landingUpSide: null,
+        // Stair step style: "overlapping" (full landing width shifted) | "individual" (single tread width)
+        stairStyle: "individual",
+
+        // Extract shaft settings
+        extractConfig: {}, // per-extract: { [extractId]: { type, flowRate, tauV, shaftWidth, shaftDepth, activation, activationTime } }
+        highlightedExtractId: null,
+
+        // Inlet settings
+        inletConfig: {}, // per-inlet: { [inletId]: { type, flowRate, tauV, openingHeight, openingBase } }
+        highlightedInletId: null,
+
+        // Zone assignment: { [elementId]: { type, name, slices, sensors, points } }
+        // types: "corridor"|"lobby"|"fire_room"|"internal_corridor"|"other"
+        zoneConfig: {},
+        sliceZHeight: 2.0, // Z slice height above fire floor (m)
+
+        // Debug: decomposed rectangles for sensor visualization (pixel coords)
+        debugRects: [], // flat array [x1,y1,x2,y2, ...] of rect corners in pixels
+
+        // AOV settings
+        aovMode: "always_open", // "always_open" | "timed" | "sprinkler"
+        aovActivationTime: null, // seconds, used when aovMode is "timed"
+
+        // Obstruction transparency settings (0 = opaque, 1 = fully transparent)
+        obstructionTransparency: {
+            stairWalls: 0.25,
+            stairRoof: 0.25,
+            fireFloorWalls: 0.0,
+        },
+
         stairObject: [],
         mapStairObject: () => set((state) => ({
             stairObject: state.stairObject.map((stair, index) => {
@@ -43,22 +144,37 @@ const useStore = create((set) => {
             stairObject: newStairObject
         })),
         
-        addElement: (newEl) => set((state) => ({
-            elements: [...state.elements, newEl]
-        })),
-        changeElement: (changedEl) =>  set((state) => ({
-            elements: 
-                state.elements.map(element => {
-                    if (element.id === changedEl.id) {
-                        return changedEl
-                    } else {
-                        return element
-                    }
-                })         
-        })),
-        removeElement: (selectedID) => set((state) => ({
-            elements: state.elements.filter(element => element.id !== selectedID)
-        })),
+        addElement: (newEl) => set((state) => writeElements(state, [...state.elements, newEl])),
+        // Replace all sensorTree and fsaSensor elements with new ones
+        setSensorTreeElements: (sensorPoints, fsaPoints = []) => set((state) => {
+            const withoutSensors = state.elements.filter(el => el.comments !== 'sensorTree' && el.comments !== 'fsaSensor')
+            const maxId = withoutSensors.length > 0
+                ? Math.max(...withoutSensors.map(el => el.id))
+                : -1
+            const newSensors = sensorPoints.map((pt, i) => ({
+                type: 'point',
+                points: [pt],
+                comments: 'sensorTree',
+                id: maxId + 1 + i,
+                ...(pt.zoneName ? { zoneName: pt.zoneName } : {}),
+            }))
+            const newFsa = fsaPoints.map((pt, i) => ({
+                type: 'point',
+                points: [pt],
+                comments: 'fsaSensor',
+                fsaDistance: pt.fsaDistance, // 2, 4, or 15 metres from apt door
+                id: maxId + 1 + sensorPoints.length + i,
+            }))
+            return writeElements(state, [...withoutSensors, ...newSensors, ...newFsa])
+        }),
+        changeElement: (changedEl) => set((state) => writeElements(
+            state,
+            state.elements.map(element => element.id === changedEl.id ? changedEl : element)
+        )),
+        removeElement: (selectedID) => set((state) => writeElements(
+            state,
+            state.elements.filter(element => element.id !== selectedID)
+        )),
         // change tool to incoming
         // if tool not selection; set selection to null
         setTool: (newTool) => {
@@ -78,9 +194,39 @@ const useStore = create((set) => {
         setSelectedElement: (newEl) => set(() => ({
             selectedElement: newEl
         })),
-        setCurrentMode: (newMode) => set(() => ({
-            currentMode: newMode
-        })),
+        // Switching modes checks out the new mode's geometry bucket into the
+        // live `elements` array. The outgoing mode's bucket is already current
+        // (writeElements keeps it in sync), so no stash step is needed.
+        //
+        // The PDF + scale (pdfData, pixelsPerMesh, canvasDimensions,
+        // convertedPoints, originPixels) are global, not bucketed. A non-DB mode
+        // (radiation/timeEq) is ephemeral scratch and must NOT inherit them from
+        // the mode you came from — it starts from a fresh upload + scale step.
+        // We only reset for non-DB targets: fdsGen re-hydrates from its project,
+        // and blanking its scale here would let auto-save clobber the project
+        // with defaults. See persistenceModes.js.
+        setCurrentMode: (newMode) => set((state) => {
+            if (newMode === state.currentMode) return {}
+            const next = {
+                currentMode: newMode,
+                elements: state.elementsByMode?.[newMode] ?? [],
+            }
+            if (!isDbBacked(newMode)) {
+                return {
+                    ...next,
+                    pdfData: null,
+                    pdfIsGreyscale: false,
+                    pixelsPerMesh: 1,
+                    canvasDimensions: {},
+                    convertedPoints: [],
+                    originPixels: null,
+                    hasDoor: false,
+                    tool: 'scale',
+                    selectedElement: null,
+                }
+            }
+            return next
+        }),
         setComment: (newComment) => set(() => ({
             comment: newComment
         })),
@@ -90,6 +236,9 @@ const useStore = create((set) => {
         setPixelsPerMesh: (pxPerMesh) => set(() => ({
             pixelsPerMesh: pxPerMesh
         })),
+        setEfsColumnSpacing: (v) => set(() => ({ efsColumnSpacing: v })),
+        setEfsPopupOpen: (v) => set(() => ({ efsPopupOpen: v })),
+        setEfsCalcDone: (v) => set(() => ({ efsCalcDone: v })),
 
         setConvertedPoints: () => set((state) => {
             let tempOrigin = findOriginPixels(state.elements, state.canvasDimensions.height)
@@ -116,12 +265,25 @@ const useStore = create((set) => {
         setPdfCanvasRef: (newRef) => set(() => ({
             pdfCanvasRef: newRef
         })),
+        setThumbnail: (dataUrl) => set(() => ({
+            thumbnail: dataUrl
+        })),
         setTotalHeatFlux: (newVal) => set(() => ({
             totalHeatFlux: newVal
         })),
         setHeatEndpoint: (newVal) => set(() => ({
             heatEndpoint: newVal
         })),
+
+        // Fire configuration setters
+        setFireHRR: (newVal) => set(() => ({ fireHRR: newVal })),
+        setFireDimension: (newVal) => set(() => ({ fireDimension: newVal })),
+        setFireHeightAboveFloor: (newVal) => set(() => ({ fireHeightAboveFloor: newVal })),
+        setFireBase: (newVal) => set(() => ({ fireBase: newVal })),
+        setFireType: (newVal) => set(() => ({ fireType: newVal })),
+        setFireGrowthRate: (newVal) => set(() => ({ fireGrowthRate: newVal })),
+        setFireCustomAlpha: (newVal) => set(() => ({ fireCustomAlpha: newVal })),
+
         setShowTimeEqPopup: (newBool) => set(() => ({
             showTimeEqPopup: newBool
         })),
@@ -134,18 +296,227 @@ const useStore = create((set) => {
         setFireFloorNumber: (newVal) => set(() => ({
             fireFloorNumber: newVal
         })),
-        setTopStoreyHeight: (newVal) => set(() => ({
+        setTotalFloors: (newVal) => set(() => ({
             totalFloors: newVal
         })),
-        // stairRoofZ
+        setWallHeight: (newVal) => set(() => ({
+            wallHeight: newVal
+        })),
         setStairRoofZ: (newVal) => set(() => ({
             stairRoofZ: newVal
         })),
-        // topStoreyHeight
         setTopStoreyHeight: (newVal) => set(() => ({
             topStoreyHeight: newVal
         })),
-}
-})
 
+        setAovMode: (newVal) => set(() => ({
+            aovMode: newVal,
+            // Clear activation time when switching away from timed
+            ...(newVal !== "timed" ? { aovActivationTime: null } : {}),
+        })),
+        setAovActivationTime: (newVal) => set(() => ({
+            aovActivationTime: newVal
+        })),
+
+        setCommonCorridorMode: (newVal) => set(() => ({
+            commonCorridorMode: newVal,
+            // Reset scenario defaults when toggling on
+            ...(newVal ? {
+                scenarioType: "MOE",
+                doorOpenings: { ...defaultDoorTimings.MOE },
+                simEndTime: 300,
+            } : {
+                scenarioType: null,
+                doorOpenings: {},
+            }),
+        })),
+
+        // Scenario setters (common corridor only)
+        setScenarioType: (newVal) => set(() => ({
+            scenarioType: newVal,
+            doorOpenings: { ...defaultDoorTimings[newVal] },
+            simEndTime: newVal === "Both" ? 1800 : 300,
+        })),
+        setSimEndTime: (newVal) => set(() => ({
+            simEndTime: newVal
+        })),
+
+        // Device setters
+        setIncludeSensors: (newVal) => set(() => ({
+            includeSensors: newVal
+        })),
+        setCorridorSensorHeights: (newVal) => set(() => ({
+            corridorSensorHeights: newVal
+        })),
+        setStairSensorHeights: (newVal) => set(() => ({
+            stairSensorHeights: newVal
+        })),
+        setFsaSensorHeights: (newVal) => set(() => ({
+            fsaSensorHeights: newVal
+        })),
+        setIsSprinklered: (newVal) => set(() => ({
+            isSprinklered: newVal
+        })),
+
+        // Door role setters
+        setDoorRoles: (newVal) => set(() => ({
+            doorRoles: newVal
+        })),
+        setHighlightedDoorId: (newVal) => set(() => ({
+            highlightedDoorId: newVal
+        })),
+
+        // Door leakage setters
+        setDoorLeakagesEnabled: (newVal) => set(() => ({
+            doorLeakagesEnabled: newVal
+        })),
+        setDoorLeakageConfig: (newVal) => set(() => ({
+            doorLeakageConfig: newVal
+        })),
+
+        // Door openings setter
+        setDoorOpenings: (newVal) => set(() => ({
+            doorOpenings: newVal
+        })),
+
+        // Extract shaft setters
+        setExtractConfig: (newVal) => set(() => ({
+            extractConfig: newVal
+        })),
+        setHighlightedExtractId: (newVal) => set(() => ({
+            highlightedExtractId: newVal
+        })),
+
+        // Inlet setters
+        setInletConfig: (newVal) => set(() => ({ inletConfig: newVal })),
+        setHighlightedInletId: (newVal) => set(() => ({ highlightedInletId: newVal })),
+
+        // Zone setters
+        setZoneConfig: (newVal) => set(() => ({ zoneConfig: newVal })),
+        setSliceZHeight: (newVal) => set(() => ({ sliceZHeight: newVal })),
+
+        // Landing role setters
+        setLandingRoles: (newVal) => set(() => ({ landingRoles: newVal })),
+        setHighlightedLandingId: (newVal) => set(() => ({ highlightedLandingId: newVal })),
+        setLandingUpSide: (newVal) => set(() => ({ landingUpSide: newVal })),
+        setStairStyle: (newVal) => set(() => ({ stairStyle: newVal })),
+
+        // Obstruction transparency setter
+        setObstructionTransparency: (newVal) => set(() => ({ obstructionTransparency: newVal })),
+        setDebugRects: (newVal) => set(() => ({ debugRects: newVal })),
+
+        // Project persistence setters
+        setProjectId: (newVal) => set(() => ({ projectId: newVal })),
+        setFloorId: (newVal) => set(() => ({ floorId: newVal })),
+        setProjectName: (newVal) => set(() => ({ projectName: newVal })),
+        setSaveStatus: (newVal) => set(() => ({ saveStatus: newVal })),
+
+        // Auto-save only fires for DB-backed modes (see persistenceModes.js).
+        // Otherwise scratch geometry from a non-DB mode (radiation/timeEq) could
+        // overwrite the loaded project. Registry-driven so new modes opt in by
+        // flipping a flag, not by editing this check.
+        shouldAutoSave: () => {
+            const s = get()
+            return Boolean(s.projectId) && isDbBacked(s.currentMode)
+        },
+
+        // Build the bulk-save payload via the active mode's registry handler.
+        // Returns null for modes that aren't DB-backed (no handler).
+        buildSavePayload: () => {
+            const s = get()
+            const handler = MODE_PERSISTENCE[s.currentMode]
+            return handler?.buildPayload ? handler.buildPayload(s) : null
+        },
+
+        // Hydrate the store from a loaded project + floor detail via the active
+        // mode's registry handler. No-op for modes that aren't DB-backed.
+        hydrateFromServer: (project, floorDetail) => {
+            const handler = MODE_PERSISTENCE[get().currentMode]
+            if (!handler?.hydrate) return
+            set((state) => handler.hydrate(project, floorDetail, state))
+        },
+
+        // Reset all persisted state for a new project
+        resetProject: () => {
+            localStorage.removeItem('upload-canvas-fds')
+            clearPdfFromIndexedDB()
+            set(() => ({
+                projectId: null,
+                floorId: null,
+                projectName: null,
+                saveStatus: null,
+                elements: [],
+                elementsByMode: { fdsGen: [], radiation: [], timeEq: [], efs: [] },
+                tool: "scale",
+                selectedElement: null,
+                comment: "",
+                canvasDimensions: {},
+                pixelsPerMesh: 1,
+                originPixels: null,
+                convertedPoints: [],
+                hasDoor: false,
+                pdfData: null,
+                pdfIsGreyscale: false,
+                totalHeatFlux: 476,
+                heatEndpoint: 1.3333,
+                fireHRR: 1000,
+                fireDimension: 1.4,
+                fireHeightAboveFloor: 0.5,
+                fireBase: 0.0,
+                fireType: "growing",
+                fireGrowthRate: "medium",
+                fireCustomAlpha: null,
+                fireFloorZ: 0,
+                fireFloorNumber: 0,
+                numberOfStairs: 0,
+                totalFloors: 8,
+                stairRoofZ: 25,
+                wallHeight: 3,
+                topStoreyHeight: 20,
+                commonCorridorMode: false,
+                scenarioType: "MOE",
+                simEndTime: 300,
+                includeSensors: true,
+                corridorSensorHeights: [2.0],
+                stairSensorHeights: [0.5, 1.0, 1.5, 2.0],
+                fsaSensorHeights: [1.5],
+                isSprinklered: true,
+                doorRoles: {},
+                highlightedDoorId: null,
+                doorLeakagesEnabled: true,
+                doorLeakageConfig: {},
+                doorOpenings: { ...defaultDoorTimings.MOE },
+                landingRoles: {},
+                highlightedLandingId: null,
+                landingUpSide: null,
+                stairStyle: "individual",
+                extractConfig: {},
+                highlightedExtractId: null,
+                inletConfig: {},
+                highlightedInletId: null,
+                zoneConfig: {},
+                sliceZHeight: 2.0,
+                aovMode: "always_open",
+                aovActivationTime: null,
+                obstructionTransparency: { stairWalls: 0.25, stairRoof: 0.25, fireFloorWalls: 0.0 },
+                stairObject: [],
+            }))
+        },
+}
+}, {
+    name: 'upload-canvas-fds',
+    version: PERSIST_VERSION,
+    migrate: migratePersistedState,
+    merge: mergePersistedState,
+    // Registry-driven: non-DB modes leave nothing behind to restore on reload.
+    partialize: partializeState,
+}))
+
+// Dev/test only: expose the store so Playwright e2e can read/seed state.
+// Never attached in production builds.
+if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+    window.__useStore = useStore
+}
+
+export { defaultDoorTimings }
 export default useStore

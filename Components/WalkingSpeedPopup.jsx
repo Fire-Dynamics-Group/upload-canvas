@@ -1,11 +1,20 @@
 import useStore from '../store/useStore'
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 
-const WalkingSpeedPopup = ({handleUserInput}) => {
+const WalkingSpeedPopup = ({handleUserInput, onClose}) => {
     const userWalkingInput = useRef()
     const userDoorInput = useRef()
     const hasDoor = useStore((state) => state.hasDoor)
-    console.log("hasDoor", hasDoor)
+
+    // Allow closing without running the calc (Escape / backdrop / close button)
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape' && onClose) onClose()
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [onClose])
+
     //  has door when one placed
 
     const walkingSpeedObject = [
@@ -32,14 +41,24 @@ const WalkingSpeedPopup = ({handleUserInput}) => {
             if (input.length === requiredLength) {
 
               handleUserInput(input)
-              console.log("input: ", input)
             }
         }
 
     }
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-        <div className="bg-white p-4 rounded-lg shadow-lg text-black">
+      <div
+        className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50"
+        onClick={() => onClose && onClose()}
+      >
+        <div className="relative bg-white p-4 rounded-lg shadow-lg text-black" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            aria-label="Close"
+            className="absolute top-2 right-2 text-gray-500 hover:text-black text-xl leading-none"
+            onClick={() => onClose && onClose()}
+          >
+            &times;
+          </button>
           <h2 className="text-lg font-bold mb-2">Enter walking speed (m/s): </h2>
           {!isCustomWalkingSpeed ? <select
               onChange={(e) => {
