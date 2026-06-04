@@ -21,6 +21,11 @@ import {
     suggestProtection,
     outwardNormalAt,
     buildRequiredBoundaryLine,
+    rectVFAt,
+    totalViewFactorPieces,
+    buildEmitter,
+    baysCoveredBySpan,
+    projectSpanOntoWall,
 } from '../utils/efsViewFactor'
 
 // Ground truth from EFS.xlsx (South sheet): elevation 96 m wide x 18 m high,
@@ -458,6 +463,152 @@ describe('assessElevationBays.requiredByStation — needed-boundary input', () =
         const maxOpen = Math.max(...open.requiredByStation)
         const maxProt = Math.max(...prot.requiredByStation)
         expect(maxProt).toBeLessThan(maxOpen)
+    })
+})
+
+describe('rectVFAt — 2-D telescoping view factor with a vertical band', () => {
+    it('reproduces the full-height corner-rectangle sum (band 0..H, m = H/2)', () => {
+        const H = 18, m = H / 2, S = 60
+        // single full bay [0,96], receiver at xR -> matches totalViewFactor
+        for (const xR of [0, 24, 48, 96]) {
+            const banded = rectVFAt(xR, 0, 96, 0, H, m, S)
+            const full = totalViewFactor(xR, 96 - xR, S, m, m)
+            expect(banded).toBeCloseTo(full, 9)
+        }
+    })
+
+    it('a part-height band radiates less than the full height', () => {
+        const H = 18, m = H / 2, S = 60
+        const full = rectVFAt(20, 0, 96, 0, H, m, S)
+        const band = rectVFAt(20, 0, 96, 6, 12, m, S) // central 6..12 m only
+        expect(band).toBeLessThan(full)
+        expect(band).toBeGreaterThan(0)
+    })
+
+    it('a band split into two stacked sub-bands equals the whole band', () => {
+        const m = 9, S = 50
+        const whole = rectVFAt(20, 0, 96, 0, 18, m, S)
+        const lower = rectVFAt(20, 0, 96, 0, 9, m, S)
+        const upper = rectVFAt(20, 0, 96, 9, 18, m, S)
+        expect(lower + upper).toBeCloseTo(whole, 9)
+    })
+})
+
+describe('baysCoveredBySpan / projectSpanOntoWall — snapping regions to bays', () => {
+    it('includes every bay the span touches (snap, extend into the next bay)', () => {
+        // width 96, spacing 8 -> bays 1..12 at [0,8],[8,16],...
+        expect(baysCoveredBySpan(96, 8, 0, 8)).toEqual([1])
+        expect(baysCoveredBySpan(96, 8, 4, 20)).toEqual([1, 2, 3]) // crosses into bay 3
+        expect(baysCoveredBySpan(96, 8, 17, 17.5)).toEqual([3])
+    })
+
+    it('projects a drawn region polyline onto the wall arc-length span', () => {
+        const wall = [{ x: 0, y: 0 }, { x: 96, y: 0 }]
+        const region = [{ x: 10, y: 3 }, { x: 30, y: -2 }] // roughly over x 10..30
+        const { start, end } = projectSpanOntoWall(wall, region)
+        expect(start).toBeCloseTo(10, 5)
+        expect(end).toBeCloseTo(30, 5)
+    })
+})
+
+describe('buildEmitter — protected/unprotected regions (#11)', () => {
+    const base = { width: 96, spacing: 8, height: 18 }
+
+    it('a full-height protected region removes the whole bay', () => {
+        const r = buildEmitter({ ...base, regions: [{ kind: 'protected', bays: [6], base: 0, top: 18 }] })
+        const bay6 = r.bayStatus.find((s) => s.bay === 6)
+        expect(bay6.status).toBe('protected')
+        expect(bay6.emitting).toHaveLength(0)
+        expect(r.pieces.some((p) => p.a === 40 && p.b === 48)).toBe(false) // bay6 not emitting
+    })
+
+    it('a part-height protected band leaves the complement emitting', () => {
+        const r = buildEmitter({ ...base, regions: [{ kind: 'protected', bays: [6], base: 6, top: 12 }] })
+        const bay6 = r.bayStatus.find((s) => s.bay === 6)
+        expect(bay6.status).toBe('partially-protected')
+        // complement = [0,6] and [12,18]
+        expect(bay6.emitting).toEqual([{ base: 0, top: 6 }, { base: 12, top: 18 }])
+    })
+
+    it('an unprotected band locks the bay but leaves the emitter unchanged', () => {
+        const r = buildEmitter({ ...base, regions: [{ kind: 'unprotected', bays: [3], base: 4, top: 10 }] })
+        const bay3 = r.bayStatus.find((s) => s.bay === 3)
+        expect(bay3.status).toBe('unprotected')
+        expect(bay3.emitting).toEqual([{ base: 0, top: 18 }]) // whole face still emits
+        expect(r.lockedBays).toContain(3)
+    })
+
+    it('protected + unprotected bands that overlap vertically are a conflict (apply neither)', () => {
+        const r = buildEmitter({
+            ...base,
+            regions: [
+                { kind: 'protected', bays: [5], base: 0, top: 10 },
+                { kind: 'unprotected', bays: [5], base: 6, top: 14 },
+            ],
+        })
+        expect(r.conflictBays).toContain(5)
+        const bay5 = r.bayStatus.find((s) => s.bay === 5)
+        expect(bay5.status).toBe('conflict')
+        expect(bay5.emitting).toEqual([{ base: 0, top: 18 }]) // reverted to normal
+    })
+
+    it('protected + unprotected bands that DO NOT overlap compose (no conflict)', () => {
+        const r = buildEmitter({
+            ...base,
+            regions: [
+                { kind: 'protected', bays: [5], base: 0, top: 6 },   // protect lower
+                { kind: 'unprotected', bays: [5], base: 10, top: 18 }, // keep upper open
+            ],
+        })
+        expect(r.conflictBays).not.toContain(5)
+        const bay5 = r.bayStatus.find((s) => s.bay === 5)
+        expect(bay5.emitting).toEqual([{ base: 6, top: 18 }]) // lower 0..6 removed
+        expect(r.lockedBays).toContain(5)
+    })
+})
+
+describe('assessElevationBays with regions (#11)', () => {
+    const wallPoints = [{ x: 0, y: 0 }, { x: 96, y: 0 }]
+
+    it('matches the no-region result when no regions are supplied', () => {
+        const a = assessElevationBays({ wallPoints, boundaryPoints: [], height: 18, T, spacing: 8 })
+        expect(a.governingRequiredBoundaryDistance).toBeCloseTo(38.341, 1)
+    })
+
+    it('a protected region lowers required like protecting those bays', () => {
+        const open = assessElevationBays({ wallPoints, boundaryPoints: [], height: 18, T, spacing: 8 })
+        const withRegion = assessElevationBays({
+            wallPoints, boundaryPoints: [], height: 18, T, spacing: 8,
+            regions: [{ kind: 'protected', bays: [1, 2, 11, 12], base: 0, top: 18 }],
+        })
+        expect(withRegion.governingRequiredBoundaryDistance).toBeLessThan(open.governingRequiredBoundaryDistance)
+        expect(withRegion.rows.find((r) => r.bay === 1).protected).toBe(true)
+    })
+
+    it('flags conflicts on the assessment', () => {
+        const a = assessElevationBays({
+            wallPoints, boundaryPoints: [], height: 18, T, spacing: 8,
+            regions: [
+                { kind: 'protected', bays: [6], base: 0, top: 10 },
+                { kind: 'unprotected', bays: [6], base: 6, top: 14 },
+            ],
+        })
+        expect(a.hasConflict).toBe(true)
+        expect(a.conflictBays).toContain(6)
+    })
+})
+
+describe('suggestProtection respects unprotected regions (#11)', () => {
+    const wallPoints = [{ x: 0, y: 0 }, { x: 96, y: 0 }]
+    const boundaryPoints = [{ x: 0, y: -30 }, { x: 96, y: -30 }]
+
+    it('never auto-protects a bay carrying an unprotected band', () => {
+        const r = suggestProtection({
+            wallPoints, boundaryPoints, height: 18, T, spacing: 8,
+            regions: [{ kind: 'unprotected', bays: [6, 7], base: 0, top: 18 }],
+        })
+        expect(r.protectedBays).not.toContain(6)
+        expect(r.protectedBays).not.toContain(7)
     })
 })
 

@@ -411,6 +411,177 @@ export function arcLengthOfClosestPoint(points, p) {
     return best.s
 }
 
+// --- banded emitter (protected / unprotected regions, issue #11) --------------
+//
+// Regions (#11) let the engineer mark spans of the elevation as PROTECTED
+// (fire-rated -> removed from the emitter) or UNPROTECTED (a design constraint
+// that must stay unprotected, e.g. required glazing). Each region snaps to whole
+// column bays and carries a vertical band {base, top} (default 0..H, capped at
+// H). Only PROTECTED bands change the radiation: the emitter becomes the whole
+// face minus the protected bands (the complement of a part-height protected band
+// still radiates). UNPROTECTED bands are non-numeric — they lock a bay (and that
+// vertical zone) out of auto-suggest and forbid a protected band from overlapping
+// them. To carry vertical bands the view factor needs 2-D telescoping.
+
+// Signed extents of a 1-D interval [lo, hi] measured from the foot `p`, for the
+// telescoping corner-rectangle sum. Two terms: straddling -> both positive;
+// entirely to one side -> the near edge positive and the far edge subtracted.
+function axisTerms(lo, hi, p) {
+    if (hi <= p) return [{ e: p - lo, s: 1 }, { e: p - hi, s: -1 }]
+    if (lo >= p) return [{ e: hi - p, s: 1 }, { e: lo - p, s: -1 }]
+    return [{ e: p - lo, s: 1 }, { e: hi - p, s: 1 }]
+}
+
+// View factor from a receiver at (xR, m) to an emitter rectangle spanning
+// [a, b] horizontally and [vb, vt] vertically (absolute heights), separation S.
+// 2-D generalisation of bayStrip: telescopes independently on each axis, so the
+// rectangle need not straddle the receiver. With a full-height band [0, H] and
+// m = H/2 this reproduces the bottom_h = top_h = H/2 corner-rectangle sum.
+export function rectVFAt(xR, a, b, vb, vt, m, S) {
+    let f = 0
+    for (const h of axisTerms(a, b, xR)) {
+        for (const v of axisTerms(vb, vt, m)) {
+            f += h.s * v.s * viewFactorRect(h.e, v.e, S)
+        }
+    }
+    return f
+}
+
+// Total view factor from the receiver at xR to a list of emitter `pieces`, each
+// { a, b, vb, vt }. Receiver at mid-height `m`.
+export function totalViewFactorPieces(xR, pieces, S, m) {
+    let f = 0
+    for (const p of pieces) f += rectVFAt(xR, p.a, p.b, p.vb, p.vt, m, S)
+    return f
+}
+
+// Goal-seek S for a banded (piecewise) emitter — same monotone bisection as the
+// others; no emitter (everything protected) -> required collapses to 0.
+export function solveSForTargetPieces(
+    xR, pieces, m, T, targetIs = DEFAULT_TARGET_IS,
+    { sLo = 1e-4, sHi = 5000, tol = 1e-4, maxIter = 300 } = {},
+) {
+    if (!pieces.length) return 0
+    const f = (S) => emissivePower(T) * totalViewFactorPieces(xR, pieces, S, m) - targetIs
+    let hi = sHi
+    while (f(hi) > 0 && hi < 1e7) hi *= 2
+    if (f(sLo) < 0) return sLo
+    let lo = sLo
+    for (let i = 0; i < maxIter && (hi - lo) > tol; i++) {
+        const mid = (lo + hi) / 2
+        if (f(mid) > 0) lo = mid
+        else hi = mid
+    }
+    return (lo + hi) / 2
+}
+
+// Clamp a region's band to [0, height]; default to the full elevation height.
+function normaliseBand(region, height) {
+    let base = region.base == null ? 0 : region.base
+    let top = region.top == null ? height : region.top
+    base = Math.max(0, Math.min(height, base))
+    top = Math.max(0, Math.min(height, top))
+    if (!(top > base)) { base = 0; top = height }
+    return { base, top }
+}
+
+const bandsOverlap = (a, b) => a.base < b.top - 1e-9 && b.base < a.top - 1e-9
+
+// Subtract a set of bands from a set of emitting vertical intervals (interval
+// difference). Used to remove protected bands from the full-height face.
+function subtractBands(intervals, bands) {
+    let out = intervals
+    for (const band of bands) {
+        const next = []
+        for (const iv of out) {
+            if (band.top <= iv.base + 1e-9 || band.base >= iv.top - 1e-9) { next.push(iv); continue }
+            if (band.base > iv.base + 1e-9) next.push({ base: iv.base, top: band.base })
+            if (band.top < iv.top - 1e-9) next.push({ base: band.top, top: iv.top })
+        }
+        out = next
+    }
+    return out
+}
+
+// The column bays a span [start, end] (arc-length along the wall) covers. Snaps
+// to whole bays: any bay the span touches is included (so a region extends into
+// the next bay if it crosses a column line). 1-indexed bay numbers.
+export function baysCoveredBySpan(width, spacing, start, end) {
+    const xs = columnPositions(width, spacing)
+    const lo = Math.min(start, end)
+    const hi = Math.max(start, end)
+    const bays = []
+    for (let i = 1; i < xs.length; i++) {
+        if (hi > xs[i - 1] + 1e-9 && lo < xs[i] - 1e-9) bays.push(i)
+    }
+    return bays
+}
+
+// Project a drawn region polyline onto the wall: the arc-length span it covers,
+// from the closest-point projections of its vertices.
+export function projectSpanOntoWall(wallPoints, regionPoints) {
+    const ls = regionPoints.map((p) => arcLengthOfClosestPoint(wallPoints, p))
+    return { start: Math.min(...ls), end: Math.max(...ls) }
+}
+
+// Build the emitter (list of { a, b, vb, vt } pieces) for the elevation given the
+// full-height protected bays (#8) and the banded regions (#11). Also returns
+// per-bay status for labelling, the conflict bays (protected/unprotected bands
+// overlapping vertically -> apply neither there), and the bays locked out of
+// auto-suggest (those carrying an unprotected band).
+export function buildEmitter({ width, spacing, height, protectedBays = [], regions = [] }) {
+    const xs = columnPositions(width, spacing)
+    const nBays = xs.length - 1
+    const protectedSet = new Set(protectedBays)
+
+    const protByBay = {}
+    const unprotByBay = {}
+    for (const r of regions) {
+        const band = normaliseBand(r, height)
+        for (const bay of (r.bays || [])) {
+            const target = r.kind === 'protected' ? protByBay : unprotByBay
+            ;(target[bay] = target[bay] || []).push(band)
+        }
+    }
+
+    const pieces = []
+    const bayStatus = []
+    const conflictBays = []
+    const lockedBays = []
+
+    for (let i = 1; i <= nBays; i++) {
+        const a = xs[i - 1]
+        const b = xs[i]
+        const protBands = protByBay[i] || []
+        const unprotBands = unprotByBay[i] || []
+        const conflict = protBands.some((p) => unprotBands.some((u) => bandsOverlap(p, u)))
+
+        if (conflict) {
+            conflictBays.push(i)
+            // apply neither: bay reverts to the normal full-height emitter
+            pieces.push({ a, b, vb: 0, vt: height })
+            bayStatus.push({ bay: i, status: 'conflict', emitting: [{ base: 0, top: height }] })
+            continue
+        }
+
+        if (unprotBands.length) lockedBays.push(i)
+
+        let emitting = protectedSet.has(i) ? [] : [{ base: 0, top: height }]
+        emitting = subtractBands(emitting, protBands)
+
+        for (const iv of emitting) pieces.push({ a, b, vb: iv.base, vt: iv.top })
+
+        let status = 'normal'
+        if (emitting.length === 0) status = 'protected'
+        else if (protBands.length && unprotBands.length) status = 'mixed'
+        else if (protBands.length) status = 'partially-protected'
+        else if (unprotBands.length) status = 'unprotected'
+        bayStatus.push({ bay: i, status, emitting, protBands, unprotBands })
+    }
+
+    return { pieces, bayStatus, conflictBays, lockedBays, nBays, xs }
+}
+
 // Per-bay assessment with protected bays removed from the emitter. The unit is the
 // column bay (segment between two columns); the popup table and the canvas arrows
 // both work per-bay so they agree. For each bay the governing case is the WORST
@@ -418,7 +589,7 @@ export function arcLengthOfClosestPoint(points, p) {
 // endpoints + boundary-vertex projections + a golden-section refinement (no
 // blanket fixed-step sampling). Protected bays are compliant by construction.
 export function assessElevationBays({
-    wallPoints, boundaryPoints, height, T, spacing, protectedBays = [], targetIs = DEFAULT_TARGET_IS,
+    wallPoints, boundaryPoints, height, T, spacing, protectedBays = [], regions = [], targetIs = DEFAULT_TARGET_IS,
 }) {
     if (!wallPoints || wallPoints.length < 2) {
         throw new Error('assessElevationBays requires a wall line of >= 2 points')
@@ -428,16 +599,15 @@ export function assessElevationBays({
     }
     const width = polylineLength(wallPoints)
     const hh = height / 2
-    const xs = columnPositions(width, spacing)
-    const nBays = xs.length - 1
-    const protectedSet = new Set(protectedBays)
     const hasBoundary = Boolean(boundaryPoints && boundaryPoints.length >= 2)
 
-    // Emitter = the unprotected bays (intervals in width space).
-    const bays = []
-    for (let i = 1; i <= nBays; i++) {
-        if (!protectedSet.has(i)) bays.push([xs[i - 1], xs[i]])
-    }
+    // Banded emitter: whole face minus protected bands (+ full-height protected
+    // bays from #8). Unprotected bands are constraints/labels, not emitter
+    // changes. With no regions this reduces to the unprotected-bays emitter.
+    const { pieces, bayStatus, conflictBays, lockedBays, nBays, xs } = buildEmitter({
+        width, spacing, height, protectedBays, regions,
+    })
+    const statusByBay = Object.fromEntries(bayStatus.map((s) => [s.bay, s]))
 
     const vertexProjections = hasBoundary
         ? boundaryPoints.map((v) => arcLengthOfClosestPoint(wallPoints, v))
@@ -445,13 +615,14 @@ export function assessElevationBays({
     const actualAt = (xR) => (hasBoundary
         ? boundaryDistanceOutward(wallPoints, xR, boundaryPoints).distance
         : null)
-    const requiredAt = (xR) => solveSForTargetPartial(xR, bays, hh, hh, T, targetIs) / 2
+    const requiredAt = (xR) => solveSForTargetPieces(xR, pieces, hh, T, targetIs) / 2
 
     const rows = []
     for (let i = 1; i <= nBays; i++) {
         const x0 = xs[i - 1]
         const x1 = xs[i]
-        const isProtected = protectedSet.has(i)
+        const st = statusByBay[i]
+        const isProtected = st.status === 'protected' // fully removed from the emitter
         const marginAt = (xR) => {
             const required = requiredAt(xR)
             const actual = actualAt(xR)
@@ -475,7 +646,7 @@ export function assessElevationBays({
         const required = worst.required
         const actual = worst.actual
         const S = required * 2
-        const vf = totalViewFactorPartial(worst.xR, bays, S, hh, hh)
+        const vf = totalViewFactorPieces(worst.xR, pieces, S, hh)
         const incident = emissivePower(T) * vf
         const out = hasBoundary ? boundaryDistanceOutward(wallPoints, worst.xR, boundaryPoints) : null
         rows.push({
@@ -495,6 +666,8 @@ export function assessElevationBays({
             point: pointAtDistanceAlong(wallPoints, worst.xR),
             to: out ? out.point : null,
             protected: isProtected,
+            status: st.status,
+            emitting: st.emitting,
             pass: isProtected ? true : (actual == null ? null : actual >= required),
         })
     }
@@ -512,10 +685,13 @@ export function assessElevationBays({
         hasBoundary,
         failingCount,
         allPass: hasBoundary ? failingCount === 0 : null,
-        protectedBays: [...protectedSet].sort((a, b) => a - b),
+        protectedBays: [...new Set(protectedBays)].sort((a, b) => a - b),
+        conflictBays,
+        lockedBays,
+        hasConflict: conflictBays.length > 0,
         // Required boundary distance at each column station (S/2 with the current
         // emitter), for drawing the "needed boundary" locus on the canvas.
-        requiredByStation: xs.map((x) => solveSForTargetPartial(x, bays, hh, hh, T, targetIs) / 2),
+        requiredByStation: xs.map((x) => solveSForTargetPieces(x, pieces, hh, T, targetIs) / 2),
     }
 }
 
@@ -526,16 +702,20 @@ export function assessElevationBays({
 // end bays sort ahead. Returns the protected set, the ordered `steps`, whether
 // compliance was achieved, and the final assessment.
 export function suggestProtection({
-    wallPoints, boundaryPoints, height, T, spacing, cornersFirst = true, targetIs = DEFAULT_TARGET_IS,
+    wallPoints, boundaryPoints, height, T, spacing, cornersFirst = true, regions = [], targetIs = DEFAULT_TARGET_IS,
 }) {
     const run = (protectedBays) => assessElevationBays({
-        wallPoints, boundaryPoints, height, T, spacing, protectedBays, targetIs,
+        wallPoints, boundaryPoints, height, T, spacing, protectedBays, regions, targetIs,
     })
     let assessment = run([])
     if (!assessment.hasBoundary) {
         return { protectedBays: [], steps: [], achievable: false, reason: 'no-boundary', assessment }
     }
     const nBays = assessment.nBays
+    // Bays carrying an unprotected (must-stay-open) band, or in a conflict, can't
+    // be auto-protected (#11): protecting the whole bay would remove the must-emit
+    // band. The engineer handles their complement manually.
+    const locked = new Set([...(assessment.lockedBays || []), ...(assessment.conflictBays || [])])
     const protectedSet = new Set()
     const steps = []
     const ratio = (r) => (r.actualBoundaryDistance > 0
@@ -544,7 +724,7 @@ export function suggestProtection({
 
     let guard = 0
     while (assessment.failingCount > 0 && guard++ <= nBays) {
-        const cands = assessment.rows.filter((r) => r.protected === false)
+        const cands = assessment.rows.filter((r) => r.protected === false && !locked.has(r.bay))
         if (!cands.length) {
             return { protectedBays: [...protectedSet].sort((a, b) => a - b), steps, achievable: false, reason: 'exhausted', assessment }
         }

@@ -432,6 +432,24 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                 setComment("efsBoundary")
                 }} />
                 <label htmlFor="efsBoundary">Boundary</label>
+                {/* protected (fire-rated) region polyline */}
+                <input type="radio"
+                id="efsProtected"
+                checked={tool === "polyline" && comment == 'efsProtected'}
+                onChange={() => {
+                setTool("polyline")
+                setComment("efsProtected")
+                }} />
+                <label htmlFor="efsProtected">Protected</label>
+                {/* must-stay-unprotected region polyline */}
+                <input type="radio"
+                id="efsUnprotected"
+                checked={tool === "polyline" && comment == 'efsUnprotected'}
+                onChange={() => {
+                setTool("polyline")
+                setComment("efsUnprotected")
+                }} />
+                <label htmlFor="efsUnprotected">Unprotected</label>
         </>
     )
     return (
