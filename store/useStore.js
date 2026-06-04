@@ -58,6 +58,9 @@ const useStore = create(persist((set, get) => {
         // Required boundary distance (m) at each column station from the last
         // assessment — drives the "needed boundary" locus drawn on the canvas.
         efsRequiredByStation: [],
+        // Per-region vertical band (issue #11), keyed by the drawn region
+        // element's id: { base, top } in metres (default 0..elevation height).
+        efsRegionConfig: {},
 
         // Fire configuration
         fireHRR: 1000,              // kW
@@ -246,6 +249,8 @@ const useStore = create(persist((set, get) => {
         // Changing the column spacing re-lays the bays, so any protected-bay
         // selection (indexed by bay) no longer maps — clear it.
         setEfsColumnSpacing: (v) => set(() => ({ efsColumnSpacing: v, efsProtectedBays: [], efsRequiredByStation: [] })),
+        // (efsRegionConfig is keyed by element id, so it survives a spacing change;
+        // regions re-snap to the new bays on the next assessment.)
         setEfsPopupOpen: (v) => set(() => ({ efsPopupOpen: v })),
         setEfsCalcDone: (v) => set(() => ({ efsCalcDone: v })),
         // EFS protected-bay model (issue #8): the single shared set that both the
@@ -260,6 +265,9 @@ const useStore = create(persist((set, get) => {
         }),
         setEfsCornersFirst: (v) => set(() => ({ efsCornersFirst: v })),
         setEfsRequiredByStation: (v) => set(() => ({ efsRequiredByStation: v })),
+        setEfsRegionBand: (id, band) => set((state) => ({
+            efsRegionConfig: { ...state.efsRegionConfig, [id]: { ...state.efsRegionConfig[id], ...band } },
+        })),
 
         setConvertedPoints: () => set((state) => {
             let tempOrigin = findOriginPixels(state.elements, state.canvasDimensions.height)
@@ -478,6 +486,7 @@ const useStore = create(persist((set, get) => {
                 hasDoor: false,
                 efsProtectedBays: [],
                 efsRequiredByStation: [],
+                efsRegionConfig: {},
                 efsCalcDone: false,
                 pdfData: null,
                 pdfIsGreyscale: false,

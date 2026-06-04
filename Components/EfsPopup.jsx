@@ -1,6 +1,13 @@
 import { useState } from 'react'
 import useStore from '../store/useStore'
-import { assessElevationBays, suggestProtection, celsiusToKelvin } from '../utils/efsViewFactor'
+import {
+    assessElevationBays,
+    suggestProtection,
+    celsiusToKelvin,
+    polylineLength,
+    projectSpanOntoWall,
+    baysCoveredBySpan,
+} from '../utils/efsViewFactor'
 
 // EFS (External Fire Spread) inputs + result popup. v1: whole-elevation emitter
 // split into column bays. The wall and the relevant-boundary polyline come off
@@ -12,11 +19,14 @@ import { assessElevationBays, suggestProtection, celsiusToKelvin } from '../util
 // for pass/fail.
 //
 // Issue #8: bays can be PROTECTED (made fire-rated), removing them from the
-// emitter. Protect bays by hand (the table toggle / canvas click) or let
-// "Suggest protection" auto-protect one bay at a time until the elevation
-// passes. The protected set lives in the store (efsProtectedBays) so the table,
-// the canvas overlay and the auto-suggester all share it. See
-// utils/efsViewFactor.js.
+// emitter — by hand (the table toggle) or via "Suggest protection".
+//
+// Issue #11: the engineer can also draw PROTECTED / UNPROTECTED region polylines
+// on the elevation, each snapping to whole bays and carrying a vertical band
+// (sill→head, capped at the elevation height). A protected band is removed from
+// the emitter (its complement still radiates); an unprotected band must stay open
+// (locked out of auto-suggest, and a protected band may not overlap it). All of
+// it shares one model with the auto-suggester. See utils/efsViewFactor.js.
 const EfsPopup = ({ onClose }) => {
     const convertedPoints = useStore((state) => state.convertedPoints)
 
@@ -36,6 +46,9 @@ const EfsPopup = ({ onClose }) => {
     const cornersFirst = useStore((state) => state.efsCornersFirst)
     const setCornersFirst = useStore((state) => state.setEfsCornersFirst)
     const setRequiredByStation = useStore((state) => state.setEfsRequiredByStation)
+    // Region bands (issue #11), keyed by drawn region element id.
+    const regionConfig = useStore((state) => state.efsRegionConfig)
+    const setRegionBand = useStore((state) => state.setEfsRegionBand)
 
     const [result, setResult] = useState(null)
     const [error, setError] = useState(null)
@@ -57,19 +70,37 @@ const EfsPopup = ({ onClose }) => {
             return null
         }
         setError(null)
-        return {
-            wall,
-            boundary,
-            h,
-            sp,
-            T: celsiusToKelvin(Number(fireTempC)),
-        }
+        return { wall, boundary, h, sp, T: celsiusToKelvin(Number(fireTempC)) }
     }
 
-    // Assess with a given protected-bay set and store the result.
+    // Drawn region polylines (efsProtected / efsUnprotected) projected onto the
+    // wall, snapped to the bays they cover, with their configured vertical band.
+    function buildRegions(wallFinalPoints, width, spacing, h) {
+        const regs = []
+        for (const el of (convertedPoints || [])) {
+            if (el.comments !== 'efsProtected' && el.comments !== 'efsUnprotected') continue
+            if (!el.finalPoints || el.finalPoints.length < 1) continue
+            const { start, end } = projectSpanOntoWall(wallFinalPoints, el.finalPoints)
+            const bays = baysCoveredBySpan(width, spacing, start, end)
+            if (!bays.length) continue
+            const cfg = regionConfig[el.id] || {}
+            regs.push({
+                id: el.id,
+                kind: el.comments === 'efsProtected' ? 'protected' : 'unprotected',
+                bays,
+                base: cfg.base == null ? 0 : Math.max(0, Math.min(h, cfg.base)),
+                top: cfg.top == null ? h : Math.max(0, Math.min(h, cfg.top)),
+            })
+        }
+        return regs
+    }
+
+    // Assess with a given protected-bay set (+ the drawn regions) and store it.
     function assess(bays) {
         const inp = readInputs()
         if (!inp) return null
+        const width = polylineLength(inp.wall.finalPoints)
+        const regions = buildRegions(inp.wall.finalPoints, width, inp.sp, inp.h)
         const res = assessElevationBays({
             wallPoints: inp.wall.finalPoints,
             boundaryPoints: inp.boundary ? inp.boundary.finalPoints : [],
@@ -77,7 +108,9 @@ const EfsPopup = ({ onClose }) => {
             T: inp.T,
             spacing: inp.sp,
             protectedBays: bays,
+            regions,
         })
+        res._regions = regions
         setResult(res)
         setRequiredByStation(res.requiredByStation)
         setEfsCalcDone(true)
@@ -92,7 +125,6 @@ const EfsPopup = ({ onClose }) => {
     function handleToggleBay(bay) {
         toggleProtectedBay(bay)
         setSuggestNote(null)
-        // re-assess with the bay flipped (store update is async to this closure)
         const next = protectedBays.includes(bay)
             ? protectedBays.filter((b) => b !== bay)
             : [...protectedBays, bay]
@@ -106,6 +138,8 @@ const EfsPopup = ({ onClose }) => {
             setError('Draw a Boundary polyline before suggesting protection.')
             return
         }
+        const width = polylineLength(inp.wall.finalPoints)
+        const regions = buildRegions(inp.wall.finalPoints, width, inp.sp, inp.h)
         const sug = suggestProtection({
             wallPoints: inp.wall.finalPoints,
             boundaryPoints: inp.boundary.finalPoints,
@@ -113,8 +147,10 @@ const EfsPopup = ({ onClose }) => {
             T: inp.T,
             spacing: inp.sp,
             cornersFirst,
+            regions,
         })
         setProtectedBays(sug.protectedBays)
+        sug.assessment._regions = regions
         setResult(sug.assessment)
         setRequiredByStation(sug.assessment.requiredByStation)
         setEfsCalcDone(true)
@@ -124,7 +160,7 @@ const EfsPopup = ({ onClose }) => {
                 ? 'Already compliant — no protection needed.'
                 : `Protected ${n} bay${n === 1 ? '' : 's'} (${sug.protectedBays.join(', ')}) to achieve compliance.`)
         } else {
-            setSuggestNote('Compliance not achievable by protecting bays alone.')
+            setSuggestNote('Compliance not achievable by protecting bays alone (an unprotected constraint may govern).')
         }
     }
 
@@ -132,6 +168,19 @@ const EfsPopup = ({ onClose }) => {
         setProtectedBays([])
         setSuggestNote(null)
         assess([])
+    }
+
+    // Update a region's band (sill/head), clamped to [0, height], and re-assess.
+    function updateRegionBand(id, patch) {
+        const h = Number(height)
+        const clamp = (v) => Math.max(0, Math.min(h, Number(v)))
+        const next = {}
+        if (patch.base != null) next.base = clamp(patch.base)
+        if (patch.top != null) next.top = clamp(patch.top)
+        setRegionBand(id, next)
+        setSuggestNote(null)
+        // re-assess on the next tick so the store update is applied first
+        setTimeout(() => assess(protectedBays), 0)
     }
 
     const numberField = (label, value, setter) => (
@@ -145,6 +194,19 @@ const EfsPopup = ({ onClose }) => {
             />
         </label>
     )
+
+    const statusLabel = (r) => {
+        switch (r.status) {
+            case 'protected': return 'Protected'
+            case 'partially-protected': return 'Part-protected'
+            case 'unprotected': return 'Unprotected'
+            case 'mixed': return 'Mixed'
+            case 'conflict': return 'CONFLICT'
+            default: return r.pass == null ? '—' : (r.pass ? 'OK' : 'FAIL')
+        }
+    }
+
+    const regions = result?._regions || []
 
     return (
         <div
@@ -205,6 +267,51 @@ const EfsPopup = ({ onClose }) => {
 
                 {suggestNote && <p className="text-sm mt-2 text-amber-800">{suggestNote}</p>}
 
+                {/* Drawn protected/unprotected regions: set each region's vertical
+                    band (sill/head). Draw the polylines with the Protected /
+                    Unprotected tools first, then Run Calc. */}
+                {regions.length > 0 && (
+                    <div className="mt-4 border-t pt-3">
+                        <p className="text-sm font-medium mb-2">Regions (sill → head, m)</p>
+                        <div className="space-y-2">
+                            {regions.map((rg) => (
+                                <div key={rg.id} className="flex flex-wrap items-center gap-2 text-xs">
+                                    <span className={`px-2 py-0.5 rounded ${rg.kind === 'protected' ? 'bg-gray-300' : 'bg-blue-200'}`}>
+                                        {rg.kind === 'protected' ? 'Protected' : 'Unprotected'}
+                                    </span>
+                                    <span className="text-gray-600">bays {rg.bays.join(', ')}</span>
+                                    <label className="flex items-center gap-1">
+                                        sill
+                                        <input
+                                            type="number"
+                                            value={rg.base}
+                                            onChange={(e) => updateRegionBand(rg.id, { base: e.target.value })}
+                                            className="w-16 border border-gray-300 px-1 py-0.5 rounded"
+                                        />
+                                    </label>
+                                    <label className="flex items-center gap-1">
+                                        head
+                                        <input
+                                            type="number"
+                                            value={rg.top}
+                                            onChange={(e) => updateRegionBand(rg.id, { top: e.target.value })}
+                                            className="w-16 border border-gray-300 px-1 py-0.5 rounded"
+                                        />
+                                    </label>
+                                    {rg.kind === 'protected' && !(rg.base === 0 && rg.top === Number(height)) && (
+                                        <button
+                                            className="px-2 py-0.5 bg-gray-700 text-white rounded"
+                                            onClick={() => updateRegionBand(rg.id, { base: 0, top: Number(height) })}
+                                        >
+                                            Fully protect
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {result && (
                     <div className="mt-4 border-t pt-3">
                         <p className="text-sm">Elevation width (from wall): <b>{result.width.toFixed(2)} m</b></p>
@@ -215,6 +322,12 @@ const EfsPopup = ({ onClose }) => {
                         {protectedBays.length > 0 && (
                             <p className="text-sm mt-1 text-gray-700">
                                 Protected {protectedBays.length} of {result.nBays} bays: {protectedBays.join(', ')}
+                            </p>
+                        )}
+                        {result.hasConflict && (
+                            <p className="text-sm mt-1 text-red-700 font-medium">
+                                Conflict on bay(s) {result.conflictBays.join(', ')}: a protected and an unprotected
+                                region overlap. Neither is applied there — adjust the regions.
                             </p>
                         )}
                         {result.hasBoundary ? (
@@ -239,7 +352,7 @@ const EfsPopup = ({ onClose }) => {
                                         <th className="py-1 pr-2">S (m)</th>
                                         <th className="py-1 pr-2">Required (m)</th>
                                         <th className="py-1 pr-2">Actual (m)</th>
-                                        <th className="py-1 pr-2">Protected</th>
+                                        <th className="py-1 pr-2">Protect</th>
                                         <th className="py-1 pr-2">Status</th>
                                     </tr>
                                 </thead>
@@ -247,7 +360,12 @@ const EfsPopup = ({ onClose }) => {
                                     {result.rows.map((r) => (
                                         <tr
                                             key={r.bay}
-                                            className={`border-b ${r.protected ? 'bg-gray-100' : (r.pass === false ? 'bg-red-50' : '')}`}
+                                            className={`border-b ${
+                                                r.status === 'conflict' ? 'bg-red-100'
+                                                    : r.protected ? 'bg-gray-100'
+                                                        : r.status === 'unprotected' ? 'bg-blue-50'
+                                                            : (r.pass === false ? 'bg-red-50' : '')
+                                            }`}
                                         >
                                             <td className="py-1 pr-2">{r.bay}</td>
                                             <td className="py-1 pr-2">{r.leftCol}–{r.rightCol}</td>
@@ -266,9 +384,7 @@ const EfsPopup = ({ onClose }) => {
                                                     onChange={() => handleToggleBay(r.bay)}
                                                 />
                                             </td>
-                                            <td className="py-1 pr-2">
-                                                {r.protected ? 'Protected' : (r.pass == null ? '—' : (r.pass ? 'OK' : 'FAIL'))}
-                                            </td>
+                                            <td className="py-1 pr-2">{statusLabel(r)}</td>
                                         </tr>
                                     ))}
                                 </tbody>

@@ -8,7 +8,7 @@ import { calcDistance } from '@/utils/helperFunctions'
 import { computeShaftRect } from '@/utils/shaftGeometry'
 import { computeAutoSprinklerPositions, shouldShowAutoSprinklers } from '@/utils/autoSprinklers'
 import { computeTimeEqLabels } from '@/utils/timeEqLabels'
-import { buildBoundaryArrows, gridlineStations, buildRequiredBoundaryLine } from '@/utils/efsViewFactor'
+import { buildBoundaryArrows, gridlineStations, buildRequiredBoundaryLine, projectSpanOntoWall, baysCoveredBySpan, polylineLength } from '@/utils/efsViewFactor'
 import { get } from 'http'
 
 /**
@@ -37,7 +37,9 @@ const elementConfig = {
     "sensorTree": "#00ff88",
     "fsaSensor": "#ff9900",
     "efsWall": "#eab308",
-    "efsBoundary": "#ef4444"
+    "efsBoundary": "#ef4444",
+    "efsProtected": "#374151",
+    "efsUnprotected": "#2563eb"
 }
 
 // --- module-level pure helpers for point-alignment snap (testable from tests) ---
@@ -1227,39 +1229,61 @@ function Canvas({dimensions, isDevMode}) {
                 const showGridlineLabels = efsPopupOpen || efsCalcDone
                 const stations = gridlineStations(wall.points, spacingM * pxPerM)
 
+                // Shade a single bay span (between its two bounding columns) with
+                // a fill/stroke and a label — used for protected bays and regions.
+                const shadeBay = (bay, fill, stroke, label) => {
+                    const a = stations[bay - 1]
+                    const b = stations[bay]
+                    if (!a || !b) return
+                    const ang = Math.atan2(b.point.y - a.point.y, b.point.x - a.point.x)
+                    const w = 14 // hatch band half-width (px)
+                    const nx = -Math.sin(ang) * w
+                    const ny = Math.cos(ang) * w
+                    context.save()
+                    context.fillStyle = fill
+                    context.strokeStyle = stroke
+                    context.lineWidth = 1.5
+                    context.beginPath()
+                    context.moveTo(a.point.x + nx, a.point.y + ny)
+                    context.lineTo(b.point.x + nx, b.point.y + ny)
+                    context.lineTo(b.point.x - nx, b.point.y - ny)
+                    context.lineTo(a.point.x - nx, a.point.y - ny)
+                    context.closePath()
+                    context.fill()
+                    context.stroke()
+                    const mx = (a.point.x + b.point.x) / 2
+                    const my = (a.point.y + b.point.y) / 2
+                    context.font = 'bold 11px sans-serif'
+                    context.fillStyle = '#111827'
+                    context.fillText(label, mx - 8, my + 4)
+                    context.restore()
+                }
+
                 // Protected (fire-rated) bays (issue #8): shade the span between the
                 // two bounding columns so manual + auto-suggested protection both
                 // read off the canvas. Bay i sits between station i and station i+1.
                 if (Array.isArray(efsProtectedBays) && efsProtectedBays.length) {
-                    efsProtectedBays.forEach((bay) => {
-                        const a = stations[bay - 1]
-                        const b = stations[bay]
-                        if (!a || !b) return
-                        const ang = Math.atan2(b.point.y - a.point.y, b.point.x - a.point.x)
-                        const w = 14 // hatch band half-width (px)
-                        const nx = -Math.sin(ang) * w
-                        const ny = Math.cos(ang) * w
-                        context.save()
-                        context.fillStyle = 'rgba(120,120,120,0.35)'
-                        context.strokeStyle = '#374151'
-                        context.lineWidth = 1.5
-                        context.beginPath()
-                        context.moveTo(a.point.x + nx, a.point.y + ny)
-                        context.lineTo(b.point.x + nx, b.point.y + ny)
-                        context.lineTo(b.point.x - nx, b.point.y - ny)
-                        context.lineTo(a.point.x - nx, a.point.y - ny)
-                        context.closePath()
-                        context.fill()
-                        context.stroke()
-                        // "P" label at the bay midpoint
-                        const mx = (a.point.x + b.point.x) / 2
-                        const my = (a.point.y + b.point.y) / 2
-                        context.font = 'bold 11px sans-serif'
-                        context.fillStyle = '#111827'
-                        context.fillText(`P${bay}`, mx - 6, my + 4)
-                        context.restore()
-                    })
+                    efsProtectedBays.forEach((bay) => shadeBay(bay, 'rgba(120,120,120,0.35)', '#374151', `P${bay}`))
                 }
+
+                // Drawn protected/unprotected region polylines (issue #11): shade the
+                // bays each region snaps to, distinct by kind. The vertical band is an
+                // elevation property and isn't shown on this plan view.
+                const widthPx = polylineLength(wall.points)
+                elements
+                    .filter((el) => (el.comments === 'efsProtected' || el.comments === 'efsUnprotected') && el.points?.length >= 1)
+                    .forEach((el) => {
+                        const protectedKind = el.comments === 'efsProtected'
+                        const { start, end } = projectSpanOntoWall(wall.points, el.points)
+                        baysCoveredBySpan(widthPx, spacingM * pxPerM, start, end).forEach((bay) => {
+                            shadeBay(
+                                bay,
+                                protectedKind ? 'rgba(55,65,81,0.30)' : 'rgba(37,99,235,0.22)',
+                                protectedKind ? '#1f2937' : '#1d4ed8',
+                                protectedKind ? `Pr${bay}` : `Un${bay}`,
+                            )
+                        })
+                    })
 
                 stations.forEach((st) => {
                     const r = 5
