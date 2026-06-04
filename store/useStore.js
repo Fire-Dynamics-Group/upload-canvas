@@ -51,6 +51,10 @@ const useStore = create(persist((set, get) => {
         // shows the gridline number labels on the canvas.
         efsPopupOpen: false,
         efsCalcDone: false,
+        // EFS auto-protect (issue #8): scratch set of protected (fire-rated) bay
+        // indices, and whether the auto-suggester protects corner bays first.
+        efsProtectedBays: [],
+        efsCornersFirst: true,
 
         // Fire configuration
         fireHRR: 1000,              // kW
@@ -236,9 +240,22 @@ const useStore = create(persist((set, get) => {
         setPixelsPerMesh: (pxPerMesh) => set(() => ({
             pixelsPerMesh: pxPerMesh
         })),
-        setEfsColumnSpacing: (v) => set(() => ({ efsColumnSpacing: v })),
+        // Changing the column spacing re-lays the bays, so any protected-bay
+        // selection (indexed by bay) no longer maps — clear it.
+        setEfsColumnSpacing: (v) => set(() => ({ efsColumnSpacing: v, efsProtectedBays: [] })),
         setEfsPopupOpen: (v) => set(() => ({ efsPopupOpen: v })),
         setEfsCalcDone: (v) => set(() => ({ efsCalcDone: v })),
+        // EFS protected-bay model (issue #8): the single shared set that both the
+        // manual table/canvas toggles and the auto-suggester read/write.
+        setEfsProtectedBays: (bays) => set(() => ({ efsProtectedBays: [...bays].sort((a, b) => a - b) })),
+        toggleEfsProtectedBay: (bay) => set((state) => {
+            const has = state.efsProtectedBays.includes(bay)
+            const next = has
+                ? state.efsProtectedBays.filter((b) => b !== bay)
+                : [...state.efsProtectedBays, bay].sort((a, b) => a - b)
+            return { efsProtectedBays: next }
+        }),
+        setEfsCornersFirst: (v) => set(() => ({ efsCornersFirst: v })),
 
         setConvertedPoints: () => set((state) => {
             let tempOrigin = findOriginPixels(state.elements, state.canvasDimensions.height)
@@ -455,6 +472,8 @@ const useStore = create(persist((set, get) => {
                 originPixels: null,
                 convertedPoints: [],
                 hasDoor: false,
+                efsProtectedBays: [],
+                efsCalcDone: false,
                 pdfData: null,
                 pdfIsGreyscale: false,
                 totalHeatFlux: 476,
