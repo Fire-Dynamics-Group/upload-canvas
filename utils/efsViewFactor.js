@@ -279,6 +279,37 @@ export function boundaryDistanceOutward(wallPoints, dist, boundaryPoints) {
     return { from, point: c.point, distance: c.distance, outward: false }
 }
 
+// Outward perpendicular UNIT normal at arc-length `dist` along the wall — the
+// direction in which the boundary distance is measured. Same selection rule as
+// boundaryDistanceOutward (the perpendicular whose ray reaches the boundary
+// line-of-sight clear, nearest hit wins); falls back to the direction of the
+// nearest boundary point. Returns null if it cannot be determined. Used to lay
+// the "needed boundary" locus out from the wall.
+export function outwardNormalAt(wallPoints, dist, boundaryPoints) {
+    if (!boundaryPoints || boundaryPoints.length < 2) return null
+    const from = pointAtDistanceAlong(wallPoints, dist)
+    const dir = segmentDirAt(wallPoints, dist)
+    if (dir) {
+        const normals = [
+            { x: -dir.y, y: dir.x },
+            { x: dir.y, y: -dir.x },
+        ]
+        let best = null
+        for (const n of normals) {
+            const hit = rayPolylineIntersection(from, n, boundaryPoints)
+            if (!hit) continue
+            if (!lineOfSightClear(from, hit.point, wallPoints)) continue
+            if (!best || hit.distance < best.distance) best = { n, distance: hit.distance }
+        }
+        if (best) return best.n
+    }
+    const c = closestPointOnPolyline(from, boundaryPoints)
+    const dx = c.point.x - from.x
+    const dy = c.point.y - from.y
+    const m = Math.hypot(dx, dy)
+    return m > 0 ? { x: dx / m, y: dy / m } : null
+}
+
 // --- partial emitter (protected bays) -----------------------------------------
 //
 // Issue #8: when a column bay is made fire-rated ("protected") it is taken OUT of
@@ -482,6 +513,9 @@ export function assessElevationBays({
         failingCount,
         allPass: hasBoundary ? failingCount === 0 : null,
         protectedBays: [...protectedSet].sort((a, b) => a - b),
+        // Required boundary distance at each column station (S/2 with the current
+        // emitter), for drawing the "needed boundary" locus on the canvas.
+        requiredByStation: xs.map((x) => solveSForTargetPartial(x, bays, hh, hh, T, targetIs) / 2),
     }
 }
 
@@ -586,6 +620,30 @@ export function buildBoundaryArrows(wallPoints, boundaryPoints, spacing, sampleS
         })
     }
     return arrows
+}
+
+// The "needed boundary" locus: offset each gridline station outward (toward the
+// boundary, perpendicular) by its required distance. The actual boundary must lie
+// BEYOND this line everywhere to comply, so drawing it lets the engineer see how
+// far the boundary needs to be. `requiredByStation[i]` is the required distance
+// for station i in the SAME space/units as `wallPoints` (pass metre values with
+// metre points, or pixel values with pixel points). Space-agnostic, mirroring
+// buildBoundaryArrows. Returns [{ gridline, from, required, point }]; `point` is
+// null where the outward direction can't be found. [] without a boundary.
+export function buildRequiredBoundaryLine(wallPoints, boundaryPoints, spacing, requiredByStation) {
+    if (!boundaryPoints || boundaryPoints.length < 2) return []
+    const stations = gridlineStations(wallPoints, spacing)
+    if (stations.length < 2 || !requiredByStation || !requiredByStation.length) return []
+    return stations.map((st, i) => {
+        const required = requiredByStation[i]
+        const n = (required == null) ? null : outwardNormalAt(wallPoints, st.dist, boundaryPoints)
+        return {
+            gridline: st.gridline,
+            from: st.point,
+            required,
+            point: n ? { x: st.point.x + n.x * required, y: st.point.y + n.y * required } : null,
+        }
+    })
 }
 
 // Full assessment: sweep gridlines on the column grid, goal-seek the required
