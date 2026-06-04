@@ -250,11 +250,14 @@ export function lineOfSightClear(P, C, wallPoints) {
 // (per BR 187 practice — the boundary distance is taken normal to the facade, not
 // as a shortest diagonal). Cast the two perpendiculars to the wall segment at the
 // sample point, intersect each with the boundary polyline, and keep the nearest
-// hit whose line is line-of-sight clear against the wall (so the outward normal
-// wins and a normal that would cut back through the building is rejected). Falls
+// hit whose line is line-of-sight clear against the building (so the outward
+// normal wins and a normal that would cut back through the building is rejected).
+// `losPoints` is the polyline used for the line-of-sight test — for a single face
+// of a multi-elevation building pass the FULL outline so a face's normal can't
+// measure through the rest of the building; defaults to the wall itself. Falls
 // back to the unconstrained nearest point (flagged `outward: false`) only if no
 // perpendicular hits the boundary.
-export function boundaryDistanceOutward(wallPoints, dist, boundaryPoints) {
+export function boundaryDistanceOutward(wallPoints, dist, boundaryPoints, losPoints = wallPoints) {
     const from = pointAtDistanceAlong(wallPoints, dist)
     const dir = segmentDirAt(wallPoints, dist)
 
@@ -267,7 +270,7 @@ export function boundaryDistanceOutward(wallPoints, dist, boundaryPoints) {
         for (const n of normals) {
             const hit = rayPolylineIntersection(from, n, boundaryPoints)
             if (!hit) continue
-            if (!lineOfSightClear(from, hit.point, wallPoints)) continue
+            if (!lineOfSightClear(from, hit.point, losPoints)) continue
             if (!best || hit.distance < best.distance) {
                 best = { point: hit.point, distance: hit.distance }
             }
@@ -285,7 +288,7 @@ export function boundaryDistanceOutward(wallPoints, dist, boundaryPoints) {
 // line-of-sight clear, nearest hit wins); falls back to the direction of the
 // nearest boundary point. Returns null if it cannot be determined. Used to lay
 // the "needed boundary" locus out from the wall.
-export function outwardNormalAt(wallPoints, dist, boundaryPoints) {
+export function outwardNormalAt(wallPoints, dist, boundaryPoints, losPoints = wallPoints) {
     if (!boundaryPoints || boundaryPoints.length < 2) return null
     const from = pointAtDistanceAlong(wallPoints, dist)
     const dir = segmentDirAt(wallPoints, dist)
@@ -298,7 +301,7 @@ export function outwardNormalAt(wallPoints, dist, boundaryPoints) {
         for (const n of normals) {
             const hit = rayPolylineIntersection(from, n, boundaryPoints)
             if (!hit) continue
-            if (!lineOfSightClear(from, hit.point, wallPoints)) continue
+            if (!lineOfSightClear(from, hit.point, losPoints)) continue
             if (!best || hit.distance < best.distance) best = { n, distance: hit.distance }
         }
         if (best) return best.n
@@ -589,7 +592,8 @@ export function buildEmitter({ width, spacing, height, protectedBays = [], regio
 // endpoints + boundary-vertex projections + a golden-section refinement (no
 // blanket fixed-step sampling). Protected bays are compliant by construction.
 export function assessElevationBays({
-    wallPoints, boundaryPoints, height, T, spacing, protectedBays = [], regions = [], targetIs = DEFAULT_TARGET_IS,
+    wallPoints, boundaryPoints, height, T, spacing, protectedBays = [], regions = [],
+    buildingPoints, targetIs = DEFAULT_TARGET_IS,
 }) {
     if (!wallPoints || wallPoints.length < 2) {
         throw new Error('assessElevationBays requires a wall line of >= 2 points')
@@ -597,6 +601,9 @@ export function assessElevationBays({
     if (!(height > 0) || !(spacing > 0)) {
         throw new Error('assessElevationBays requires positive height and spacing')
     }
+    // Full building outline for the line-of-sight test (so this face's normal
+    // can't measure through the rest of the building); defaults to the face.
+    const los = buildingPoints && buildingPoints.length >= 2 ? buildingPoints : wallPoints
     const width = polylineLength(wallPoints)
     const hh = height / 2
     const hasBoundary = Boolean(boundaryPoints && boundaryPoints.length >= 2)
@@ -613,7 +620,7 @@ export function assessElevationBays({
         ? boundaryPoints.map((v) => arcLengthOfClosestPoint(wallPoints, v))
         : []
     const actualAt = (xR) => (hasBoundary
-        ? boundaryDistanceOutward(wallPoints, xR, boundaryPoints).distance
+        ? boundaryDistanceOutward(wallPoints, xR, boundaryPoints, los).distance
         : null)
     const requiredAt = (xR) => solveSForTargetPieces(xR, pieces, hh, T, targetIs) / 2
 
@@ -648,7 +655,7 @@ export function assessElevationBays({
         const S = required * 2
         const vf = totalViewFactorPieces(worst.xR, pieces, S, hh)
         const incident = emissivePower(T) * vf
-        const out = hasBoundary ? boundaryDistanceOutward(wallPoints, worst.xR, boundaryPoints) : null
+        const out = hasBoundary ? boundaryDistanceOutward(wallPoints, worst.xR, boundaryPoints, los) : null
         rows.push({
             bay: i,
             leftCol: i,
@@ -702,10 +709,11 @@ export function assessElevationBays({
 // end bays sort ahead. Returns the protected set, the ordered `steps`, whether
 // compliance was achieved, and the final assessment.
 export function suggestProtection({
-    wallPoints, boundaryPoints, height, T, spacing, cornersFirst = true, regions = [], targetIs = DEFAULT_TARGET_IS,
+    wallPoints, boundaryPoints, height, T, spacing, cornersFirst = true, regions = [],
+    buildingPoints, targetIs = DEFAULT_TARGET_IS,
 }) {
     const run = (protectedBays) => assessElevationBays({
-        wallPoints, boundaryPoints, height, T, spacing, protectedBays, regions, targetIs,
+        wallPoints, boundaryPoints, height, T, spacing, protectedBays, regions, buildingPoints, targetIs,
     })
     let assessment = run([])
     if (!assessment.hasBoundary) {
@@ -752,6 +760,68 @@ export function suggestProtection({
     }
 }
 
+// Decompose a drawn building outline into its ELEVATIONS (faces), issue #10. The
+// engineer draws one polyline around the whole building; this walks it and starts
+// a new elevation at every "real" corner — a vertex whose turn angle exceeds
+// `angleThresholdDeg` — merging near-collinear runs (small jogs/setbacks) into one
+// face. A closed outline (first point repeated) is treated cyclically. Returns
+// [{ index, points }] with each face's own polyline; one element (the whole line)
+// if there are no sharp corners. Each face is then assessed independently against
+// the shared boundary, with the full outline used for line-of-sight.
+export function splitIntoElevations(points, angleThresholdDeg = 20) {
+    if (!points || points.length < 2) return []
+    const eq = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) < 1e-6
+    const closed = points.length > 3 && eq(points[0], points[points.length - 1])
+    const verts = closed ? points.slice(0, -1) : points.slice()
+    const n = verts.length
+    if (n < 2) return []
+    if (n === 2) return [{ index: 1, points: [verts[0], verts[1]] }]
+
+    const seg = (i) => {
+        const a = verts[i]
+        const b = verts[(i + 1) % n]
+        const dx = b.x - a.x
+        const dy = b.y - a.y
+        const m = Math.hypot(dx, dy) || 1
+        return { x: dx / m, y: dy / m }
+    }
+    const turnDeg = (i) => {
+        const d0 = seg((i - 1 + n) % n)
+        const d1 = seg(i % n)
+        const dot = Math.max(-1, Math.min(1, d0.x * d1.x + d0.y * d1.y))
+        return Math.acos(dot) * 180 / Math.PI
+    }
+
+    const corners = []
+    if (closed) {
+        for (let i = 0; i < n; i++) if (turnDeg(i) > angleThresholdDeg) corners.push(i)
+    } else {
+        corners.push(0)
+        for (let i = 1; i < n - 1; i++) if (turnDeg(i) > angleThresholdDeg) corners.push(i)
+        corners.push(n - 1)
+    }
+
+    const elevations = []
+    if (closed) {
+        if (corners.length < 2) return [{ index: 1, points: [...verts, verts[0]] }]
+        for (let c = 0; c < corners.length; c++) {
+            const startI = corners[c]
+            const endI = corners[(c + 1) % corners.length]
+            const facePts = [verts[startI]]
+            let i = startI
+            while (i !== endI) { i = (i + 1) % n; facePts.push(verts[i]) }
+            elevations.push({ index: elevations.length + 1, points: facePts })
+        }
+    } else {
+        for (let c = 0; c < corners.length - 1; c++) {
+            const facePts = []
+            for (let i = corners[c]; i <= corners[c + 1]; i++) facePts.push(verts[i])
+            elevations.push({ index: elevations.length + 1, points: facePts })
+        }
+    }
+    return elevations
+}
+
 // Arc-length stations of the column gridlines along the wall: 0, spacing, ...,
 // width (the far edge is always included). Returns [{ gridline, dist, point }].
 export function gridlineStations(wallPoints, spacing) {
@@ -773,7 +843,7 @@ export function gridlineStations(wallPoints, spacing) {
 // that worst point. Space-agnostic — pass pixel points + pixel spacing +
 // pixel sampleStep for canvas drawing, or metre units throughout. Returns
 // [{ segment, from, to, distance, outward }]; empty if inputs are insufficient.
-export function buildBoundaryArrows(wallPoints, boundaryPoints, spacing, sampleStep) {
+export function buildBoundaryArrows(wallPoints, boundaryPoints, spacing, sampleStep, losPoints = wallPoints) {
     if (!boundaryPoints || boundaryPoints.length < 2) return []
     const stations = gridlineStations(wallPoints, spacing)
     if (stations.length < 2) return []
@@ -786,7 +856,7 @@ export function buildBoundaryArrows(wallPoints, boundaryPoints, spacing, sampleS
         const step = sampleStep > 0 ? sampleStep : span / 50
         let worst = null
         const consider = (d) => {
-            const r = boundaryDistanceOutward(wallPoints, d, boundaryPoints)
+            const r = boundaryDistanceOutward(wallPoints, d, boundaryPoints, losPoints)
             if (!worst || r.distance < worst.distance) worst = r
         }
         for (let d = d0; d < d1; d += step) consider(d)
@@ -810,13 +880,13 @@ export function buildBoundaryArrows(wallPoints, boundaryPoints, spacing, sampleS
 // metre points, or pixel values with pixel points). Space-agnostic, mirroring
 // buildBoundaryArrows. Returns [{ gridline, from, required, point }]; `point` is
 // null where the outward direction can't be found. [] without a boundary.
-export function buildRequiredBoundaryLine(wallPoints, boundaryPoints, spacing, requiredByStation) {
+export function buildRequiredBoundaryLine(wallPoints, boundaryPoints, spacing, requiredByStation, losPoints = wallPoints) {
     if (!boundaryPoints || boundaryPoints.length < 2) return []
     const stations = gridlineStations(wallPoints, spacing)
     if (stations.length < 2 || !requiredByStation || !requiredByStation.length) return []
     return stations.map((st, i) => {
         const required = requiredByStation[i]
-        const n = (required == null) ? null : outwardNormalAt(wallPoints, st.dist, boundaryPoints)
+        const n = (required == null) ? null : outwardNormalAt(wallPoints, st.dist, boundaryPoints, losPoints)
         return {
             gridline: st.gridline,
             from: st.point,
