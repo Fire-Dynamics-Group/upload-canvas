@@ -19,6 +19,8 @@ import {
     columnPositions,
     assessElevationBays,
     suggestProtection,
+    outwardNormalAt,
+    buildRequiredBoundaryLine,
 } from '../utils/efsViewFactor'
 
 // Ground truth from EFS.xlsx (South sheet): elevation 96 m wide x 18 m high,
@@ -381,6 +383,81 @@ describe('suggestProtection — auto-protect loop', () => {
         expect(off.steps[0]).toBeLessThan(12)
         expect(on.achievable).toBe(true)
         expect(off.achievable).toBe(true)
+    })
+})
+
+describe('outwardNormalAt — perpendicular unit normal toward the boundary', () => {
+    const wall = [{ x: 0, y: 0 }, { x: 40, y: 0 }]
+
+    it('points toward a parallel boundary below the wall', () => {
+        const boundary = [{ x: -10, y: -20 }, { x: 50, y: -20 }]
+        const n = outwardNormalAt(wall, 20, boundary)
+        expect(n.x).toBeCloseTo(0, 6)
+        expect(n.y).toBeCloseTo(-1, 6) // straight down, toward the boundary
+    })
+
+    it('is a unit vector', () => {
+        const boundary = [{ x: 0, y: -10 }, { x: 40, y: -30 }]
+        const n = outwardNormalAt(wall, 20, boundary)
+        expect(Math.hypot(n.x, n.y)).toBeCloseTo(1, 6)
+    })
+
+    it('falls back to the nearest boundary direction when no perpendicular meets it', () => {
+        // boundary off to the side of the right end (the perpendicular misses it)
+        const boundary = [{ x: 0, y: -10 }, { x: 0, y: -50 }]
+        const n = outwardNormalAt(wall, 40, boundary)
+        expect(Math.hypot(n.x, n.y)).toBeCloseTo(1, 6)
+    })
+})
+
+describe('buildRequiredBoundaryLine — needed-boundary locus (required distance offset)', () => {
+    const wall = [{ x: 0, y: 0 }, { x: 40, y: 0 }]
+    const boundary = [{ x: -10, y: -100 }, { x: 50, y: -100 }] // parallel, well below
+
+    it('offsets each station outward by its required distance', () => {
+        // 5 stations at 0,10,20,30,40; required = 10 m everywhere
+        const required = [10, 10, 10, 10, 10]
+        const line = buildRequiredBoundaryLine(wall, boundary, 10, required)
+        expect(line).toHaveLength(5)
+        for (const p of line) {
+            expect(p.point.y).toBeCloseTo(-10, 6) // 10 below the wall (toward boundary)
+        }
+        expect(line[2].point.x).toBeCloseTo(20, 6)
+    })
+
+    it('reflects a varying required distance (the locus bulges where required is larger)', () => {
+        const required = [5, 10, 20, 10, 5]
+        const line = buildRequiredBoundaryLine(wall, boundary, 10, required)
+        expect(line[0].point.y).toBeCloseTo(-5, 6)
+        expect(line[2].point.y).toBeCloseTo(-20, 6) // bulges out at the centre
+        expect(line[4].point.y).toBeCloseTo(-5, 6)
+    })
+
+    it('returns [] without a boundary to define the outward side', () => {
+        expect(buildRequiredBoundaryLine(wall, [], 10, [10, 10])).toEqual([])
+    })
+})
+
+describe('assessElevationBays.requiredByStation — needed-boundary input', () => {
+    const wallPoints = [{ x: 0, y: 0 }, { x: 96, y: 0 }]
+
+    it('gives a required distance per column station that the locus can offset by', () => {
+        const r = assessElevationBays({ wallPoints, boundaryPoints: [], height: 18, T, spacing: 8 })
+        expect(r.requiredByStation).toHaveLength(r.nBays + 1) // one per column station
+        // centre station (48 m) governs at ~38.341 m, same as the gridline sweep
+        const centreIdx = 6 // station at 48 m (0,8,...,48 -> index 6)
+        expect(r.requiredByStation[centreIdx]).toBeCloseTo(38.341, 1)
+        expect(r.requiredByStation.every((d) => d >= 0)).toBe(true)
+    })
+
+    it('shrinks when bays are protected (smaller emitter -> nearer needed boundary)', () => {
+        const open = assessElevationBays({ wallPoints, boundaryPoints: [], height: 18, T, spacing: 8 })
+        const prot = assessElevationBays({
+            wallPoints, boundaryPoints: [], height: 18, T, spacing: 8, protectedBays: [1, 2, 11, 12],
+        })
+        const maxOpen = Math.max(...open.requiredByStation)
+        const maxProt = Math.max(...prot.requiredByStation)
+        expect(maxProt).toBeLessThan(maxOpen)
     })
 })
 

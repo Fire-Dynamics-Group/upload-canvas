@@ -8,7 +8,7 @@ import { calcDistance } from '@/utils/helperFunctions'
 import { computeShaftRect } from '@/utils/shaftGeometry'
 import { computeAutoSprinklerPositions, shouldShowAutoSprinklers } from '@/utils/autoSprinklers'
 import { computeTimeEqLabels } from '@/utils/timeEqLabels'
-import { buildBoundaryArrows, gridlineStations } from '@/utils/efsViewFactor'
+import { buildBoundaryArrows, gridlineStations, buildRequiredBoundaryLine } from '@/utils/efsViewFactor'
 import { get } from 'http'
 
 /**
@@ -275,6 +275,7 @@ function Canvas({dimensions, isDevMode}) {
     const efsPopupOpen = useStore((state) => state.efsPopupOpen)
     const efsCalcDone = useStore((state) => state.efsCalcDone)
     const efsProtectedBays = useStore((state) => state.efsProtectedBays)
+    const efsRequiredByStation = useStore((state) => state.efsRequiredByStation)
     const setPixelsPerMesh = useStore((state) => state.setPixelsPerMesh)
 
 
@@ -1315,6 +1316,36 @@ function Canvas({dimensions, isDevMode}) {
                 // 0.1 m sampling along each segment to find the worst case
                 const arrows = buildBoundaryArrows(wall.points, boundary?.points, spacingM * pxPerM, 0.1 * pxPerM)
                 arrows.forEach((a) => drawBoundaryArrow(a.from, a.to, a.distance / pxPerM))
+
+                // "Needed boundary" locus (after the calc): offset each gridline
+                // outward by its required distance. The actual boundary must lie
+                // beyond this dashed line everywhere to comply.
+                if (efsCalcDone && boundary?.points?.length >= 2
+                    && Array.isArray(efsRequiredByStation) && efsRequiredByStation.length) {
+                    const requiredPx = efsRequiredByStation.map((d) => d * pxPerM)
+                    const line = buildRequiredBoundaryLine(wall.points, boundary.points, spacingM * pxPerM, requiredPx)
+                    const pts = line.map((l) => l.point).filter(Boolean)
+                    if (pts.length >= 2) {
+                        context.save()
+                        context.strokeStyle = '#16a34a' // green: the required line
+                        context.lineWidth = 2
+                        context.setLineDash([8, 5])
+                        context.beginPath()
+                        context.moveTo(pts[0].x, pts[0].y)
+                        for (let i = 1; i < pts.length; i++) context.lineTo(pts[i].x, pts[i].y)
+                        context.stroke()
+                        context.setLineDash([])
+                        // label near the first point
+                        const label = 'needed boundary'
+                        context.font = 'bold 12px sans-serif'
+                        context.lineWidth = 3
+                        context.strokeStyle = 'white'
+                        context.strokeText(label, pts[0].x + 4, pts[0].y - 4)
+                        context.fillStyle = '#166534'
+                        context.fillText(label, pts[0].x + 4, pts[0].y - 4)
+                        context.restore()
+                    }
+                }
             }
         }
 
@@ -1451,7 +1482,7 @@ function Canvas({dimensions, isDevMode}) {
             context.restore()
         }
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsProtectedBays, debugRects, snapGuides, candidateCycleState])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsProtectedBays, efsRequiredByStation, debugRects, snapGuides, candidateCycleState])
 
     // Generate thumbnail by compositing PDF + drawing canvases
     const thumbnailTimerRef = useRef(null)

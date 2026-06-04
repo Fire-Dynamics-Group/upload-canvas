@@ -35,6 +35,7 @@ const EfsPopup = ({ onClose }) => {
     const toggleProtectedBay = useStore((state) => state.toggleEfsProtectedBay)
     const cornersFirst = useStore((state) => state.efsCornersFirst)
     const setCornersFirst = useStore((state) => state.setEfsCornersFirst)
+    const setRequiredByStation = useStore((state) => state.setEfsRequiredByStation)
 
     const [result, setResult] = useState(null)
     const [error, setError] = useState(null)
@@ -78,6 +79,7 @@ const EfsPopup = ({ onClose }) => {
             protectedBays: bays,
         })
         setResult(res)
+        setRequiredByStation(res.requiredByStation)
         setEfsCalcDone(true)
         return res
     }
@@ -114,6 +116,7 @@ const EfsPopup = ({ onClose }) => {
         })
         setProtectedBays(sug.protectedBays)
         setResult(sug.assessment)
+        setRequiredByStation(sug.assessment.requiredByStation)
         setEfsCalcDone(true)
         if (sug.achievable) {
             const n = sug.protectedBays.length

@@ -55,6 +55,9 @@ const useStore = create(persist((set, get) => {
         // indices, and whether the auto-suggester protects corner bays first.
         efsProtectedBays: [],
         efsCornersFirst: true,
+        // Required boundary distance (m) at each column station from the last
+        // assessment — drives the "needed boundary" locus drawn on the canvas.
+        efsRequiredByStation: [],
 
         // Fire configuration
         fireHRR: 1000,              // kW
@@ -242,7 +245,7 @@ const useStore = create(persist((set, get) => {
         })),
         // Changing the column spacing re-lays the bays, so any protected-bay
         // selection (indexed by bay) no longer maps — clear it.
-        setEfsColumnSpacing: (v) => set(() => ({ efsColumnSpacing: v, efsProtectedBays: [] })),
+        setEfsColumnSpacing: (v) => set(() => ({ efsColumnSpacing: v, efsProtectedBays: [], efsRequiredByStation: [] })),
         setEfsPopupOpen: (v) => set(() => ({ efsPopupOpen: v })),
         setEfsCalcDone: (v) => set(() => ({ efsCalcDone: v })),
         // EFS protected-bay model (issue #8): the single shared set that both the
@@ -256,6 +259,7 @@ const useStore = create(persist((set, get) => {
             return { efsProtectedBays: next }
         }),
         setEfsCornersFirst: (v) => set(() => ({ efsCornersFirst: v })),
+        setEfsRequiredByStation: (v) => set(() => ({ efsRequiredByStation: v })),
 
         setConvertedPoints: () => set((state) => {
             let tempOrigin = findOriginPixels(state.elements, state.canvasDimensions.height)
@@ -473,6 +477,7 @@ const useStore = create(persist((set, get) => {
                 convertedPoints: [],
                 hasDoor: false,
                 efsProtectedBays: [],
+                efsRequiredByStation: [],
                 efsCalcDone: false,
                 pdfData: null,
                 pdfIsGreyscale: false,
