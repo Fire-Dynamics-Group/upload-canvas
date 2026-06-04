@@ -53,11 +53,12 @@ const useStore = create(persist((set, get) => {
         efsCalcDone: false,
         // EFS auto-protect (issue #8): scratch set of protected (fire-rated) bay
         // indices, and whether the auto-suggester protects corner bays first.
-        efsProtectedBays: [],
         efsCornersFirst: true,
-        // Required boundary distance (m) at each column station from the last
-        // assessment — drives the "needed boundary" locus drawn on the canvas.
-        efsRequiredByStation: [],
+        // Multiple elevations (issue #10): the drawn outline is split into faces;
+        // the active tab index and per-elevation state keyed by face index.
+        efsActiveElevation: 0,
+        efsProtectedByElev: {},   // { [elevIdx]: number[] } protected bays per face
+        efsRequiredByElev: {},    // { [elevIdx]: number[] } needed-boundary locus
         // Per-region vertical band (issue #11), keyed by the drawn region
         // element's id: { base, top } in metres (default 0..elevation height).
         efsRegionConfig: {},
@@ -247,24 +248,29 @@ const useStore = create(persist((set, get) => {
             pixelsPerMesh: pxPerMesh
         })),
         // Changing the column spacing re-lays the bays, so any protected-bay
-        // selection (indexed by bay) no longer maps — clear it.
-        setEfsColumnSpacing: (v) => set(() => ({ efsColumnSpacing: v, efsProtectedBays: [], efsRequiredByStation: [] })),
+        // selection (indexed by bay) no longer maps — clear it for all faces.
+        setEfsColumnSpacing: (v) => set(() => ({ efsColumnSpacing: v, efsProtectedByElev: {}, efsRequiredByElev: {} })),
         // (efsRegionConfig is keyed by element id, so it survives a spacing change;
         // regions re-snap to the new bays on the next assessment.)
         setEfsPopupOpen: (v) => set(() => ({ efsPopupOpen: v })),
         setEfsCalcDone: (v) => set(() => ({ efsCalcDone: v })),
-        // EFS protected-bay model (issue #8): the single shared set that both the
-        // manual table/canvas toggles and the auto-suggester read/write.
-        setEfsProtectedBays: (bays) => set(() => ({ efsProtectedBays: [...bays].sort((a, b) => a - b) })),
-        toggleEfsProtectedBay: (bay) => set((state) => {
-            const has = state.efsProtectedBays.includes(bay)
-            const next = has
-                ? state.efsProtectedBays.filter((b) => b !== bay)
-                : [...state.efsProtectedBays, bay].sort((a, b) => a - b)
-            return { efsProtectedBays: next }
+        setEfsActiveElevation: (i) => set(() => ({ efsActiveElevation: i })),
+        // Protected bays per elevation (issues #8/#10): the shared set the manual
+        // table toggles and the auto-suggester read/write, keyed by face index.
+        setEfsProtectedForElev: (i, bays) => set((state) => ({
+            efsProtectedByElev: { ...state.efsProtectedByElev, [i]: [...bays].sort((a, b) => a - b) },
+        })),
+        toggleEfsProtectedForElev: (i, bay) => set((state) => {
+            const cur = state.efsProtectedByElev[i] || []
+            const next = cur.includes(bay)
+                ? cur.filter((b) => b !== bay)
+                : [...cur, bay].sort((a, b) => a - b)
+            return { efsProtectedByElev: { ...state.efsProtectedByElev, [i]: next } }
         }),
+        setEfsRequiredForElev: (i, arr) => set((state) => ({
+            efsRequiredByElev: { ...state.efsRequiredByElev, [i]: arr },
+        })),
         setEfsCornersFirst: (v) => set(() => ({ efsCornersFirst: v })),
-        setEfsRequiredByStation: (v) => set(() => ({ efsRequiredByStation: v })),
         setEfsRegionBand: (id, band) => set((state) => ({
             efsRegionConfig: { ...state.efsRegionConfig, [id]: { ...state.efsRegionConfig[id], ...band } },
         })),
@@ -484,8 +490,9 @@ const useStore = create(persist((set, get) => {
                 originPixels: null,
                 convertedPoints: [],
                 hasDoor: false,
-                efsProtectedBays: [],
-                efsRequiredByStation: [],
+                efsActiveElevation: 0,
+                efsProtectedByElev: {},
+                efsRequiredByElev: {},
                 efsRegionConfig: {},
                 efsCalcDone: false,
                 pdfData: null,

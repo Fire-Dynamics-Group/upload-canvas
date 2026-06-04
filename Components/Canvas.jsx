@@ -8,7 +8,7 @@ import { calcDistance } from '@/utils/helperFunctions'
 import { computeShaftRect } from '@/utils/shaftGeometry'
 import { computeAutoSprinklerPositions, shouldShowAutoSprinklers } from '@/utils/autoSprinklers'
 import { computeTimeEqLabels } from '@/utils/timeEqLabels'
-import { buildBoundaryArrows, gridlineStations, buildRequiredBoundaryLine, projectSpanOntoWall, baysCoveredBySpan, polylineLength } from '@/utils/efsViewFactor'
+import { buildBoundaryArrows, gridlineStations, buildRequiredBoundaryLine, projectSpanOntoWall, baysCoveredBySpan, polylineLength, splitIntoElevations, pointToPolylineDistance } from '@/utils/efsViewFactor'
 import { get } from 'http'
 
 /**
@@ -276,8 +276,9 @@ function Canvas({dimensions, isDevMode}) {
     const efsColumnSpacing = useStore((state) => state.efsColumnSpacing)
     const efsPopupOpen = useStore((state) => state.efsPopupOpen)
     const efsCalcDone = useStore((state) => state.efsCalcDone)
-    const efsProtectedBays = useStore((state) => state.efsProtectedBays)
-    const efsRequiredByStation = useStore((state) => state.efsRequiredByStation)
+    const efsActiveElevation = useStore((state) => state.efsActiveElevation)
+    const efsProtectedByElev = useStore((state) => state.efsProtectedByElev)
+    const efsRequiredByElev = useStore((state) => state.efsRequiredByElev)
     const setPixelsPerMesh = useStore((state) => state.setPixelsPerMesh)
 
 
@@ -1223,11 +1224,30 @@ function Canvas({dimensions, isDevMode}) {
             const pxPerM = pixelsPerMesh * 10
             const spacingM = Number(efsColumnSpacing)
             if (wall?.points?.length >= 2 && spacingM > 0 && pxPerM > 0) {
-                // Column markers (filled squares) at each gridline. While the EFS
-                // popup is open or a calc has been run, also label each with its
-                // gridline number so they line up with the popup table.
+                const spacingPx = spacingM * pxPerM
+                const losPts = wall.points // full outline for line-of-sight
+                // Split the drawn outline into elevations (#10); the active tab's
+                // face gets the full overlay, the others just their column markers.
+                const elevations = splitIntoElevations(wall.points)
+                const activeIdx = elevations.length ? Math.min(efsActiveElevation, elevations.length - 1) : 0
+                const face = elevations[activeIdx] || { points: wall.points }
+                const facePts = face.points
                 const showGridlineLabels = efsPopupOpen || efsCalcDone
-                const stations = gridlineStations(wall.points, spacingM * pxPerM)
+                const stations = gridlineStations(facePts, spacingPx)
+
+                // Faint column markers on every (non-active) elevation so the whole
+                // building's grid is visible; the active face is drawn richly below.
+                elevations.forEach((e, idx) => {
+                    if (idx === activeIdx) return
+                    gridlineStations(e.points, spacingPx).forEach((st) => {
+                        context.save()
+                        context.fillStyle = 'rgba(234,179,8,0.5)'
+                        context.beginPath()
+                        context.rect(st.point.x - 3, st.point.y - 3, 6, 6)
+                        context.fill()
+                        context.restore()
+                    })
+                })
 
                 // Shade a single bay span (between its two bounding columns) with
                 // a fill/stroke and a label — used for protected bays and regions.
@@ -1259,23 +1279,31 @@ function Canvas({dimensions, isDevMode}) {
                     context.restore()
                 }
 
-                // Protected (fire-rated) bays (issue #8): shade the span between the
-                // two bounding columns so manual + auto-suggested protection both
-                // read off the canvas. Bay i sits between station i and station i+1.
-                if (Array.isArray(efsProtectedBays) && efsProtectedBays.length) {
-                    efsProtectedBays.forEach((bay) => shadeBay(bay, 'rgba(120,120,120,0.35)', '#374151', `P${bay}`))
-                }
+                // Protected (fire-rated) bays for the active elevation (issue #8).
+                const activeProtected = efsProtectedByElev[activeIdx] || []
+                activeProtected.forEach((bay) => shadeBay(bay, 'rgba(120,120,120,0.35)', '#374151', `P${bay}`))
 
-                // Drawn protected/unprotected region polylines (issue #11): shade the
-                // bays each region snaps to, distinct by kind. The vertical band is an
-                // elevation property and isn't shown on this plan view.
-                const widthPx = polylineLength(wall.points)
+                // Drawn protected/unprotected region polylines bound to the active
+                // elevation (issue #11): shade the bays they snap to, by kind. The
+                // vertical band is an elevation property, not shown on this plan.
+                const faceWidthPx = polylineLength(facePts)
                 elements
                     .filter((el) => (el.comments === 'efsProtected' || el.comments === 'efsUnprotected') && el.points?.length >= 1)
                     .forEach((el) => {
+                        const mid = el.points.reduce(
+                            (acc, p) => ({ x: acc.x + p.x / el.points.length, y: acc.y + p.y / el.points.length }),
+                            { x: 0, y: 0 },
+                        )
+                        let bestIdx = 0
+                        let bestD = Infinity
+                        elevations.forEach((e, idx) => {
+                            const d = pointToPolylineDistance(mid, e.points)
+                            if (d < bestD) { bestD = d; bestIdx = idx }
+                        })
+                        if (bestIdx !== activeIdx) return
                         const protectedKind = el.comments === 'efsProtected'
-                        const { start, end } = projectSpanOntoWall(wall.points, el.points)
-                        baysCoveredBySpan(widthPx, spacingM * pxPerM, start, end).forEach((bay) => {
+                        const { start, end } = projectSpanOntoWall(facePts, el.points)
+                        baysCoveredBySpan(faceWidthPx, spacingPx, start, end).forEach((bay) => {
                             shadeBay(
                                 bay,
                                 protectedKind ? 'rgba(55,65,81,0.30)' : 'rgba(37,99,235,0.22)',
@@ -1337,17 +1365,19 @@ function Canvas({dimensions, isDevMode}) {
                     context.fillText(label, mx + 4, my - 4)
                     context.restore()
                 }
-                // 0.1 m sampling along each segment to find the worst case
-                const arrows = buildBoundaryArrows(wall.points, boundary?.points, spacingM * pxPerM, 0.1 * pxPerM)
+                // 0.1 m sampling along each segment to find the worst case (active
+                // face; full outline for line-of-sight).
+                const arrows = buildBoundaryArrows(facePts, boundary?.points, spacingPx, 0.1 * pxPerM, losPts)
                 arrows.forEach((a) => drawBoundaryArrow(a.from, a.to, a.distance / pxPerM))
 
                 // "Needed boundary" locus (after the calc): offset each gridline
                 // outward by its required distance. The actual boundary must lie
                 // beyond this dashed line everywhere to comply.
+                const activeRequired = efsRequiredByElev[activeIdx]
                 if (efsCalcDone && boundary?.points?.length >= 2
-                    && Array.isArray(efsRequiredByStation) && efsRequiredByStation.length) {
-                    const requiredPx = efsRequiredByStation.map((d) => d * pxPerM)
-                    const line = buildRequiredBoundaryLine(wall.points, boundary.points, spacingM * pxPerM, requiredPx)
+                    && Array.isArray(activeRequired) && activeRequired.length) {
+                    const requiredPx = activeRequired.map((d) => d * pxPerM)
+                    const line = buildRequiredBoundaryLine(facePts, boundary.points, spacingPx, requiredPx, losPts)
                     const pts = line.map((l) => l.point).filter(Boolean)
                     if (pts.length >= 2) {
                         context.save()
@@ -1506,7 +1536,7 @@ function Canvas({dimensions, isDevMode}) {
             context.restore()
         }
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsProtectedBays, efsRequiredByStation, debugRects, snapGuides, candidateCycleState])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsActiveElevation, efsProtectedByElev, efsRequiredByElev, debugRects, snapGuides, candidateCycleState])
 
     // Generate thumbnail by compositing PDF + drawing canvases
     const thumbnailTimerRef = useRef(null)

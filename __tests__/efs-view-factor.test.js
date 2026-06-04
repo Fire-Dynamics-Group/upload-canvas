@@ -10,6 +10,7 @@ import {
     solveElevation,
     assessElevation,
     pointToPolylineDistance,
+    polylineLength,
     pointAtDistanceAlong,
     buildBoundaryArrows,
     boundaryDistanceOutward,
@@ -26,6 +27,7 @@ import {
     buildEmitter,
     baysCoveredBySpan,
     projectSpanOntoWall,
+    splitIntoElevations,
 } from '../utils/efsViewFactor'
 
 // Ground truth from EFS.xlsx (South sheet): elevation 96 m wide x 18 m high,
@@ -609,6 +611,71 @@ describe('suggestProtection respects unprotected regions (#11)', () => {
         })
         expect(r.protectedBays).not.toContain(6)
         expect(r.protectedBays).not.toContain(7)
+    })
+})
+
+describe('splitIntoElevations — decompose a building outline into faces (#10)', () => {
+    it('splits a closed rectangle into four elevations', () => {
+        const rect = [
+            { x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 20 }, { x: 0, y: 20 }, { x: 0, y: 0 },
+        ]
+        const els = splitIntoElevations(rect)
+        expect(els).toHaveLength(4)
+        expect(els.map((e) => e.index)).toEqual([1, 2, 3, 4])
+        // each face is one straight edge (2 points)
+        for (const e of els) expect(e.points).toHaveLength(2)
+        // widths: 40, 20, 40, 20
+        expect(polylineLength(els[0].points)).toBeCloseTo(40, 6)
+        expect(polylineLength(els[1].points)).toBeCloseTo(20, 6)
+    })
+
+    it('merges a near-collinear jog into one elevation', () => {
+        // an L-ish wall with a tiny bend (<20 deg) part-way -> still one face
+        const wall = [{ x: 0, y: 0 }, { x: 20, y: 1 }, { x: 40, y: 0 }] // ~3 deg bend
+        const els = splitIntoElevations(wall)
+        expect(els).toHaveLength(1)
+        expect(els[0].points).toHaveLength(3)
+    })
+
+    it('splits an open polyline at a real (90 deg) corner', () => {
+        const wall = [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 30 }]
+        const els = splitIntoElevations(wall)
+        expect(els).toHaveLength(2)
+        expect(polylineLength(els[0].points)).toBeCloseTo(40, 6)
+        expect(polylineLength(els[1].points)).toBeCloseTo(30, 6)
+    })
+
+    it('splits an L-shaped closed outline into its six faces', () => {
+        const L = [
+            { x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 20 }, { x: 30, y: 20 },
+            { x: 30, y: 40 }, { x: 0, y: 40 }, { x: 0, y: 0 },
+        ]
+        const els = splitIntoElevations(L)
+        expect(els).toHaveLength(6)
+    })
+})
+
+describe('buildingPoints line-of-sight — a face cannot measure through the building', () => {
+    // A closed square building; the boundary wraps far outside on all sides. The
+    // bottom face's outward normal points DOWN (-y); without the full outline for
+    // line-of-sight a normal could otherwise pick the boundary across the building.
+    const building = [
+        { x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 40 }, { x: 0, y: 40 }, { x: 0, y: 0 },
+    ]
+    const boundary = [
+        { x: -50, y: -20 }, { x: 90, y: -20 }, { x: 90, y: 90 }, { x: -50, y: 90 }, { x: -50, y: -20 },
+    ]
+    const bottomFace = [{ x: 0, y: 0 }, { x: 40, y: 0 }]
+
+    it('measures the bottom face outward (down) to the near boundary, not through the building', () => {
+        const r = assessElevationBays({
+            wallPoints: bottomFace, boundaryPoints: boundary, height: 18, T, spacing: 10,
+            buildingPoints: building,
+        })
+        // boundary below sits at y = -20, so actual ~20 m for every bay
+        for (const row of r.rows) {
+            expect(row.actualBoundaryDistance).toBeCloseTo(20, 1)
+        }
     })
 })
 

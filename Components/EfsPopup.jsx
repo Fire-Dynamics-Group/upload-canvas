@@ -7,45 +7,40 @@ import {
     polylineLength,
     projectSpanOntoWall,
     baysCoveredBySpan,
+    splitIntoElevations,
+    pointToPolylineDistance,
 } from '../utils/efsViewFactor'
 
-// EFS (External Fire Spread) inputs + result popup. v1: whole-elevation emitter
-// split into column bays. The wall and the relevant-boundary polyline come off
-// the drawn `efsWall` / `efsBoundary` lines (converted to metres); the engineer
-// supplies elevation height, fire temperature and column spacing (the radiation
-// threshold is the fixed BR 187 12.6 kW/m²). On Run we lay the column bays,
-// goal-seek the required boundary distance at each bay's worst point and — if a
-// boundary is drawn — compare it to the actual (perpendicular) boundary distance
-// for pass/fail.
+// EFS (External Fire Spread) inputs + result popup — BR 187 view-factor method.
 //
-// Issue #8: bays can be PROTECTED (made fire-rated), removing them from the
-// emitter — by hand (the table toggle) or via "Suggest protection".
+// The engineer draws ONE outline around the whole building plus the relevant
+// boundary. Issue #10: that outline is split into its ELEVATIONS (faces) at the
+// real corners; each elevation gets its own tab and is assessed independently
+// against the shared boundary (the full outline is used for line-of-sight so a
+// face's normal can't measure through the building).
 //
-// Issue #11: the engineer can also draw PROTECTED / UNPROTECTED region polylines
-// on the elevation, each snapping to whole bays and carrying a vertical band
-// (sill→head, capped at the elevation height). A protected band is removed from
-// the emitter (its complement still radiates); an unprotected band must stay open
-// (locked out of auto-suggest, and a protected band may not overlap it). All of
-// it shares one model with the auto-suggester. See utils/efsViewFactor.js.
+// Per elevation: lay column bays, goal-seek the required boundary distance at
+// each bay's worst point and compare to the actual (perpendicular) distance.
+// Issue #8: bays can be PROTECTED (removed from the emitter) by hand or via
+// "Suggest protection". Issue #11: PROTECTED / UNPROTECTED region polylines snap
+// to bays and carry a vertical band (sill→head). See utils/efsViewFactor.js.
 const EfsPopup = ({ onClose }) => {
     const convertedPoints = useStore((state) => state.convertedPoints)
 
     const [height, setHeight] = useState(18)
     const [fireTempC, setFireTempC] = useState(1040)
-    // Column spacing along the elevation: the gridlines sit on the building's
-    // column lines (so results map to the drawing), per the spreadsheet. Shared
-    // with the canvas boundary-distance overlay via the store. NOT the px->m
-    // scale (that's the scale tool / pixelsPerMesh).
     const columnSpacing = useStore((state) => state.efsColumnSpacing)
     const setColumnSpacing = useStore((state) => state.setEfsColumnSpacing)
     const setEfsCalcDone = useStore((state) => state.setEfsCalcDone)
-    // Shared protected-bay model (issue #8).
-    const protectedBays = useStore((state) => state.efsProtectedBays)
-    const setProtectedBays = useStore((state) => state.setEfsProtectedBays)
-    const toggleProtectedBay = useStore((state) => state.toggleEfsProtectedBay)
+    // Active elevation + per-elevation protected bays (issues #8/#10).
+    const activeElev = useStore((state) => state.efsActiveElevation)
+    const setActiveElev = useStore((state) => state.setEfsActiveElevation)
+    const protectedByElev = useStore((state) => state.efsProtectedByElev)
+    const setProtectedForElev = useStore((state) => state.setEfsProtectedForElev)
+    const toggleProtectedForElev = useStore((state) => state.toggleEfsProtectedForElev)
+    const setRequiredForElev = useStore((state) => state.setEfsRequiredForElev)
     const cornersFirst = useStore((state) => state.efsCornersFirst)
     const setCornersFirst = useStore((state) => state.setEfsCornersFirst)
-    const setRequiredByStation = useStore((state) => state.setEfsRequiredByStation)
     // Region bands (issue #11), keyed by drawn region element id.
     const regionConfig = useStore((state) => state.efsRegionConfig)
     const setRegionBand = useStore((state) => state.setEfsRegionBand)
@@ -54,12 +49,15 @@ const EfsPopup = ({ onClose }) => {
     const [error, setError] = useState(null)
     const [suggestNote, setSuggestNote] = useState(null)
 
-    // Pull the validated wall + global inputs out of the drawn elements / fields.
-    // Returns { wall, boundary, h, sp, T } or null (and sets the error).
+    // Elevations are derived from the drawn wall outline (split at corners).
+    const wall = (convertedPoints || []).find((el) => el.comments === 'efsWall')
+    const elevations = wall?.finalPoints?.length >= 2 ? splitIntoElevations(wall.finalPoints) : []
+    const active = elevations.length ? Math.min(activeElev, elevations.length - 1) : 0
+    const protectedBays = protectedByElev[active] || []
+
     function readInputs() {
-        const wall = (convertedPoints || []).find((el) => el.comments === 'efsWall')
         if (!wall || !wall.finalPoints || wall.finalPoints.length < 2) {
-            setError('No wall line found — draw a wall first.')
+            setError('No wall line found — draw the building outline first.')
             return null
         }
         const boundary = (convertedPoints || []).find((el) => el.comments === 'efsBoundary')
@@ -70,18 +68,29 @@ const EfsPopup = ({ onClose }) => {
             return null
         }
         setError(null)
-        return { wall, boundary, h, sp, T: celsiusToKelvin(Number(fireTempC)) }
+        return { boundary, h, sp, T: celsiusToKelvin(Number(fireTempC)) }
     }
 
-    // Drawn region polylines (efsProtected / efsUnprotected) projected onto the
-    // wall, snapped to the bays they cover, with their configured vertical band.
-    function buildRegions(wallFinalPoints, width, spacing, h) {
+    // Drawn region polylines, bound to the nearest elevation, snapped to the bays
+    // they cover on that face, with their configured vertical band — for `face`.
+    function regionsForFace(face, faceWidth, spacing, h) {
         const regs = []
         for (const el of (convertedPoints || [])) {
             if (el.comments !== 'efsProtected' && el.comments !== 'efsUnprotected') continue
-            if (!el.finalPoints || el.finalPoints.length < 1) continue
-            const { start, end } = projectSpanOntoWall(wallFinalPoints, el.finalPoints)
-            const bays = baysCoveredBySpan(width, spacing, start, end)
+            if (!el.finalPoints || !el.finalPoints.length) continue
+            const mid = el.finalPoints.reduce(
+                (acc, p) => ({ x: acc.x + p.x / el.finalPoints.length, y: acc.y + p.y / el.finalPoints.length }),
+                { x: 0, y: 0 },
+            )
+            let bestIdx = 0
+            let bestD = Infinity
+            elevations.forEach((e, idx) => {
+                const d = pointToPolylineDistance(mid, e.points)
+                if (d < bestD) { bestD = d; bestIdx = idx }
+            })
+            if (elevations[bestIdx] !== face) continue
+            const { start, end } = projectSpanOntoWall(face.points, el.finalPoints)
+            const bays = baysCoveredBySpan(faceWidth, spacing, start, end)
             if (!bays.length) continue
             const cfg = regionConfig[el.id] || {}
             regs.push({
@@ -95,40 +104,51 @@ const EfsPopup = ({ onClose }) => {
         return regs
     }
 
-    // Assess with a given protected-bay set (+ the drawn regions) and store it.
-    function assess(bays) {
+    // Assess elevation `idx` with a given protected-bay set; store the result.
+    function assessElev(idx, bays) {
         const inp = readInputs()
         if (!inp) return null
-        const width = polylineLength(inp.wall.finalPoints)
-        const regions = buildRegions(inp.wall.finalPoints, width, inp.sp, inp.h)
+        const face = elevations[idx]
+        if (!face) { setError('No elevation at that tab.'); return null }
+        const faceWidth = polylineLength(face.points)
+        const regions = regionsForFace(face, faceWidth, inp.sp, inp.h)
         const res = assessElevationBays({
-            wallPoints: inp.wall.finalPoints,
+            wallPoints: face.points,
             boundaryPoints: inp.boundary ? inp.boundary.finalPoints : [],
             height: inp.h,
             T: inp.T,
             spacing: inp.sp,
             protectedBays: bays,
             regions,
+            buildingPoints: wall.finalPoints,
         })
         res._regions = regions
+        res._elevIndex = idx
+        res._elevCount = elevations.length
         setResult(res)
-        setRequiredByStation(res.requiredByStation)
+        setRequiredForElev(idx, res.requiredByStation)
         setEfsCalcDone(true)
         return res
     }
 
     function handleRun() {
         setSuggestNote(null)
-        assess(protectedBays)
+        assessElev(active, protectedBays)
+    }
+
+    function switchTab(i) {
+        setActiveElev(i)
+        setSuggestNote(null)
+        assessElev(i, protectedByElev[i] || [])
     }
 
     function handleToggleBay(bay) {
-        toggleProtectedBay(bay)
-        setSuggestNote(null)
         const next = protectedBays.includes(bay)
             ? protectedBays.filter((b) => b !== bay)
             : [...protectedBays, bay]
-        assess(next)
+        toggleProtectedForElev(active, bay)
+        setSuggestNote(null)
+        assessElev(active, next)
     }
 
     function handleSuggest() {
@@ -138,39 +158,42 @@ const EfsPopup = ({ onClose }) => {
             setError('Draw a Boundary polyline before suggesting protection.')
             return
         }
-        const width = polylineLength(inp.wall.finalPoints)
-        const regions = buildRegions(inp.wall.finalPoints, width, inp.sp, inp.h)
+        const face = elevations[active]
+        const faceWidth = polylineLength(face.points)
+        const regions = regionsForFace(face, faceWidth, inp.sp, inp.h)
         const sug = suggestProtection({
-            wallPoints: inp.wall.finalPoints,
+            wallPoints: face.points,
             boundaryPoints: inp.boundary.finalPoints,
             height: inp.h,
             T: inp.T,
             spacing: inp.sp,
             cornersFirst,
             regions,
+            buildingPoints: wall.finalPoints,
         })
-        setProtectedBays(sug.protectedBays)
+        setProtectedForElev(active, sug.protectedBays)
         sug.assessment._regions = regions
+        sug.assessment._elevIndex = active
+        sug.assessment._elevCount = elevations.length
         setResult(sug.assessment)
-        setRequiredByStation(sug.assessment.requiredByStation)
+        setRequiredForElev(active, sug.assessment.requiredByStation)
         setEfsCalcDone(true)
         if (sug.achievable) {
             const n = sug.protectedBays.length
             setSuggestNote(n === 0
                 ? 'Already compliant — no protection needed.'
-                : `Protected ${n} bay${n === 1 ? '' : 's'} (${sug.protectedBays.join(', ')}) to achieve compliance.`)
+                : `Protected ${n} bay${n === 1 ? '' : 's'} (${sug.protectedBays.join(', ')}) on this elevation.`)
         } else {
             setSuggestNote('Compliance not achievable by protecting bays alone (an unprotected constraint may govern).')
         }
     }
 
     function handleClearProtection() {
-        setProtectedBays([])
+        setProtectedForElev(active, [])
         setSuggestNote(null)
-        assess([])
+        assessElev(active, [])
     }
 
-    // Update a region's band (sill/head), clamped to [0, height], and re-assess.
     function updateRegionBand(id, patch) {
         const h = Number(height)
         const clamp = (v) => Math.max(0, Math.min(h, Number(v)))
@@ -179,8 +202,7 @@ const EfsPopup = ({ onClose }) => {
         if (patch.top != null) next.top = clamp(patch.top)
         setRegionBand(id, next)
         setSuggestNote(null)
-        // re-assess on the next tick so the store update is applied first
-        setTimeout(() => assess(protectedBays), 0)
+        setTimeout(() => assessElev(active, protectedBays), 0)
     }
 
     const numberField = (label, value, setter) => (
@@ -206,7 +228,8 @@ const EfsPopup = ({ onClose }) => {
         }
     }
 
-    const regions = result?._regions || []
+    const regions = (result && result._elevIndex === active) ? (result._regions || []) : []
+    const showResult = result && result._elevIndex === active
 
     return (
         <div
@@ -232,19 +255,30 @@ const EfsPopup = ({ onClose }) => {
                 {numberField('Column spacing (m)', columnSpacing, setColumnSpacing)}
                 <p className="text-xs text-gray-500 mb-3">Radiation threshold fixed at 12.6 kW/m² (BR 187).</p>
 
+                {/* Elevation tabs (issue #10): one per face of the drawn outline. */}
+                {elevations.length > 1 && (
+                    <div className="flex flex-wrap gap-1 mb-3 border-b">
+                        {elevations.map((e, i) => (
+                            <button
+                                key={i}
+                                onClick={() => switchTab(i)}
+                                className={`px-3 py-1 text-sm rounded-t ${
+                                    i === active ? 'bg-blue-600 text-white' : 'bg-gray-100 text-black hover:bg-gray-200'
+                                }`}
+                            >
+                                Elevation {e.index}
+                            </button>
+                        ))}
+                    </div>
+                )}
+
                 {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
 
                 <div className="flex flex-wrap items-center gap-2">
-                    <button
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
-                        onClick={handleRun}
-                    >
+                    <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg" onClick={handleRun}>
                         Run Calc
                     </button>
-                    <button
-                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg"
-                        onClick={handleSuggest}
-                    >
+                    <button className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg" onClick={handleSuggest}>
                         Suggest protection
                     </button>
                     {protectedBays.length > 0 && (
@@ -256,23 +290,16 @@ const EfsPopup = ({ onClose }) => {
                         </button>
                     )}
                     <label className="flex items-center gap-1 text-sm ml-1">
-                        <input
-                            type="checkbox"
-                            checked={cornersFirst}
-                            onChange={(e) => setCornersFirst(e.target.checked)}
-                        />
+                        <input type="checkbox" checked={cornersFirst} onChange={(e) => setCornersFirst(e.target.checked)} />
                         Corners first
                     </label>
                 </div>
 
                 {suggestNote && <p className="text-sm mt-2 text-amber-800">{suggestNote}</p>}
 
-                {/* Drawn protected/unprotected regions: set each region's vertical
-                    band (sill/head). Draw the polylines with the Protected /
-                    Unprotected tools first, then Run Calc. */}
                 {regions.length > 0 && (
                     <div className="mt-4 border-t pt-3">
-                        <p className="text-sm font-medium mb-2">Regions (sill → head, m)</p>
+                        <p className="text-sm font-medium mb-2">Regions on this elevation (sill → head, m)</p>
                         <div className="space-y-2">
                             {regions.map((rg) => (
                                 <div key={rg.id} className="flex flex-wrap items-center gap-2 text-xs">
@@ -312,8 +339,11 @@ const EfsPopup = ({ onClose }) => {
                     </div>
                 )}
 
-                {result && (
+                {showResult && (
                     <div className="mt-4 border-t pt-3">
+                        <p className="text-sm font-medium">
+                            Elevation {elevations[active]?.index} of {result._elevCount}
+                        </p>
                         <p className="text-sm">Elevation width (from wall): <b>{result.width.toFixed(2)} m</b></p>
                         <p className="text-base mt-1">
                             Governing required boundary distance:{' '}
