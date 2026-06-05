@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import useStore from '../store/useStore'
 import EfsPopup from '../Components/EfsPopup'
 import { calculateEfs } from '../Components/ApiCalls'
@@ -47,6 +47,30 @@ describe('EfsPopup — whole-elevation required boundary distance', () => {
         render(<EfsPopup onClose={() => {}} />)
         expect(screen.getByDisplayValue('900')).toBeTruthy()
         expect(screen.getByText(/Governing required boundary distance/)).toBeTruthy()
+    })
+
+    it('blanks the view factor / Is columns on a protected bay row', () => {
+        // A protected bay no longer emits, so its own view factor / incident are
+        // meaningless and shown as '—' (the required distance, driven by adjacent
+        // unprotected bays, may still be non-zero).
+        useStore.setState({
+            convertedPoints: [
+                { id: 1, comments: 'efsWall', finalPoints: [{ x: 0, y: 0 }, { x: 96, y: 0 }] },
+                { id: 2, comments: 'efsBoundary', finalPoints: [{ x: 0, y: 30 }, { x: 96, y: 30 }] },
+            ],
+        })
+        render(<EfsPopup onClose={() => {}} />)
+        fireEvent.click(screen.getByText('Run Calc'))
+
+        // Before protecting: bay 1's view-factor cell is numeric.
+        const cellsBefore = within(screen.getByLabelText('Protect bay 1').closest('tr')).getAllByRole('cell')
+        expect(cellsBefore[2].textContent).not.toBe('—')
+
+        // Protect bay 1, then its view factor (col 3) and Is (col 4) read '—'.
+        fireEvent.click(screen.getByLabelText('Protect bay 1'))
+        const cellsAfter = within(screen.getByLabelText('Protect bay 1').closest('tr')).getAllByRole('cell')
+        expect(cellsAfter[2].textContent).toBe('—')
+        expect(cellsAfter[3].textContent).toBe('—')
     })
 
     it('errors when no wall has been drawn', () => {

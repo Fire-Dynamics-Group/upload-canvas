@@ -607,8 +607,11 @@ const EfsPopup = ({ onClose }) => {
                                         >
                                             <td className="py-1 pr-2">{r.bay}</td>
                                             <td className="py-1 pr-2">{r.leftCol}–{r.rightCol}</td>
-                                            <td className="py-1 pr-2">{r.viewFactorTotal.toFixed(5)}</td>
-                                            <td className="py-1 pr-2">{r.incident.toFixed(2)}</td>
+                                            {/* A protected bay doesn't emit, so its own view factor / incident
+                                                are not meaningful — blank them. The S / Required columns stay:
+                                                a boundary may still be needed here from ADJACENT unprotected bays. */}
+                                            <td className="py-1 pr-2">{r.protected ? '—' : r.viewFactorTotal.toFixed(5)}</td>
+                                            <td className="py-1 pr-2">{r.protected ? '—' : r.incident.toFixed(2)}</td>
                                             <td className="py-1 pr-2">{r.S.toFixed(2)}</td>
                                             <td className="py-1 pr-2">{r.requiredBoundaryDistance.toFixed(2)}</td>
                                             <td className="py-1 pr-2">
@@ -628,6 +631,14 @@ const EfsPopup = ({ onClose }) => {
                                 </tbody>
                             </table>
                         </div>
+                        {result.rows.some((r) => r.protected) && (
+                            <p className="text-xs text-gray-500 mt-2">
+                                Protected bays don&apos;t emit (view factor / I<sub>s</sub> shown as —). A
+                                Required distance can still appear against a protected bay — that is the
+                                boundary needed there from radiation arriving off the adjacent
+                                <em> unprotected</em> bays, not from the protected bay itself.
+                            </p>
+                        )}
                     </div>
                 )}
                 </>
