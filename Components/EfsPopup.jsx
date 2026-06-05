@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import useStore from '../store/useStore'
 import {
     assessElevationBays,
@@ -9,29 +9,44 @@ import {
     baysCoveredBySpan,
     splitIntoElevations,
     pointToPolylineDistance,
+    bre135ElevationsFromWall,
 } from '../utils/efsViewFactor'
+import { calculateEfs, downloadEfsReport } from './ApiCalls'
 
-// EFS (External Fire Spread) inputs + result popup — BR 187 view-factor method.
-//
-// The engineer draws ONE outline around the whole building plus the relevant
-// boundary. Issue #10: that outline is split into its ELEVATIONS (faces) at the
-// real corners; each elevation gets its own tab and is assessed independently
-// against the shared boundary (the full outline is used for line-of-sight so a
-// face's normal can't measure through the building).
-//
-// Per elevation: lay column bays, goal-seek the required boundary distance at
-// each bay's worst point and compare to the actual (perpendicular) distance.
-// Issue #8: bays can be PROTECTED (removed from the emitter) by hand or via
-// "Suggest protection". Issue #11: PROTECTED / UNPROTECTED region polylines snap
-// to bays and carry a vertical band (sill→head). See utils/efsViewFactor.js.
+// EFS (External Fire Spread) inputs + result popup. Two methods live behind
+// top-level tabs:
+//   1. "View factor (BR 187)" — the in-browser configuration-factor assessment.
+//      The engineer draws ONE outline around the whole building plus the relevant
+//      boundary. Issue #10: that outline is split into its ELEVATIONS (faces) at
+//      the real corners; each elevation gets its own tab and is assessed
+//      independently against the shared boundary (the full outline is used for
+//      line-of-sight so a face's normal can't measure through the building). Per
+//      elevation: lay column bays, goal-seek the required boundary distance at
+//      each bay's worst point vs the actual (perpendicular) distance. Issue #8:
+//      bays can be PROTECTED (removed from the emitter) by hand or via "Suggest
+//      protection". Issue #11: PROTECTED / UNPROTECTED region polylines snap to
+//      bays and carry a vertical band (sill→head).
+//   2. "Enclosing rectangle (BRE 135)" — a frontend for the existing tabular
+//      backend (backendForNextApp routers/efs.py). Elevations come from the same
+//      splitIntoElevations faces; the engineer sets per-elevation boundary
+//      distance (seeded from the drawing), a global height + suppression toggle
+//      and a commercial/residential toggle, and we POST to /efs/calculate.
+// See utils/efsViewFactor.js.
 const EfsPopup = ({ onClose }) => {
     const convertedPoints = useStore((state) => state.convertedPoints)
 
-    const [height, setHeight] = useState(18)
-    const [fireTempC, setFireTempC] = useState(1040)
+    const [activeTab, setActiveTab] = useState('viewFactor')
+
+    // Inputs live in the store so they (and the result, re-run below) survive
+    // closing and reopening the popup.
+    const height = useStore((state) => state.efsHeight)
+    const setHeight = useStore((state) => state.setEfsHeight)
+    const fireTempC = useStore((state) => state.efsFireTempC)
+    const setFireTempC = useStore((state) => state.setEfsFireTempC)
     const columnSpacing = useStore((state) => state.efsColumnSpacing)
     const setColumnSpacing = useStore((state) => state.setEfsColumnSpacing)
     const setEfsCalcDone = useStore((state) => state.setEfsCalcDone)
+    const efsCalcDone = useStore((state) => state.efsCalcDone)
     // Active elevation + per-elevation protected bays (issues #8/#10).
     const activeElev = useStore((state) => state.efsActiveElevation)
     const setActiveElev = useStore((state) => state.setEfsActiveElevation)
@@ -51,6 +66,36 @@ const EfsPopup = ({ onClose }) => {
     const [result, setResult] = useState(null)
     const [error, setError] = useState(null)
     const [suggestNote, setSuggestNote] = useState(null)
+
+    // ---- Enclosing rectangle (BRE 135) tab state ----
+    // Elevations come from the same faces as the view-factor method
+    // (splitIntoElevations); each carries its width and a boundary distance
+    // seeded from the closest approach to the drawn boundary (editable). Height,
+    // suppression and building type are global to the BRE 135 run.
+    const derivedElevations = useMemo(() => {
+        const w = (convertedPoints || []).find((el) => el.comments === 'efsWall')
+        const b = (convertedPoints || []).find((el) => el.comments === 'efsBoundary')
+        if (!w || !w.finalPoints) return []
+        return bre135ElevationsFromWall(w.finalPoints, b ? b.finalPoints : [])
+    }, [convertedPoints])
+
+    const [isCommercial, setIsCommercial] = useState(true)
+    const [breHeight, setBreHeight] = useState(18)
+    const [breSuppression, setBreSuppression] = useState(false)
+    const [bdInputs, setBdInputs] = useState([])
+    const [breResult, setBreResult] = useState(null)
+    const [breError, setBreError] = useState(null)
+    const [breLoading, setBreLoading] = useState(false)
+    const [reportLoading, setReportLoading] = useState(false)
+
+    // Re-seed the editable boundary distances whenever the derived elevations change.
+    useEffect(() => {
+        setBdInputs(
+            derivedElevations.map((e) =>
+                e.boundaryDistance == null ? '' : String(Math.round(e.boundaryDistance * 10) / 10),
+            ),
+        )
+    }, [derivedElevations])
 
     // Elevations are derived from the drawn wall outline (split at corners).
     const wall = (convertedPoints || []).find((el) => el.comments === 'efsWall')
@@ -149,6 +194,16 @@ const EfsPopup = ({ onClose }) => {
         assessElev(active, protectedBays)
     }
 
+    // The result table is local state, so it's lost when the popup unmounts on
+    // close. If a calc was already run, recompute it on reopen so the popup comes
+    // back with its results (inputs already persist via the store). Mount-only.
+    useEffect(() => {
+        if (efsCalcDone && wall?.finalPoints?.length >= 2) {
+            assessElev(active, protectedBays)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
     function switchTab(i) {
         setActiveElev(i)
         setSuggestNote(null)
@@ -230,6 +285,81 @@ const EfsPopup = ({ onClose }) => {
         setTimeout(() => assessElev(active, protectedBays), 0)
     }
 
+    const updateBd = (idx, value) => {
+        setBdInputs((rows) => rows.map((r, i) => (i === idx ? value : r)))
+    }
+
+    const buildBrePayload = () => {
+        const payload = derivedElevations.map((e, i) => {
+            const raw = (bdInputs[i] ?? '').trim()
+            return {
+                boundary_distance: raw === '' ? NaN : Number(raw),
+                width: e.width,
+                height: Number(breHeight),
+                has_suppression: breSuppression,
+            }
+        })
+        const bad =
+            payload.length === 0 ||
+            !(Number(breHeight) > 0) ||
+            payload.some((e) => !Number.isFinite(e.boundary_distance) || !(e.width > 0))
+        return { payload, bad }
+    }
+
+    async function handleBreCalc() {
+        const { payload, bad } = buildBrePayload()
+        if (bad) {
+            setBreError('Draw a wall polyline, set a positive elevation height, and give each elevation a boundary distance.')
+            return
+        }
+        setBreError(null)
+        setBreLoading(true)
+        try {
+            const res = await calculateEfs(payload, isCommercial)
+            setBreResult(res)
+            setEfsCalcDone(true)
+        } catch (err) {
+            setBreError(err.message || 'Calculation failed.')
+        } finally {
+            setBreLoading(false)
+        }
+    }
+
+    async function handleBreReport() {
+        const { payload, bad } = buildBrePayload()
+        if (bad) {
+            setBreError('Draw a wall polyline, set a positive elevation height, and give each elevation a boundary distance.')
+            return
+        }
+        setBreError(null)
+        setReportLoading(true)
+        try {
+            await downloadEfsReport(payload, isCommercial)
+        } catch (err) {
+            setBreError(err.message || 'Failed to generate report.')
+        } finally {
+            setReportLoading(false)
+        }
+    }
+
+    const tabClass = (key) =>
+        `px-3 py-2 text-sm font-medium border-b-2 -mb-px ${
+            activeTab === key
+                ? 'border-blue-600 text-blue-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+        }`
+
+    const BRE_HEADERS = [
+        'Elevation', 'Boundary Dist (m)', 'ER Width (m)', 'ER Height (m)',
+        'BRE Width (m)', 'BRE Height (m)', 'BRE % Unprotected', 'Allowable Area (m²)',
+        'Actual Area (m²)', 'Actual Allowable Area (m²)', 'Actual % Unprotected',
+    ]
+    const breRowCells = (r) => [
+        r.elevation_number, r.boundary_distance, r.er_width, r.er_height,
+        r.bre_width, r.bre_height, r.bre_percentage, r.allowable_area,
+        r.actual_area, r.actual_protected_area, r.actual_percentage,
+    ]
+
     const numberField = (label, value, setter) => (
         <label className="block mb-3">
             <span className="block text-sm font-medium mb-1">{label}</span>
@@ -262,7 +392,7 @@ const EfsPopup = ({ onClose }) => {
             onClick={() => onClose && onClose()}
         >
             <div
-                className="relative bg-white p-5 rounded-lg shadow-lg text-black w-full max-w-3xl max-h-[85vh] overflow-auto"
+                className="relative bg-white p-5 rounded-lg shadow-lg text-black w-full max-w-4xl max-h-[85vh] overflow-auto"
                 onClick={(e) => e.stopPropagation()}
             >
                 <button
@@ -273,8 +403,19 @@ const EfsPopup = ({ onClose }) => {
                 >
                     &times;
                 </button>
-                <h2 className="text-lg font-bold mb-3">External Fire Spread — view factor</h2>
+                <h2 className="text-lg font-bold mb-3">External Fire Spread</h2>
 
+                <div className="flex border-b mb-4">
+                    <button type="button" className={tabClass('viewFactor')} onClick={() => setActiveTab('viewFactor')}>
+                        View factor (BR 187)
+                    </button>
+                    <button type="button" className={tabClass('bre135')} onClick={() => setActiveTab('bre135')}>
+                        Enclosing rectangle (BRE 135)
+                    </button>
+                </div>
+
+                {activeTab === 'viewFactor' && (
+                <>
                 {numberField('Elevation height (m)', height, setHeight)}
                 {numberField('Fire temperature (°C)', fireTempC, setFireTempC)}
                 {numberField('Column spacing (m)', columnSpacing, setColumnSpacing)}
@@ -487,6 +628,128 @@ const EfsPopup = ({ onClose }) => {
                                 </tbody>
                             </table>
                         </div>
+                    </div>
+                )}
+                </>
+                )}
+
+                {activeTab === 'bre135' && (
+                    <div>
+                        <div className="flex items-center gap-4 mb-3">
+                            <span className="text-sm font-medium">Building type:</span>
+                            <label className="flex items-center gap-1 text-sm">
+                                <input type="radio" name="breBuildingType" checked={isCommercial} onChange={() => setIsCommercial(true)} />
+                                Commercial
+                            </label>
+                            <label className="flex items-center gap-1 text-sm">
+                                <input type="radio" name="breBuildingType" checked={!isCommercial} onChange={() => setIsCommercial(false)} />
+                                Residential
+                            </label>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-6 mb-3">
+                            <label className="flex items-center gap-2 text-sm">
+                                <span className="font-medium">Elevation height (m)</span>
+                                <input
+                                    type="number"
+                                    value={breHeight}
+                                    onChange={(e) => setBreHeight(e.target.value)}
+                                    className="w-24 border border-gray-300 px-2 py-1 rounded"
+                                />
+                            </label>
+                            <label className="flex items-center gap-2 text-sm">
+                                <input type="checkbox" checked={breSuppression} onChange={(e) => setBreSuppression(e.target.checked)} />
+                                <span className="font-medium">Sprinklered (doubles boundary distance)</span>
+                            </label>
+                        </div>
+
+                        {derivedElevations.length === 0 ? (
+                            <p className="text-sm text-gray-600 mb-3">
+                                Draw a wall polyline first — its corners define the elevations.
+                            </p>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="text-xs border-collapse w-full">
+                                    <thead>
+                                        <tr className="text-left border-b">
+                                            <th className="py-1 pr-2">Elevation</th>
+                                            <th className="py-1 pr-2">Width (m)</th>
+                                            <th className="py-1 pr-2">Boundary dist (m)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {derivedElevations.map((e, idx) => (
+                                            <tr key={idx} className="border-b">
+                                                <td className="py-1 pr-2">{idx + 1}</td>
+                                                <td className="py-1 pr-2">{e.width.toFixed(1)}</td>
+                                                <td className="py-1 pr-2">
+                                                    <input
+                                                        type="number"
+                                                        value={bdInputs[idx] ?? ''}
+                                                        placeholder={e.boundaryDistance == null ? 'enter' : ''}
+                                                        onChange={(ev) => updateBd(idx, ev.target.value)}
+                                                        className="w-24 border border-gray-300 px-2 py-1 rounded"
+                                                    />
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        <p className="text-xs text-gray-500 mt-2 mb-3">
+                            BRE 135 enclosing-rectangle method. Elevations come from the corners of
+                            the drawn wall (width = each face&apos;s length, area = width × height).
+                            Boundary distance defaults to the closest approach of each elevation to
+                            the drawn boundary line — edit to override. Where the building is
+                            sprinklered the boundary distance is doubled before the BRE 135 lookup.
+                        </p>
+
+                        {breError && <p className="text-red-600 text-sm mb-2">{breError}</p>}
+
+                        <div className="flex gap-2">
+                            <button
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50"
+                                onClick={handleBreCalc}
+                                disabled={breLoading}
+                            >
+                                {breLoading ? 'Calculating…' : 'Calc'}
+                            </button>
+                            <button
+                                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-black rounded-lg disabled:opacity-50"
+                                onClick={handleBreReport}
+                                disabled={reportLoading}
+                            >
+                                {reportLoading ? 'Generating…' : 'Download report'}
+                            </button>
+                        </div>
+
+                        {breResult && (
+                            <div className="mt-4 border-t pt-3">
+                                <h3 className="text-sm font-semibold mb-2">Results per elevation</h3>
+                                <div className="overflow-x-auto">
+                                    <table className="text-xs border-collapse whitespace-nowrap">
+                                        <thead>
+                                            <tr className="text-left border-b">
+                                                {BRE_HEADERS.map((h) => (
+                                                    <th key={h} className="py-1 pr-3">{h}</th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {breResult.elevations.map((r) => (
+                                                <tr key={r.elevation_number} className="border-b">
+                                                    {breRowCells(r).map((cell, i) => (
+                                                        <td key={i} className="py-1 pr-3">{cell}</td>
+                                                    ))}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

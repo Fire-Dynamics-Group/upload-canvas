@@ -350,7 +350,36 @@ export const sendTimeEqData = async (
   //       console.log("host", server_urls.localhost)
   //     }
 
-  //   } catch (err) { 
+  //   } catch (err) {
   //     showMessage("Error: ",err)
   //   }
   // }
+
+// --- External Fire Spread (BRE 135 enclosing-rectangle) API ---
+// Ported app lives in backendForNextApp (routers/efs.py, services/efs_calculator.py).
+// `elevations` is an array of { boundary_distance, height, width, has_suppression }.
+export const calculateEfs = async (elevations, isCommercial = true) => {
+    const resp = await fetch(`${API_BASE}/efs/calculate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ elevations, is_commercial: isCommercial }),
+    })
+    if (!resp.ok) {
+        let detail = ''
+        try { detail = (await resp.json()).detail } catch (_) { /* no JSON body */ }
+        throw new Error(detail || `EFS calculation failed: ${resp.status}`)
+    }
+    return resp.json()
+}
+
+// Generate the BRE 135 Word report and trigger a download.
+export const downloadEfsReport = async (elevations, isCommercial = true) => {
+    const resp = await fetch(`${API_BASE}/efs/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ elevations, is_commercial: isCommercial }),
+    })
+    if (!resp.ok) throw new Error(`Failed to generate EFS report: ${resp.status}`)
+    const blob = await resp.blob()
+    saveAs(blob, 'EFS_Report.docx')
+}

@@ -28,6 +28,7 @@ import {
     baysCoveredBySpan,
     projectSpanOntoWall,
     splitIntoElevations,
+    bre135ElevationsFromWall,
 } from '../utils/efsViewFactor'
 
 // Ground truth from EFS.xlsx (South sheet): elevation 96 m wide x 18 m high,
@@ -726,5 +727,45 @@ describe('gridlineStations — column positions along the wall', () => {
         expect(st[0].point).toEqual({ x: 0, y: 0 })
         expect(st[st.length - 1].point).toEqual({ x: 40, y: 0 })
         expect(st[2].point).toEqual({ x: 16, y: 0 })
+    })
+})
+
+describe('bre135ElevationsFromWall — derive BRE 135 elevations from the drawn outline', () => {
+    // Reuses splitIntoElevations (one elevation per face) so the BR 187 and
+    // BRE 135 methods agree on what an "elevation" is; each face carries its
+    // width and the worst-case (smallest) perpendicular boundary distance.
+    it('returns one elevation per face with its width (L-shaped open wall)', () => {
+        const wall = [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 40 }]
+        const elevs = bre135ElevationsFromWall(wall, [])
+        expect(elevs).toHaveLength(2)
+        expect(elevs[0].width).toBeCloseTo(60, 6)
+        expect(elevs[1].width).toBeCloseTo(40, 6)
+        expect(elevs[0].boundaryDistance).toBe(null) // no boundary supplied
+    })
+
+    it('seeds the boundary distance from the worst-case approach to the boundary', () => {
+        const wall = [{ x: 0, y: 0 }, { x: 60, y: 0 }]
+        // boundary parallel, 10 m off in +y, but dips to 7 m near the middle
+        const boundary = [{ x: 0, y: 10 }, { x: 30, y: 7 }, { x: 60, y: 10 }]
+        const elevs = bre135ElevationsFromWall(wall, boundary)
+        expect(elevs).toHaveLength(1)
+        // worst case (smallest perpendicular distance anywhere along the face) ~ 7
+        expect(elevs[0].boundaryDistance).toBeGreaterThan(6.9)
+        expect(elevs[0].boundaryDistance).toBeLessThan(7.2)
+    })
+
+    it('splits a closed rectangle into four elevations', () => {
+        const rect = [
+            { x: 0, y: 0 }, { x: 80, y: 0 }, { x: 80, y: 30 }, { x: 0, y: 30 }, { x: 0, y: 0 },
+        ]
+        const elevs = bre135ElevationsFromWall(rect, [])
+        expect(elevs).toHaveLength(4)
+        const widths = elevs.map((e) => Math.round(e.width)).sort((a, b) => a - b)
+        expect(widths).toEqual([30, 30, 80, 80])
+    })
+
+    it('returns [] when no wall is drawn', () => {
+        expect(bre135ElevationsFromWall([], [])).toEqual([])
+        expect(bre135ElevationsFromWall(null, [])).toEqual([])
     })
 })

@@ -834,6 +834,40 @@ export function splitIntoElevations(points, angleThresholdDeg = 20) {
     return elevations
 }
 
+// BRE 135 (enclosing-rectangle) elevations derived from the drawn outline. Reuses
+// splitIntoElevations so an "elevation" means the same thing as in the BR 187
+// view-factor method (one per face). Each face carries its width and the
+// worst-case (smallest) perpendicular boundary distance along it (line-of-sight
+// against the full outline so it can't measure through the building);
+// boundaryDistance is null when no boundary is drawn. This seeds the BRE 135 tab
+// (the engineer can override the per-elevation boundary distance).
+export function bre135ElevationsFromWall(wallPoints, boundaryPoints, sampleStep = 0.5) {
+    if (!wallPoints || wallPoints.length < 2) return []
+    const hasBoundary = Boolean(boundaryPoints && boundaryPoints.length >= 2)
+    const faces = splitIntoElevations(wallPoints)
+    return faces.map((face, i) => {
+        const width = polylineLength(face.points)
+        let boundaryDistance = null
+        if (hasBoundary && width > 0) {
+            const step = sampleStep > 0 ? sampleStep : width / 50
+            let min = Infinity
+            const consider = (d) => {
+                const r = boundaryDistanceOutward(face.points, d, boundaryPoints, wallPoints)
+                if (r && Number.isFinite(r.distance)) min = Math.min(min, r.distance)
+            }
+            for (let d = 0; d < width; d += step) consider(d)
+            consider(width) // always include the far corner
+            boundaryDistance = Number.isFinite(min) ? min : null
+        }
+        return {
+            elevationNumber: i + 1,
+            index: face.index,
+            width,
+            boundaryDistance,
+        }
+    })
+}
+
 // Arc-length stations of the column gridlines along the wall: 0, spacing, ...,
 // width (the far edge is always included). Returns [{ gridline, dist, point }].
 export function gridlineStations(wallPoints, spacing, opts = {}) {

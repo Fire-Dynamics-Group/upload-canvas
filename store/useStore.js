@@ -47,6 +47,10 @@ const useStore = create(persist((set, get) => {
         // EFS view-factor mode: column spacing (m) along the elevation. Shared by
         // the EFS popup and the canvas boundary-distance overlay.
         efsColumnSpacing: 8,
+        // Elevation height + fire temperature inputs. Held in the store (not local
+        // popup state) so they survive closing and reopening the popup.
+        efsHeight: 18,
+        efsFireTempC: 1040,
         // Whether the EFS popup is open, and whether a calc has been run — either
         // shows the gridline number labels on the canvas.
         efsPopupOpen: false,
@@ -253,6 +257,8 @@ const useStore = create(persist((set, get) => {
         // Changing the column spacing re-lays the bays, so any protected-bay
         // selection (indexed by bay) no longer maps — clear it for all faces.
         setEfsColumnSpacing: (v) => set(() => ({ efsColumnSpacing: v, efsProtectedByElev: {}, efsRequiredByElev: {} })),
+        setEfsHeight: (v) => set(() => ({ efsHeight: v })),
+        setEfsFireTempC: (v) => set(() => ({ efsFireTempC: v })),
         // (efsRegionConfig is keyed by element id, so it survives a spacing change;
         // regions re-snap to the new bays on the next assessment.)
         setEfsPopupOpen: (v) => set(() => ({ efsPopupOpen: v })),
