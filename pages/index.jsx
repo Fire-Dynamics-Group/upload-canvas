@@ -10,6 +10,8 @@ import ErrorPopup from '../Components/ErrorPopup'
 import ProjectDashboard from '../Components/ProjectDashboard'
 import useUserName from '../hooks/useUserName'
 import { isDbBacked } from '../store/persistenceModes'
+import { wouldClobberScale, shouldPromptForScale } from '../utils/scaleSafeguards'
+import { DEFAULT_RENDER_SCALE } from '../utils/scaleCalibration'
 import { savePdfToIndexedDB, loadPdfFromIndexedDB } from '../utils/pdfStorage'
 import {
   createProject,
@@ -109,6 +111,8 @@ export default function Home() {
 
   const elements = useStore((state) => state.elements)
   const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
+  const setRenderScale = useStore((state) => state.setRenderScale)
+  const [showScalePrompt, setShowScalePrompt] = useState(false)
   const setPdfData = useStore((state) => state.setPdfData)
   const pdfData = useStore((state) => state.pdfData)
   const toggleIsPdfGreyscale = useStore((state) => state.toggleIsPdfGreyscale)
@@ -152,6 +156,16 @@ export default function Home() {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
       const payload = useStore.getState().buildSavePayload()
+
+      // Safeguard (issue #18): never persist the unset scale sentinel (1) over a
+      // real value on a floor that already has elements. An in-memory scale of 1
+      // there is a transient blank, not a legitimate edit — refuse the downgrade
+      // so the good DB value survives.
+      if (wouldClobberScale(payload)) {
+        console.warn('Skipping autosave: would clobber a real scale with the unset value')
+        return
+      }
+
       const payloadStr = JSON.stringify(payload)
 
       // Skip if nothing changed
@@ -222,7 +236,11 @@ export default function Home() {
 
     const canvas = pdfCanvasRef.current
     const context = canvas.getContext('2d')
-    const scale = 1.5
+    // Render scale is the bridge between PDF page points and canvas pixels. The
+    // intrinsic calibration (issue #15) derives pixelsPerMesh = pagePointsPerMesh
+    // × this scale, so the store must know the value the canvas was rendered at.
+    const scale = DEFAULT_RENDER_SCALE
+    setRenderScale(scale)
     const viewport = page.getViewport({ scale })
 
     canvas.height = viewport.height
@@ -377,6 +395,15 @@ export default function Home() {
       const floorDetail = await loadFloorDetail(projectId, floor.id)
       hydrateFromServer(project, floorDetail)
 
+      // Safeguard (issue #18): if the loaded floor has elements but no scale,
+      // tell the user to set it — otherwise the grid silently won't show and FDS
+      // export would be mis-scaled.
+      const loaded = useStore.getState()
+      setShowScalePrompt(shouldPromptForScale({
+        pixelsPerMesh: loaded.pixelsPerMesh,
+        elementsCount: loaded.elements.length,
+      }))
+
       if (floor.pdf_s3_key) {
         const { url } = await getFloorPdfUrl(projectId, floor.id)
         await renderPdf(url, true)
@@ -433,6 +460,28 @@ export default function Home() {
           "bg-red-600 text-white"
         }`}>
           {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved" : "Save failed"}
+        </div>
+      )}
+      {/* Scale-unset prompt (issue #18): non-blocking nudge to calibrate when a
+          loaded project has elements but no scale (grid hidden, export mis-scaled). */}
+      {showScalePrompt && (
+        <div className="fixed top-12 left-1/2 -translate-x-1/2 z-50 bg-amber-100 border border-amber-400 text-amber-900 text-sm px-4 py-2 rounded-lg shadow-lg flex items-center gap-3">
+          <span>No scale set for this plan — the grid is hidden and FDS export would be mis-scaled.</span>
+          <button
+            onClick={() => { setTool('scale'); setShowScalePrompt(false) }}
+            className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-md"
+            type="button"
+          >
+            Set scale
+          </button>
+          <button
+            onClick={() => setShowScalePrompt(false)}
+            className="text-amber-700 hover:text-amber-900"
+            type="button"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
         </div>
       )}
       {/* Top bar - visible when working on a project */}

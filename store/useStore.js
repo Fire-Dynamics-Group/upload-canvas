@@ -4,6 +4,7 @@ import {findOriginPixels, returnFinalCoordinates} from '../utils/pointManipulati
 import { clearPdfFromIndexedDB } from '../utils/pdfStorage'
 import { defaultDoorTimings } from './defaultDoorTimings'
 import { isDbBacked, MODE_PERSISTENCE, PERSIST_VERSION, migratePersistedState, mergePersistedState, partializeState } from './persistenceModes'
+import { derivePixelsPerMesh, DEFAULT_RENDER_SCALE } from '../utils/scaleCalibration'
 
 const useStore = create(persist((set, get) => {
     const defaultStairObject = {"fire_floor": 0, "total_floors": 5, "stair_roof_z": 25, "top_storey_height": 21}
@@ -34,7 +35,12 @@ const useStore = create(persist((set, get) => {
         currentMode: "fdsGen",
         comment: "",
         canvasDimensions: {},
+        // pixelsPerMesh is DERIVED render-pixels-per-mesh, recomputed from the
+        // intrinsic calibration × renderScale (issue #15). Source of truth is
+        // scaleCalibration; renderScale is the PDF render scale (renderPdf).
         pixelsPerMesh: 1,
+        scaleCalibration: null,
+        renderScale: DEFAULT_RENDER_SCALE,
         originPixels: null,
         convertedPoints: [],
         hasDoor: false,
@@ -235,6 +241,7 @@ const useStore = create(persist((set, get) => {
                     pdfData: null,
                     pdfIsGreyscale: false,
                     pixelsPerMesh: 1,
+                    scaleCalibration: null,
                     canvasDimensions: {},
                     convertedPoints: [],
                     originPixels: null,
@@ -253,6 +260,21 @@ const useStore = create(persist((set, get) => {
         })),
         setPixelsPerMesh: (pxPerMesh) => set(() => ({
             pixelsPerMesh: pxPerMesh
+        })),
+        // Commit an intrinsic calibration (issue #15). pixelsPerMesh is derived
+        // from it at the current render scale — never set directly from a click.
+        setScaleCalibration: (calibration) => set((state) => ({
+            scaleCalibration: calibration,
+            pixelsPerMesh: derivePixelsPerMesh(calibration, state.renderScale),
+        })),
+        // The PDF render scale changed (e.g. re-render at a different DPI/zoom);
+        // re-derive pixelsPerMesh from the existing calibration so the real-world
+        // scale is unchanged.
+        setRenderScale: (renderScale) => set((state) => ({
+            renderScale,
+            pixelsPerMesh: state.scaleCalibration
+                ? derivePixelsPerMesh(state.scaleCalibration, renderScale)
+                : state.pixelsPerMesh,
         })),
         // Changing the column spacing re-lays the bays, so any protected-bay
         // selection (indexed by bay) no longer maps — clear it for all faces.
@@ -499,6 +521,7 @@ const useStore = create(persist((set, get) => {
                 comment: "",
                 canvasDimensions: {},
                 pixelsPerMesh: 1,
+                scaleCalibration: null,
                 originPixels: null,
                 convertedPoints: [],
                 hasDoor: false,

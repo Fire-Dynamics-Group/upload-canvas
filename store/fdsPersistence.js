@@ -1,4 +1,9 @@
 import { defaultDoorTimings } from './defaultDoorTimings'
+import {
+    derivePixelsPerMesh,
+    calibrationFromLegacyPixels,
+    DEFAULT_RENDER_SCALE,
+} from '../utils/scaleCalibration'
 
 // Per-mode persistence handlers for fdsGen — pure functions registered on the
 // MODE_PERSISTENCE registry (see persistenceModes.js). Onboarding another mode
@@ -46,9 +51,15 @@ export function buildFdsPayload(s) {
                 floor_number: 0,
                 name: "Fire Floor",
                 canvas_dimensions: s.canvasDimensions,
+                // pixels_per_mesh is the DERIVED render-pixel scale, kept for
+                // back-compat and the no-clobber safeguard. The render-independent
+                // source of truth is `scaleCalibration` in the floor settings JSON.
                 pixels_per_mesh: s.pixelsPerMesh,
                 origin_pixels: s.originPixels,
                 settings: {
+                    // Intrinsic scale (issue #15): PDF page-points-per-mesh + the
+                    // calibration line + entered length, all render-independent.
+                    scaleCalibration: s.scaleCalibration ?? null,
                     doorRoles: s.doorRoles,
                     doorLeakagesEnabled: s.doorLeakagesEnabled,
                     doorLeakageConfig: s.doorLeakageConfig,
@@ -78,6 +89,9 @@ export function buildFdsPayload(s) {
 export function hydrateFdsState(project, floorDetail, state) {
     const ps = project.settings || {}
     const fs = floorDetail.settings || {}
+    const renderScale = state.renderScale ?? DEFAULT_RENDER_SCALE
+    const hydratedCalibration = fs.scaleCalibration
+        ?? calibrationFromLegacyPixels(floorDetail.pixels_per_mesh, renderScale)
     const loadedElements = (floorDetail.elements || []).map(el => ({
         id: el.element_index,
         type: el.type,
@@ -122,7 +136,14 @@ export function hydrateFdsState(project, floorDetail, state) {
         stairObject: ps.stairObject ?? [],
         // Floor-level settings
         canvasDimensions: floorDetail.canvas_dimensions || {},
-        pixelsPerMesh: floorDetail.pixels_per_mesh || 1,
+        // Scale (issue #15): prefer the intrinsic calibration from the settings
+        // JSON; fall back to reconstructing one from the legacy pixels_per_mesh so
+        // old projects still load with a sensible (render-derived) scale. The
+        // render-pixel value is always DERIVED, never the source of truth.
+        scaleCalibration: hydratedCalibration,
+        pixelsPerMesh: hydratedCalibration
+            ? derivePixelsPerMesh(hydratedCalibration, renderScale)
+            : (floorDetail.pixels_per_mesh || 1),
         originPixels: floorDetail.origin_pixels || null,
         doorRoles: fs.doorRoles ?? {},
         doorLeakagesEnabled: fs.doorLeakagesEnabled ?? true,
