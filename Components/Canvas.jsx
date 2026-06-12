@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Gridlines from './Gridlines'
 import ScalePopup from './ScalePopup'
+import ScaleReentryPanel from './ScaleReentryPanel'
 import FDRobot from './FDRobot'
 import { CSVLink } from 'react-csv'
 import useStore from '../store/useStore'
-import { calcDistance } from '@/utils/helperFunctions'
+import { calcDistance, clientToCanvasPoint } from '@/utils/helperFunctions'
+import { buildCalibration, recalibrateLength, pagePointToPixel } from '@/utils/scaleCalibration'
 import { computeShaftRect } from '@/utils/shaftGeometry'
 import { computeAutoSprinklerPositions, shouldShowAutoSprinklers } from '@/utils/autoSprinklers'
 import { computeTimeEqLabels } from '@/utils/timeEqLabels'
@@ -403,7 +405,9 @@ function Canvas({dimensions, isDevMode}) {
     const efsProtectedByElev = useStore((state) => state.efsProtectedByElev)
     const efsRequiredByElev = useStore((state) => state.efsRequiredByElev)
     const efsEndSpacingByElev = useStore((state) => state.efsEndSpacingByElev)
-    const setPixelsPerMesh = useStore((state) => state.setPixelsPerMesh)
+    const renderScale = useStore((state) => state.renderScale)
+    const scaleCalibration = useStore((state) => state.scaleCalibration)
+    const setScaleCalibration = useStore((state) => state.setScaleCalibration)
 
 
     const [isDrawing, setIsDrawing] = useState(false)
@@ -421,6 +425,10 @@ function Canvas({dimensions, isDevMode}) {
     const canvasRef = useRef(null)
     const [hasScale, setHasScale] = useState(false)
     const [scalePoints, setScalePoints] = useState([])
+    // Scale-tool stage: 'measure' = fresh two-click flow; 'panel' = re-entry
+    // options on an already-calibrated project (issue #19); 'changeLength' =
+    // length input pre-filled, recompute from the stored line without clicking.
+    const [scaleStage, setScaleStage] = useState('measure')
     const canvasWidth = dimensions.width
     const canvasHeight = dimensions.height
     // TODO: if drawing have line between penultimate point and cursor
@@ -467,19 +475,35 @@ function Canvas({dimensions, isDevMode}) {
         }          
     }, [currentId])
 
+    // Map a pointer/mouse event to canvas-INTRINSIC coordinates (issue #16).
+    // Single shared helper for every pointer site so a click lands on the
+    // intended canvas pixel even when the canvas is displayed at a CSS size
+    // different from its intrinsic resolution (responsive fit, browser zoom, a
+    // smaller device shrinking the bitmap). At 1:1 display it's identity.
+    const getCanvasPoint = useCallback((event) => {
+        const canvas = canvasRef.current
+        if (!canvas) return { x: event.pageX, y: event.pageY }
+        const rect = canvas.getBoundingClientRect()
+        return clientToCanvasPoint(event, rect, canvas.width, canvas.height)
+    }, [])
+
     // Sync hasScale with persisted pixelsPerMesh (rehydration + reset)
     useEffect(() => {
         setHasScale(pixelsPerMesh !== 1)
     }, [pixelsPerMesh])
 
-    // Entering scale mode always starts a fresh calibration: clear any stale
-    // scale points so re-scaling a loaded project isn't blocked by the
-    // `scalePoints.length < 2` guard (which leaves the old two points in place).
+    // Entering scale mode clears any stale scale points so re-scaling isn't
+    // blocked by the `scalePoints.length < 2` guard. On an already-calibrated
+    // project, open the re-entry panel (issue #19) instead of forcing a fresh
+    // measurement; otherwise go straight to measuring. Read the calibration via
+    // getState so committing a new scale (which leaves this tool) doesn't re-open
+    // the panel.
     useEffect(() => {
         if (tool === 'scale') {
             setScalePoints([])
             setShowPopup(false)
             setIsDrawing(false)
+            setScaleStage(useStore.getState().scaleCalibration ? 'panel' : 'measure')
         }
     }, [tool])
 
@@ -518,7 +542,18 @@ function Canvas({dimensions, isDevMode}) {
             }
             if (key == 'Escape') {
                 setIsEscapePressed(true)
-                
+
+                // Abort an in-progress scale measurement (issue #17) without
+                // destroying the committed scale. If a scale already exists, fall
+                // back to the re-entry panel; otherwise stay in a clean measure.
+                if (tool === 'scale') {
+                    setScalePoints([])
+                    setShowPopup(false)
+                    setIsDrawing(false)
+                    setGuideLine(null)
+                    setScaleStage(useStore.getState().scaleCalibration ? 'panel' : 'measure')
+                }
+
                 if (selectedElement && selectedElement["element"]) {
                     // remove selected element from elements
                     let selectedId = selectedElement["element"]["id"]
@@ -648,7 +683,7 @@ function Canvas({dimensions, isDevMode}) {
         }
 
         const handleMouseMove = (event) => {
-            const raw = { x: event.pageX, y: event.pageY }
+            const raw = getCanvasPoint(event)
             const isPolylineHover = tool === 'polyline' && isDrawing && currentPoly.length > 0
             const isPointHover = tool === 'point' && hasScale
             const isMeshRect = tool === 'rect' && comment && comment.toLowerCase().includes('mesh')
@@ -714,14 +749,18 @@ function Canvas({dimensions, isDevMode}) {
         return () => {
             window.removeEventListener("mousemove", handleMouseMove)
         }
-    }, [isDrawing, currentPoly, scalePoints.length, tool, currentRect, selectedElement, comment, pixelsPerMesh, elements, isShiftPressed, currentMode, hasScale])
+    }, [isDrawing, currentPoly, scalePoints.length, tool, currentRect, selectedElement, comment, pixelsPerMesh, elements, isShiftPressed, currentMode, hasScale, getCanvasPoint])
 
-    function deltaGridlines(pxPerMesh, tool) { // actioned if debug mode and after scale set normally
-        setPixelsPerMesh(pxPerMesh)
+    // Commit a calibration and leave the scale tool for drawing. The render-pixel
+    // scale is derived inside the store from the intrinsic calibration; we never
+    // setPixelsPerMesh from a click here (issue #15).
+    function finishScale() {
         setHasScale(true)
         setShowPopup(false)
+        setScaleStage('measure')
+        setScalePoints([])
         // change from scale mode to drawing mode
-        setTool(tool)
+        setTool('polyline')
         setComment("obstruction")
         // Scale click 1 set isDrawing=true and never reset it — a latent bug
         // that the first-click-feedback hover pipeline exposed via
@@ -731,12 +770,52 @@ function Canvas({dimensions, isDevMode}) {
         setCurrentPoly([])
     }
 
+    // Fresh measurement: build an intrinsic calibration from the two clicked
+    // points (canvas-intrinsic px) + the entered length, anchored to PDF page
+    // points so it survives a re-render at a different scale/DPI (issue #15).
     function handleScaleInput(inputDistance) {
-        let scaleDistance = inputDistance
-        let desiredScale = 0.1 //m - later be changeable
-        let pixels = calcDistance(scalePoints[0], scalePoints[1])
-        let temp = pixels / (scaleDistance / desiredScale)
-        deltaGridlines(temp, 'polyline')
+        const lengthMeters = parseFloat(inputDistance)
+        if (!lengthMeters || lengthMeters <= 0 || scalePoints.length < 2) return
+        const calibration = buildCalibration(scalePoints[0], scalePoints[1], lengthMeters, renderScale)
+        setScaleCalibration(calibration)
+        finishScale()
+    }
+
+    // "Change length" (issue #19): recompute the scale from the EXISTING stored
+    // calibration line and a new length — no re-clicking.
+    function handleChangeLength(inputDistance) {
+        const lengthMeters = parseFloat(inputDistance)
+        if (!lengthMeters || lengthMeters <= 0 || !scaleCalibration?.points) return
+        setScaleCalibration(recalibrateLength(scaleCalibration, lengthMeters))
+        finishScale()
+    }
+
+    // Re-entry panel actions (issue #19).
+    function handleScaleRemeasure() {
+        setScalePoints([])
+        setShowPopup(false)
+        setScaleStage('measure')
+    }
+    function handleScaleChangeLengthOpen() {
+        setScaleStage('changeLength')
+    }
+    function handleChangeLengthCancel() {
+        setScaleStage('panel')
+    }
+    // Cancel out of Set scale entirely, keeping the committed scale intact.
+    function handleScaleReentryCancel() {
+        setScalePoints([])
+        setShowPopup(false)
+        setScaleStage('measure')
+        setTool('selection')
+    }
+    // Cancel from the length popup after two clicks (issue #17): back to a clean
+    // measure state with the previous scale intact.
+    function abortMeasure() {
+        setScalePoints([])
+        setShowPopup(false)
+        setGuideLine(null)
+        setScaleStage(scaleCalibration ? 'panel' : 'measure')
     }
  
     useLayoutEffect(() => {
@@ -1754,7 +1833,46 @@ function Canvas({dimensions, isDevMode}) {
             context.restore()
         }
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsActiveElevation, efsProtectedByElev, efsRequiredByElev, efsEndSpacingByElev, debugRects, snapGuides, candidateCycleState])
+        // Re-entry: draw the previously-measured calibration line (issue #19) so
+        // the user sees exactly what was measured. Stored in page points; mapped
+        // back to render pixels at the current scale. Shown while the panel is up
+        // and we're not actively measuring a new line.
+        if (tool === 'scale' && scaleStage === 'panel' && scaleCalibration?.points) {
+            const a = pagePointToPixel(scaleCalibration.points[0], renderScale)
+            const b = pagePointToPixel(scaleCalibration.points[1], renderScale)
+            context.save()
+            context.strokeStyle = 'rgba(0, 150, 200, 0.9)'
+            context.fillStyle = 'rgba(0, 150, 200, 0.9)'
+            context.lineWidth = 2
+            context.beginPath()
+            context.moveTo(a.x, a.y)
+            context.lineTo(b.x, b.y)
+            context.stroke()
+            for (const p of [a, b]) {
+                context.beginPath()
+                context.arc(p.x, p.y, 5, 0, Math.PI * 2)
+                context.fill()
+            }
+            if (scaleCalibration.lengthMeters != null) {
+                const midX = (a.x + b.x) / 2
+                const midY = (a.y + b.y) / 2
+                const label = `${scaleCalibration.lengthMeters} m`
+                context.font = '13px sans-serif'
+                const metrics = context.measureText(label)
+                const padX = 6
+                const boxW = metrics.width + padX * 2
+                const boxH = 20
+                context.fillStyle = 'rgba(255, 255, 255, 0.95)'
+                context.strokeStyle = 'rgba(0, 150, 200, 0.9)'
+                context.fillRect(midX + 8, midY - 10, boxW, boxH)
+                context.strokeRect(midX + 8, midY - 10, boxW, boxH)
+                context.fillStyle = '#222'
+                context.fillText(label, midX + 8 + padX, midY + 4)
+            }
+            context.restore()
+        }
+
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, scaleStage, scaleCalibration, renderScale, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsActiveElevation, efsProtectedByElev, efsRequiredByElev, efsEndSpacingByElev, debugRects, snapGuides, candidateCycleState])
 
     // Generate thumbnail by compositing PDF + drawing canvases
     const thumbnailTimerRef = useRef(null)
@@ -1957,7 +2075,7 @@ function Canvas({dimensions, isDevMode}) {
 
             let dimension = 5
 
-            let newP = {x: event.pageX, y: event.pageY}
+            let newP = getCanvasPoint(event)
             newP = snapVertexWithPointPriority(newP, null, [], isShiftPressed)
             let currentEl = returnElementObject(tool, [newP], comment) // comment from props
             // setElements(prev => [...prev, currentEl])
@@ -1972,7 +2090,7 @@ function Canvas({dimensions, isDevMode}) {
                     let dimension = 10
                     context.fillStyle = elementConfig[comment] || elementConfig["door"]
                     // // draw vertex
-                    let newP = {x: event.pageX, y: event.pageY}
+                    let newP = getCanvasPoint(event)
                     // if ctrl pressed -> next point ortho
                     if (isCtrlPressed && currentPoly.length > 0) { // and not first point
                         newP = snapVertexOrtho(newP, currentPoly[currentPoly.length-1])
@@ -1996,7 +2114,7 @@ function Canvas({dimensions, isDevMode}) {
                 // draw vertex
                 let dimension = 10
                 context.fillStyle = 'green'
-                let newP = {x: event.pageX, y: event.pageY}
+                let newP = getCanvasPoint(event)
                 // if ctrl pressed -> next point ortho
                 if (isCtrlPressed && currentPoly.length > 0) { // and not first point
                     newP = snapVertexOrtho(newP, currentPoly[currentPoly.length-1])
@@ -2026,7 +2144,7 @@ function Canvas({dimensions, isDevMode}) {
 
             let dimension = 5
 
-            let newP = {x: event.pageX, y: event.pageY}
+            let newP = getCanvasPoint(event)
             const isMeshRect = comment && comment.toLowerCase().includes('mesh')
             if (currentRect.length == 0) {
                 // Mesh rects keep their mesh-only edge priority (byte-identical).
@@ -2062,7 +2180,11 @@ function Canvas({dimensions, isDevMode}) {
 
             context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)        
         } else if (tool === 'selection') {
-            const pointer = {x: event.pageX, y: event.pageY}
+            const pointer = getCanvasPoint(event)
+            // Viewport coords for positioning the chip overlay (position:fixed),
+            // kept separately from the canvas-intrinsic `pointer` used for hit-
+            // testing and cycle-tolerance comparisons.
+            const screenAnchor = { x: event.clientX, y: event.clientY }
 
             // Alt+click near the previous selection anchor cycles through
             // stacked candidates without rebuilding the list. Matches
@@ -2103,6 +2225,7 @@ function Canvas({dimensions, isDevMode}) {
                 })
                 setCandidateCycleState({
                     anchor: pointer,
+                    screenAnchor,
                     candidates,
                     index: 0,
                 })
@@ -2113,15 +2236,15 @@ function Canvas({dimensions, isDevMode}) {
             event.preventDefault()
 
         } else if (tool === 'scale') {
-            if (scalePoints.length < 2) {
-                // if (scalePoints.length == 1) {
-                    
-                // }
+            // Only the fresh two-click flow places points. While the re-entry
+            // panel / change-length popup is up (issue #19), canvas clicks must
+            // not start a measurement.
+            if (scaleStage === 'measure' && scalePoints.length < 2) {
                 let prevIndex = scalePoints.length
                 setIsDrawing(true) // drawing set to false on press of enter or return to origin
                 let dimension = 10
                 context.fillStyle = 'red'
-                let newP = {x: event.pageX, y: event.pageY}
+                let newP = getCanvasPoint(event)
                 // if ctrl pressed -> ortho against the FIRST scale point (not
                 // currentPoly, which is empty in scale mode — that's why the
                 // committed 2nd point used to ignore ortho while the guide line
@@ -2170,7 +2293,7 @@ function Canvas({dimensions, isDevMode}) {
     }
     function handlePointerUp(event){
         // event.preventDefault(); 
-        let pointer = {x: event.pageX, y: event.pageY}
+        let pointer = getCanvasPoint(event)
         if (selectedElement) {
             let el = selectedElement["element"] // needs id added to state
             let elementId = el["id"]
@@ -2232,9 +2355,29 @@ function Canvas({dimensions, isDevMode}) {
 
   return (
   <>
-    {showPopup && (
-        <ScalePopup handleScaleInput={handleScaleInput} />
-      )}   
+    {/* Re-entry panel on an already-calibrated project (issue #19). */}
+    {tool === 'scale' && scaleStage === 'panel' && (
+        <ScaleReentryPanel
+          pixelsPerMesh={pixelsPerMesh}
+          lengthMeters={scaleCalibration?.lengthMeters}
+          canChangeLength={!!scaleCalibration?.points}
+          onRemeasure={handleScaleRemeasure}
+          onChangeLength={handleScaleChangeLengthOpen}
+          onCancel={handleScaleReentryCancel}
+        />
+      )}
+    {/* Length input: the fresh-measure popup after two clicks, or the
+        pre-filled "Change length" popup (issue #19). Cancel keeps the
+        previous scale (issue #17). */}
+    {scaleStage === 'changeLength' ? (
+        <ScalePopup
+          handleScaleInput={handleChangeLength}
+          onCancel={handleChangeLengthCancel}
+          defaultValue={scaleCalibration?.lengthMeters}
+        />
+      ) : showPopup && (
+        <ScalePopup handleScaleInput={handleScaleInput} onCancel={abortMeasure} />
+      )}
     <Gridlines pixelsPerMesh={pixelsPerMesh} dimensions={dimensions} hasScale={hasScale}/>
     {/* fdrobot should be on top of everything else */}
     {/* {menuOverlay} */}
@@ -2262,14 +2405,17 @@ function Canvas({dimensions, isDevMode}) {
           data-testid="selection-chip-list"
           style={{
             position: 'fixed',
+            // screenAnchor is viewport-relative (clientX/Y), exactly what
+            // position:fixed wants — no scroll math. Falls back to the legacy
+            // page-coord anchor for any state captured before this field existed.
             left:
-              candidateCycleState.anchor.x -
-              (typeof window !== 'undefined' ? window.scrollX : 0) +
-              20,
+              (candidateCycleState.screenAnchor?.x ??
+                candidateCycleState.anchor.x -
+                  (typeof window !== 'undefined' ? window.scrollX : 0)) + 20,
             top:
-              candidateCycleState.anchor.y -
-              (typeof window !== 'undefined' ? window.scrollY : 0) +
-              20,
+              (candidateCycleState.screenAnchor?.y ??
+                candidateCycleState.anchor.y -
+                  (typeof window !== 'undefined' ? window.scrollY : 0)) + 20,
             zIndex: 20,
             display: 'flex',
             gap: 4,

@@ -74,6 +74,7 @@ const DB_BACKED_ONLY_FIELDS = [
     'elements',
     'tool',
     'pixelsPerMesh',
+    'scaleCalibration',
     'canvasDimensions',
     'convertedPoints',
     'originPixels',

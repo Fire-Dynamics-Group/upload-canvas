@@ -12,7 +12,29 @@ Calibration UX for the Scale tool. Summarises what's wired up today and what's d
 
 Implementation lives in `Components/Canvas.jsx` — search for "Scale-tool crosshair" comment.
 
-## Device independence + reset flow (planned 2026-06)
+## Device independence + reset flow (shipped 2026-06)
+
+All four sequenced items below have now landed (issues #15–#19):
+
+1. **Intrinsic-unit storage (#15).** Calibration is stored as `scaleCalibration`
+   in the floor `settings` JSON: `pagePointsPerMesh` (PDF points per 0.1 m at
+   render-scale 1.0) + the two calibration points (in page points) + the entered
+   length. `pixelsPerMesh` is now *derived* (`pagePointsPerMesh × renderScale`)
+   in the store and on hydrate, never the persisted source of truth. Old
+   projects with only `pixels_per_mesh` reconstruct an intrinsic calibration on
+   load. Pure math in `utils/scaleCalibration.js`.
+2. **Canvas-intrinsic pointer mapping (#16).** `clientToCanvasPoint`
+   (`utils/helperFunctions.js`) + the `getCanvasPoint` helper in `Canvas.jsx`
+   replace every raw `pageX/pageY` read.
+3. **Reset / re-measure flow (#17, #19).** `ScaleReentryPanel` shows the current
+   scale + previous line with Re-measure / Change length / Cancel; `ScalePopup`
+   gained a real Cancel and Escape aborts an in-progress measurement without
+   destroying the committed scale.
+4. **Safeguards (#18).** `utils/scaleSafeguards.js` — autosave refuses to clobber
+   a real scale with the unset `1`, and a non-blocking prompt fires on load when
+   a project has elements but no scale.
+
+### Original plan (planned 2026-06)
 
 Motivated by: a loaded project ("0406 Finchley Ground Floor") came back with `pixelsPerMesh = 1`, so no grid (the grid is gated on `hasScale = pixelsPerMesh !== 1`). Root cause: the scale was `1` in the store at last save — the round-trip itself is correct. The deeper issue is that the scale is anchored to render pixels, which is fragile across devices/zoom. Cross-app survey (Bluebeam, Acrobat, PDF-XChange, Foxit, Qoppa) all converge on the same answer.
 
