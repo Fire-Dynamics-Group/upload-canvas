@@ -6,10 +6,33 @@ Calibration UX for the Scale tool. Summarises what's wired up today and what's d
 
 - **Full-canvas crosshair** — cyan dashed horizontal + vertical lines through the pointer, active from the moment Scale is selected. Lets the user visually align click 1 to distant features on the plan. Bluebeam "Full-Screen Crosshair" + AutoCAD default cursor convention.
 - **Live distance readout** — after click 1, a dashed cyan line runs from click 1 to the cursor with a `NNN px` label near the pointer. Every serious measure tool does this.
-- **Ctrl-ortho** (pre-existing) — Ctrl held during click 2 snaps to horizontal/vertical via `snapVertexOrtho`. Industry convention is Shift, not Ctrl (see deferred #1 below).
+- **Ctrl-ortho** — Ctrl held during click 2 snaps to horizontal/vertical via `snapVertexOrtho`. Industry convention is Shift, not Ctrl (see deferred #1 below). **Fixed 2026-06:** the *committed* 2nd point used to ignore ortho (the click handler snapped against `currentPoly`, which is empty in scale mode) while the rubber-band line *showed* ortho — so the point landed away from the indicator. Now both the click and the hover crosshair ortho against `scalePoints[0]`, so crosshair, line, and landed point coincide.
+- **Set scale tool button + re-entry** — `Set scale` is exposed in the Toolbar (not just auto-run on first upload), so a loaded project can be re-calibrated. Entering scale mode clears stale `scalePoints` so the `length < 2` guard doesn't block a second calibration.
 - **Grid snap fallback** (pre-existing) — scale points quantise to `pixelsPerMesh` when no other snap is active. Scale happens before any elements exist so alignment candidates would be empty anyway.
 
 Implementation lives in `Components/Canvas.jsx` — search for "Scale-tool crosshair" comment.
+
+## Device independence + reset flow (planned 2026-06)
+
+Motivated by: a loaded project ("0406 Finchley Ground Floor") came back with `pixelsPerMesh = 1`, so no grid (the grid is gated on `hasScale = pixelsPerMesh !== 1`). Root cause: the scale was `1` in the store at last save — the round-trip itself is correct. The deeper issue is that the scale is anchored to render pixels, which is fragile across devices/zoom. Cross-app survey (Bluebeam, Acrobat, PDF-XChange, Foxit, Qoppa) all converge on the same answer.
+
+### The principle (how every measurement tool does it)
+
+Scale is a **ratio, drawing-length : real-world-length, anchored to the document's intrinsic units (PDF points, 1/72")** — never to screen or render pixels. That's why a CAD→PDF export carries scale automatically and a measurement reads identically on any monitor or zoom. Calibrate by a known dimension (click-click + length + units); the stated title-block scale is treated as untrustworthy because export/print rescales it.
+
+### What's wrong here today
+
+- **Storage anchored to render pixels.** `pixelsPerMesh` = render-px-per-0.1 m at a hard-coded `1.5` render scale (`renderPdf`). Stable only because that `1.5` never changes. Adding the zoom/pan already TODO'd in `Gridlines.jsx`, or changing DPI, breaks every saved scale.
+- **Pointer mapping uses raw `pageX/pageY`** at ~7 sites with no `getBoundingClientRect` correction. Works only because the draw canvas is `absolute inset-0` at the document origin at intrinsic resolution and `pageX/pageY` are document-relative (so scroll is absorbed). Any CSS-scaling of the canvas (responsive fit, browser zoom, a tablet shrinking the 3576 px bitmap) breaks the 1:1 mapping and the calibration drifts per device.
+
+### Plan (sequenced)
+
+1. **Store calibration in intrinsic units.** Persist `realUnitsPerPagePoint` (+ the two calibration points and entered length, in page units) instead of, or alongside, `pixelsPerMesh`. Derive `pixelsPerMesh = pagePointsPerMesh × currentRenderScale` on render. Cheapest store: the floor `settings` JSON (no DB migration). Invariant to device, DPI, zoom.
+2. **Map pointer → canvas-intrinsic coords** everywhere: `x = (clientX - rect.left) * (canvas.width / rect.width)`. One shared helper; replace the raw `pageX/pageY` sites. This is the real "different device sizes" fix.
+3. **Reset / re-measure flow.** On `Set scale` with an existing scale: show current scale (`1 m = N px`, derived) + the previous calibration line; offer **Re-measure** / **Change length** (pre-filled, recomputes without re-clicking) / **Cancel**. Add a real **Cancel** to `ScalePopup` and **Escape** to abort an in-progress measurement without destroying the committed scale.
+4. **Safeguards.** Don't let autosave persist `pixels_per_mesh = 1` over a real value when the floor has elements; on load, if scale is unset but elements exist, prompt to set scale rather than silently showing no grid.
+
+Open decisions (parked): persist the calibration line for cross-reload "Change length" (recommended, settings JSON) vs session-only; panel-on-re-entry vs straight-to-clicking. #1 and #2 are the device-robustness foundation and should land before the flow polish in #3.
 
 ## Deferred — ranked by expected user value
 

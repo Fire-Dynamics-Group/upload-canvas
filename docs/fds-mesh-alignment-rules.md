@@ -88,16 +88,35 @@ The only row with an asymmetric "✗" is mesh drawing. All other rows use the sa
 
 ### Backend (fds.py)
 
-- **`align_meshes()`**: Runs after coordinate conversion, before FDS line generation. Implements a wiggle-loop algorithm (ported from the original EXE's `prep_mesh_data`):
-  1. Stair meshes are processed first (they anchor the alignment).
-  2. For each pair of meshes that overlap in one axis, checks if any side is within the wiggle tolerance of the other mesh's side.
-  3. Snaps both sides to `round(average / cell_size) * cell_size`, using the coarser cell size at stair interfaces.
-  4. Tracks coarse-grid locks: once a boundary is snapped at a stair interface (0.2m grid), all subsequent meshes snapping to that boundary inherit the 0.2m grid.
-  5. Increases wiggle tolerance (starting 0.22m, +0.05m per iteration) until all meshes touch at least one other mesh.
+> **Important:** the live backend does **not** perform any mesh-to-mesh
+> alignment. Each mesh's coordinates are rounded to the grid *independently* —
+> there is no pairwise wiggle-loop. Abutment between two meshes is achieved
+> *only* because the frontend snap placed them on coincident coordinates that
+> then round to the same value. The backend adds no safety net: if two meshes
+> don't already abut (e.g. the user held Shift to suppress the frontend snap),
+> the FDS output will contain a gap or overlap, silently.
 
-- **`create_stair_meshes()`**: Uses aligned coordinates directly from `align_meshes()` output rather than re-rounding.
+The actual mesh pipeline in `generate_fds()`:
 
-- **`create_extract_shaft()`**: Snaps shaft boundaries to nearest mesh boundaries within 0.5m tolerance, eliminating gaps between shafts and corridor meshes.
+1. **`returnOrigin()` → `makeElementsRelativeToOrigin()`**: find the bottom-left
+   point and shift all element coordinates relative to it.
+2. **`convertElPointsToCoords(elements, px_per_m)`**: convert pixels → metres.
+3. **`create_mesh()` → `create_fds_mesh_lines()`** (regular meshes): each mesh's
+   own X/Y corners are rounded to 0.1 m **independently** (`round(x1, 1)` etc.).
+   `IJK = round(delta / cell_size)`. No reference to any other mesh.
+4. **`create_stair_meshes()`**: X/Y corners rounded to 0.1 m independently; Z
+   boundaries snapped to 0.2 m via `snap_to_grid()`. Splits each stair mesh into
+   Lower (0.2 m) / Middle/fire-floor (0.1 m) / Upper (0.2 m) sub-meshes.
+
+There is **no `align_meshes()`, no `create_extract_shaft()` snapping, and no
+wiggle-loop** in the current `fds.py`. The wiggle-loop algorithm described in
+old versions of this doc exists only in the original EXE
+(`helper_functions.py` `prep_mesh_data()`) and was **never ported** to this
+backend. If that behaviour is ever needed, it would have to be added here.
+
+Known gap (not yet fixed): `create_stair_meshes()` rounds stair X/Y to 0.1 m,
+not 0.2 m, so a stair boundary can land on an odd 0.1 m multiple — at odds with
+rules 3 and 5 above. Tracked for a fix-if-it-bites-in-practice basis.
 
 ## Validation
 

@@ -42,6 +42,123 @@ const elementConfig = {
     "efsUnprotected": "#2563eb"
 }
 
+// --- Mesh fill + interface-glyph helpers ---
+// Tuned against docs/mesh-fill-prototype.html. Mesh rects get a light colour
+// tint plus a faint diagonal hatch; stair meshes hatch the OPPOSITE diagonal so
+// they read as a distinct type. Where two mesh faces abut, a joint glyph + cell
+// -ratio tag marks the interface; a true 2D overlap gets a red warning band.
+const MESH_FILL_TINT_ALPHA = 0.06
+const MESH_HATCH_ALPHA = 0.26
+const MESH_HATCH_SPACING = 8
+const _meshHatchTileCache = {}
+function meshHatchTile(color, dir /* 1 = ╱ , -1 = ╲ */) {
+    const key = color + '|' + dir
+    if (_meshHatchTileCache[key]) return _meshHatchTileCache[key]
+    const s = MESH_HATCH_SPACING
+    const t = document.createElement('canvas')
+    t.width = s; t.height = s
+    const tx = t.getContext('2d')
+    tx.globalAlpha = MESH_HATCH_ALPHA
+    tx.strokeStyle = color
+    tx.lineWidth = 1
+    tx.lineCap = 'square'
+    tx.beginPath()
+    if (dir === 1) { tx.moveTo(0, s); tx.lineTo(s, 0); tx.moveTo(-1, 1); tx.lineTo(1, -1); tx.moveTo(s - 1, s + 1); tx.lineTo(s + 1, s - 1) }
+    else { tx.moveTo(0, 0); tx.lineTo(s, s); tx.moveTo(s - 1, -1); tx.lineTo(s + 1, 1); tx.moveTo(-1, s - 1); tx.lineTo(1, s + 1) }
+    tx.stroke()
+    _meshHatchTileCache[key] = t
+    return t
+}
+
+// Normalise a 2-point (diagonal) rect into a box + its FDS cell size.
+function meshBoxFromPoints(points, comments) {
+    const xs = points.map(p => p.x), ys = points.map(p => p.y)
+    const x = Math.min(...xs), y = Math.min(...ys)
+    const isStair = comments.toLowerCase().includes('stair')
+    return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y, cell: isStair ? 0.2 : 0.1 }
+}
+
+// A shared face requires separation (or touching) on one axis AND span overlap
+// on the other. True 2D overlap is returned separately as an error region.
+function meshSeam(D, N) {
+    const xOv = Math.min(D.x + D.w, N.x + N.w) - Math.max(D.x, N.x)
+    const yOv = Math.min(D.y + D.h, N.y + N.h) - Math.max(D.y, N.y)
+    if (xOv > 0 && yOv > 0) return { overlap: { x: Math.max(D.x, N.x), y: Math.max(D.y, N.y), w: xOv, h: yOv } }
+    const out = {}
+    if (xOv <= 0 && yOv > 0) {
+        const dLeft = D.x < N.x
+        const xa = dLeft ? D.x + D.w : N.x + N.w
+        const xb = dLeft ? N.x : D.x
+        out.vertical = { gap: Math.abs(xa - xb), x: Math.min(xa, xb), y1: Math.max(D.y, N.y), y2: Math.min(D.y + D.h, N.y + N.h) }
+    }
+    if (yOv <= 0 && xOv > 0) {
+        const dTop = D.y < N.y
+        const ya = dTop ? D.y + D.h : N.y + N.h
+        const yb = dTop ? N.y : D.y
+        out.horizontal = { gap: Math.abs(ya - yb), y: Math.min(ya, yb), x1: Math.max(D.x, N.x), x2: Math.min(D.x + D.w, N.x + N.w) }
+    }
+    return out
+}
+
+function meshRatio(a, b) {
+    const hi = Math.max(a.cell, b.cell), lo = Math.min(a.cell, b.cell)
+    return Math.round(hi / lo) + ':1'
+}
+
+// AutoCAD-style joint glyph on the shared face. orient 'v' = vertical seam.
+function drawMeshSeamGlyph(context, cx, cy, orient, ratioTxt) {
+    const col = '#16a34a'
+    context.save()
+    context.translate(cx, cy)
+    context.fillStyle = '#fff'
+    context.beginPath(); context.arc(0, 0, 9, 0, Math.PI * 2); context.fill()
+    context.strokeStyle = col; context.lineWidth = 2.5; context.lineCap = 'round'
+    context.beginPath()
+    if (orient === 'v') { context.moveTo(-6, 0); context.lineTo(6, 0) } else { context.moveTo(0, -6); context.lineTo(0, 6) }
+    context.stroke()
+    context.fillStyle = col; context.strokeStyle = '#fff'; context.lineWidth = 1.5
+    context.beginPath(); context.moveTo(0, -6); context.lineTo(6, 0); context.lineTo(0, 6); context.lineTo(-6, 0); context.closePath()
+    context.fill(); context.stroke()
+    context.fillStyle = '#fff'; context.beginPath(); context.arc(0, 0, 2, 0, Math.PI * 2); context.fill()
+    context.restore()
+    if (ratioTxt) {
+        context.save(); context.font = 'bold 10px sans-serif'
+        const w = context.measureText(ratioTxt).width + 8, tx = cx + 11, ty = cy - 17
+        context.fillStyle = col
+        if (typeof context.roundRect === 'function') { context.beginPath(); context.roundRect(tx, ty, w, 14, 3); context.fill() }
+        else context.fillRect(tx, ty, w, 14)
+        context.fillStyle = '#fff'; context.textBaseline = 'middle'; context.fillText(ratioTxt, tx + 4, ty + 7.5)
+        context.restore()
+    }
+}
+
+// Draw the interface signal for one pair of mesh boxes. Glyph only on a real
+// abutment (gap ≈ 0 — the grid conveys any larger distance); red band on overlap.
+function drawMeshInterface(context, D, N, showRatio) {
+    const s = meshSeam(D, N)
+    const ratioTxt = showRatio ? meshRatio(D, N) : ''
+    if (s.overlap) {
+        const r = s.overlap
+        context.save()
+        context.globalAlpha = 0.22; context.fillStyle = '#ef4444'; context.fillRect(r.x, r.y, r.w, r.h)
+        context.globalAlpha = 1; context.strokeStyle = '#ef4444'; context.lineWidth = 1.5; context.setLineDash([4, 3])
+        context.strokeRect(r.x, r.y, r.w, r.h); context.setLineDash([])
+        context.restore()
+        return
+    }
+    const v = s.vertical, h = s.horizontal
+    if (v && v.gap <= 1.5) {
+        context.save(); context.strokeStyle = '#16a34a'; context.lineWidth = 2.5; context.lineCap = 'round'
+        context.beginPath(); context.moveTo(v.x, v.y1); context.lineTo(v.x, v.y2); context.stroke(); context.restore()
+        drawMeshSeamGlyph(context, v.x, (v.y1 + v.y2) / 2, 'v', ratioTxt)
+    }
+    if (h && h.gap <= 1.5) {
+        context.save(); context.strokeStyle = '#16a34a'; context.lineWidth = 2.5; context.lineCap = 'round'
+        context.beginPath(); context.moveTo(h.x1, h.y); context.lineTo(h.x2, h.y); context.stroke(); context.restore()
+        drawMeshSeamGlyph(context, (h.x1 + h.x2) / 2, h.y, 'h', ratioTxt)
+    }
+}
+
 // --- module-level pure helpers for point-alignment snap (testable from tests) ---
 // These are additive siblings of the mesh-snap helpers inside the component.
 // Do not merge with the mesh-snap path — that's a hard constraint.
@@ -349,6 +466,17 @@ function Canvas({dimensions, isDevMode}) {
         setHasScale(pixelsPerMesh !== 1)
     }, [pixelsPerMesh])
 
+    // Entering scale mode always starts a fresh calibration: clear any stale
+    // scale points so re-scaling a loaded project isn't blocked by the
+    // `scalePoints.length < 2` guard (which leaves the old two points in place).
+    useEffect(() => {
+        if (tool === 'scale') {
+            setScalePoints([])
+            setShowPopup(false)
+            setIsDrawing(false)
+        }
+    }, [tool])
+
     // Test hook: expose the zustand store on window in non-production builds so
     // e2e tests can inspect committed elements directly. No-op in prod bundle.
     useEffect(() => {
@@ -500,10 +628,18 @@ function Canvas({dimensions, isDevMode}) {
         // exist, and scale isn't on the waterfall — see docs/scale-tool-ux.md #4).
         // Grid-only, matching snapVertexToGrid's click-side behaviour so the
         // cyan crosshair and the landed dot coincide.
-        const computeScaleHoverFromCursor = (raw) => ({
-            guideLine: applyGridFallback({ raw, snapped: raw, guides: [], pixelsPerMesh }),
-            snapGuides: [],
-        })
+        const computeScaleHoverFromCursor = (raw) => {
+            // Ortho the crosshair to the first scale point when Ctrl is held, so
+            // the dot matches the (already-ortho) rubber-band line and the point
+            // the click will commit — all three now coincide.
+            const pt = (isCtrlPressed && scalePoints.length === 1)
+                ? snapVertexOrtho(raw, scalePoints[0])
+                : raw
+            return {
+                guideLine: applyGridFallback({ raw: pt, snapped: pt, guides: [], pixelsPerMesh }),
+                snapGuides: [],
+            }
+        }
 
         const handleMouseMove = (event) => {
             const raw = { x: event.pageX, y: event.pageY }
@@ -610,7 +746,24 @@ function Canvas({dimensions, isDevMode}) {
             let p2 = points[1]
             let deltaX = p2.x - p1.x
             let deltaY = p2.y - p1.y
-            context.strokeStyle = elementConfig[comments] 
+
+            // Mesh rects get a light tint + faint hatch so meshed area reads as
+            // a region without hiding the floor plan beneath. Stair meshes hatch
+            // the opposite diagonal. Applies to committed AND in-progress rects.
+            if (comments && comments.toLowerCase().includes('mesh')) {
+                const meshColor = elementConfig[comments] || 'green'
+                const dir = comments.toLowerCase().includes('stair') ? -1 : 1
+                context.save()
+                context.globalAlpha = MESH_FILL_TINT_ALPHA
+                context.fillStyle = meshColor
+                context.fillRect(p1.x, p1.y, deltaX, deltaY)
+                context.globalAlpha = 1
+                context.fillStyle = context.createPattern(meshHatchTile(meshColor, dir), 'repeat')
+                context.fillRect(p1.x, p1.y, deltaX, deltaY)
+                context.restore()
+            }
+
+            context.strokeStyle = elementConfig[comments]
             context.lineWidth = 1.5;
             if (dotted) {
                 context.setLineDash([5, 15])
@@ -1193,6 +1346,27 @@ function Canvas({dimensions, isDevMode}) {
                         let rectPoints = [currentRect[0], guideLine]
                         drawRect(rectPoints, context, comment)
                     }
+                }
+            }
+        }
+
+        // Mesh interface glyphs: mark every abutting mesh face (and flag true
+        // overlaps) across all committed meshes plus the in-progress rect, so
+        // the user sees the interface form live as they pull the opposite corner.
+        {
+            const meshBoxes = []
+            elements.forEach(el => {
+                const isMeshRect = el.type === 'rect' && el.comments && el.comments.toLowerCase().includes('mesh')
+                const isSelected = selectedElement && el.id === selectedElement.id
+                if (isMeshRect && !isSelected) meshBoxes.push(meshBoxFromPoints(el.points, el.comments))
+            })
+            if (isDrawing && tool === 'rect' && currentRect.length === 1 && guideLine &&
+                comment && comment.toLowerCase().includes('mesh')) {
+                meshBoxes.push(meshBoxFromPoints([currentRect[0], guideLine], comment))
+            }
+            for (let i = 0; i < meshBoxes.length; i++) {
+                for (let j = i + 1; j < meshBoxes.length; j++) {
+                    drawMeshInterface(context, meshBoxes[i], meshBoxes[j], true)
                 }
             }
         }
@@ -1914,9 +2088,12 @@ function Canvas({dimensions, isDevMode}) {
                 let dimension = 10
                 context.fillStyle = 'red'
                 let newP = {x: event.pageX, y: event.pageY}
-                // if ctrl pressed -> next point ortho
-                if (isCtrlPressed && currentPoly.length > 0) { // and not first point
-                    newP = snapVertexOrtho(newP, currentPoly[currentPoly.length-1])
+                // if ctrl pressed -> ortho against the FIRST scale point (not
+                // currentPoly, which is empty in scale mode — that's why the
+                // committed 2nd point used to ignore ortho while the guide line
+                // showed it, landing the point away from the indicator).
+                if (isCtrlPressed && scalePoints.length > 0) {
+                    newP = snapVertexOrtho(newP, scalePoints[scalePoints.length - 1])
                 }
                 newP = snapVertexToGrid(newP)
                 context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)  

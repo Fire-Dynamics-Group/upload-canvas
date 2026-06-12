@@ -52,7 +52,7 @@ function Gridlines({pixelsPerMesh, dimensions, hasScale}) {
       ref={canvasRef}
       width={canvasWidth}
       height={canvasHeight}
-      className='border border-black rounded-md bg-transparent inset-0 absolute z-5'
+      className='border border-black rounded-md bg-transparent inset-0 absolute z-20 pointer-events-none'
       />
   </>
   )

@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Mesh fill / interface UX prototype</title>
+<style>
+  :root { font-family: system-ui, sans-serif; }
+  body { margin: 0; display: flex; height: 100vh; background: #1e1e1e; color: #ddd; }
+  #panel { width: 290px; flex: none; padding: 16px; overflow-y: auto; background: #252526; border-right: 1px solid #333; }
+  #stage { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; }
+  canvas { background: #fff; box-shadow: 0 0 0 1px #000; cursor: default; }
+  h1 { font-size: 14px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: .05em; color: #9cdcfe; }
+  h2 { font-size: 11px; margin: 18px 0 6px; text-transform: uppercase; letter-spacing: .05em; color: #888; }
+  label { display: block; font-size: 12px; margin: 6px 0; cursor: pointer; }
+  input[type=range] { width: 100%; }
+  .val { color: #9cdcfe; font-variant-numeric: tabular-nums; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+  small { color: #888; display: block; line-height: 1.4; margin-top: 4px; }
+  #hint { font-size: 12px; color: #9cdcfe; }
+</style>
+</head>
+<body>
+<div id="panel">
+  <h1>Mesh fill + interface</h1>
+
+  <h2>Fill treatment</h2>
+  <label><input type="radio" name="fill" value="none"> None (outline only — today)</label>
+  <label><input type="radio" name="fill" value="tint" checked> Solid tint</label>
+  <label><input type="radio" name="fill" value="hatch"> Diagonal hatch</label>
+  <label><input type="radio" name="fill" value="cross"> Cross-hatch</label>
+  <label><input type="radio" name="fill" value="tinthatch"> Tint + faint hatch</label>
+
+  <h2>Intensity</h2>
+  <label>Fill opacity: <span class="val" id="opacityVal">0.08</span>
+    <input type="range" id="opacity" min="0" max="0.4" step="0.01" value="0.08"></label>
+  <label>Hatch spacing: <span class="val" id="spacingVal">8</span>px
+    <input type="range" id="spacing" min="4" max="20" step="1" value="8"></label>
+
+  <h2>Mesh-coverage emphasis</h2>
+  <label><input type="checkbox" id="dimOutside"> Dim NON-meshed area instead</label>
+
+  <h2>Type distinction</h2>
+  <label><input type="checkbox" id="typeByDirection" checked> Stair mesh = opposite hatch dir</label>
+  <label><input type="checkbox" id="cornerLabel" checked> Corner label (MESH / STAIR)</label>
+
+  <h2>Interaction</h2>
+  <label><input type="radio" name="mode" value="draw" checked> Draw mesh (corner → opposite corner)</label>
+  <label><input type="radio" name="mode" value="move"> Move a placed mesh</label>
+
+  <h2>Interface feedback</h2>
+  <label><input type="checkbox" id="ifaceOn" checked> Show interface highlight</label>
+  <label><input type="checkbox" id="magnet" checked> Magnet snap to neighbour edge</label>
+  <label><input type="checkbox" id="ratioTag" checked> Show cell-ratio tag (1:1 / 2:1)</label>
+  <label>Snap tolerance: <span class="val" id="snapTolVal">14</span>px
+    <input type="range" id="snapTol" min="2" max="40" step="1" value="14"></label>
+  <small>Glyph appears only when faces actually abut. Distance is read off the grid — no numeric label needed. Hold <b>Shift</b> while dragging to suppress the magnet (the app's escape hatch).</small>
+
+  <h2>Show</h2>
+  <label><input type="checkbox" id="showGrid" checked> Global grid</label>
+
+  <small style="margin-top:18px">
+    <span class="swatch" style="background:#22c55e"></span>Domain mesh, 0.1 m (green)<br>
+    <span class="swatch" style="background:#3b82f6"></span>Stair mesh, 0.2 m (blue)<br><br>
+    Seam states:<br>
+    <span class="swatch" style="background:#16a34a"></span>abutting → glyph on the shared face<br>
+    <span class="swatch" style="background:#ef4444"></span>overlap → red warning region<br>
+    gap → no glyph (count cells on the grid)
+  </small>
+</div>
+
+<div id="stage">
+  <canvas id="c" width="820" height="600"></canvas>
+  <div id="hint">Drag the bright green <b>MESH</b> toward a neighbour to see the interface signal.</div>
+</div>
+
+<script>
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const W = cv.width, H = cv.height;
+const GRID = 24;            // px per cell
+const M_PER_CELL = 0.1;     // 0.1 m per grid cell
+
+// Fixed neighbours + one draggable mesh.
+const MESH_A = { x: 90,  y: 110, w: 300, h: 250, color: '#22c55e', label: 'MESH',  cell: 0.1 };
+const STAIR  = { x: 560, y: 140, w: 170, h: 250, color: '#3b82f6', label: 'STAIR', cell: 0.2 };
+const MESH_B = { x: 412, y: 168, w: 130, h: 170, color: '#22c55e', label: 'MESH',  cell: 0.1, draggable: true };
+const NEIGHBOURS = [MESH_A, STAIR];
+
+const els = id => document.getElementById(id);
+const ctrl = {
+  fill: () => document.querySelector('input[name=fill]:checked').value,
+  opacity: () => +els('opacity').value,
+  spacing: () => +els('spacing').value,
+  dimOutside: () => els('dimOutside').checked,
+  typeByDirection: () => els('typeByDirection').checked,
+  cornerLabel: () => els('cornerLabel').checked,
+  ifaceOn: () => els('ifaceOn').checked,
+  magnet: () => els('magnet').checked,
+  ratioTag: () => els('ratioTag').checked,
+  snapTol: () => +els('snapTol').value,
+  showGrid: () => els('showGrid').checked,
+  mode: () => document.querySelector('input[name=mode]:checked').value,
+};
+
+const fmtM = px => (Math.abs(px) / GRID * M_PER_CELL).toFixed(2) + ' m';
+const ratioOf = (a, b) => { const [hi, lo] = a.cell >= b.cell ? [a.cell, b.cell] : [b.cell, a.cell]; return Math.round(hi / lo) + ':1'; };
+function hexToRgb(h){ const n=parseInt(h.slice(1),16); return [n>>16&255, n>>8&255, n&255]; }
+
+// ---- fill rendering (unchanged from fill prototype) ----
+function hatchPattern(color, opacity, spacing, dir, cross){
+  const s = spacing, t = document.createElement('canvas');
+  t.width = s; t.height = s;
+  const tx = t.getContext('2d'); const [r,g,b] = hexToRgb(color);
+  tx.strokeStyle = `rgba(${r},${g},${b},${opacity})`; tx.lineWidth = 1; tx.lineCap = 'square';
+  const draw = d => {
+    tx.beginPath();
+    if (d === 1){ tx.moveTo(0,s); tx.lineTo(s,0); tx.moveTo(-1,1); tx.lineTo(1,-1); tx.moveTo(s-1,s+1); tx.lineTo(s+1,s-1); }
+    else        { tx.moveTo(0,0); tx.lineTo(s,s); tx.moveTo(s-1,-1); tx.lineTo(s+1,1); tx.moveTo(-1,s-1); tx.lineTo(1,s+1); }
+    tx.stroke();
+  };
+  draw(dir); if (cross) draw(-dir);
+  return ctx.createPattern(t, 'repeat');
+}
+
+function fillMesh(m, inProgress){
+  const op = ctrl.opacity(), mode = ctrl.fill(), [r,g,b] = hexToRgb(m.color);
+  const dir = (ctrl.typeByDirection() && m.label === 'STAIR') ? -1 : 1;
+  ctx.save(); ctx.beginPath(); ctx.rect(m.x, m.y, m.w, m.h); ctx.clip();
+  if (mode === 'tint' || mode === 'tinthatch'){
+    ctx.fillStyle = `rgba(${r},${g},${b},${mode==='tinthatch'?op*0.6:op})`;
+    ctx.fillRect(m.x, m.y, m.w, m.h);
+  }
+  if (mode === 'hatch' || mode === 'cross' || mode === 'tinthatch'){
+    const lineOp = Math.min(1, op * (mode==='tinthatch'?3:4));
+    ctx.fillStyle = hatchPattern(m.color, lineOp, ctrl.spacing(), dir, mode==='cross');
+    ctx.fillRect(m.x, m.y, m.w, m.h);
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.strokeStyle = m.color; ctx.lineWidth = inProgress ? 2 : 1.5;
+  if (inProgress) ctx.setLineDash([5,6]);
+  ctx.strokeRect(m.x, m.y, m.w, m.h);
+  ctx.restore();
+
+  if (ctrl.cornerLabel()){
+    ctx.save(); ctx.font = 'bold 10px system-ui';
+    const tw = ctx.measureText(m.label).width;
+    ctx.fillStyle = m.color; ctx.fillRect(m.x, m.y, tw + 10, 14);
+    ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle';
+    ctx.fillText(m.label, m.x + 5, m.y + 8); ctx.restore();
+  }
+}
+
+// ---- interface / seam detection ----
+// A shared face requires separation (or touching) on one axis AND span overlap on
+// the other. True 2D overlap = an overlap region (error).
+function seamData(D, N){
+  const xOv = Math.min(D.x+D.w, N.x+N.w) - Math.max(D.x, N.x);
+  const yOv = Math.min(D.y+D.h, N.y+N.h) - Math.max(D.y, N.y);
+  if (xOv > 0 && yOv > 0)
+    return { overlap: { x: Math.max(D.x,N.x), y: Math.max(D.y,N.y), w: xOv, h: yOv } };
+  const out = {};
+  if (xOv <= 0 && yOv > 0){
+    const dLeft = D.x < N.x;
+    const xa = dLeft ? D.x+D.w : N.x+N.w;
+    const xb = dLeft ? N.x     : D.x;
+    out.vertical = {
+      gap: Math.max(xa,xb) - Math.min(xa,xb), xL: Math.min(xa,xb), xR: Math.max(xa,xb),
+      y1: Math.max(D.y,N.y), y2: Math.min(D.y+D.h, N.y+N.h),
+      axis: 'x', snapVal: dLeft ? N.x - D.w : N.x + N.w,
+    };
+  }
+  if (yOv <= 0 && xOv > 0){
+    const dTop = D.y < N.y;
+    const ya = dTop ? D.y+D.h : N.y+N.h;
+    const yb = dTop ? N.y     : D.y;
+    out.horizontal = {
+      gap: Math.max(ya,yb) - Math.min(ya,yb), yT: Math.min(ya,yb), yB: Math.max(ya,yb),
+      x1: Math.max(D.x,N.x), x2: Math.min(D.x+D.w, N.x+N.w),
+      axis: 'y', snapVal: dTop ? N.y - D.h : N.y + N.h,
+    };
+  }
+  return out;
+}
+
+function drawLabel(cx, cy, txt, color){
+  ctx.save(); ctx.font = 'bold 11px system-ui';
+  const w = ctx.measureText(txt).width + 12, h = 18;
+  let x = cx - w/2, y = cy - h/2;
+  x = Math.max(2, Math.min(W - w - 2, x)); y = Math.max(2, Math.min(H - h - 2, y));
+  ctx.fillStyle = '#1e1e1e'; ctx.globalAlpha = 0.92;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 4); ctx.fill();
+  ctx.globalAlpha = 1; ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 4); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  ctx.fillText(txt, x + w/2, y + h/2 + 0.5);
+  ctx.textAlign = 'left'; ctx.restore();
+}
+
+// AutoCAD-style joint glyph on the shared face. orient 'v' = vertical seam.
+function drawSeamGlyph(cx, cy, orient, ratioTxt){
+  const col = '#16a34a';
+  ctx.save(); ctx.translate(cx, cy);
+  // white halo so it reads over any fill/hatch
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI*2); ctx.fill();
+  // short perpendicular tick across the seam (the "joined" cue)
+  ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+  ctx.beginPath();
+  if (orient === 'v'){ ctx.moveTo(-6, 0); ctx.lineTo(6, 0); }
+  else               { ctx.moveTo(0, -6); ctx.lineTo(0, 6); }
+  ctx.stroke();
+  // diamond node
+  ctx.fillStyle = col; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(0,-6); ctx.lineTo(6,0); ctx.lineTo(0,6); ctx.lineTo(-6,0); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, 2, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  if (ratioTxt){
+    ctx.save(); ctx.font = 'bold 10px system-ui';
+    const w = ctx.measureText(ratioTxt).width + 8, tx = cx + 11, ty = cy - 17;
+    ctx.fillStyle = col; ctx.beginPath(); ctx.roundRect(tx, ty, w, 14, 3); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle'; ctx.fillText(ratioTxt, tx + 4, ty + 7.5);
+    ctx.restore();
+  }
+}
+
+function drawInterface(D, N){
+  const s = seamData(D, N);
+  const ratioTxt = ctrl.ratioTag() ? ratioOf(D, N) : '';
+
+  if (s.overlap){
+    const r = s.overlap;
+    ctx.save();
+    ctx.fillStyle = 'rgba(239,68,68,0.22)'; ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = hatchPattern('#ef4444', 0.5, 7, -1, false); ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1.5; ctx.setLineDash([4,3]);
+    ctx.strokeRect(r.x, r.y, r.w, r.h); ctx.setLineDash([]);
+    ctx.restore();
+    drawLabel(r.x + r.w/2, r.y + r.h/2, 'OVERLAP', '#ef4444');
+    return;
+  }
+
+  // Only signal a genuine abutment. A gap needs no marker — the grid shows it.
+  const v = s.vertical, hh = s.horizontal;
+  if (v && v.gap <= 1.5){
+    ctx.save(); ctx.strokeStyle = '#16a34a'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(v.xL, v.y1); ctx.lineTo(v.xL, v.y2); ctx.stroke(); ctx.restore();
+    drawSeamGlyph(v.xL, (v.y1 + v.y2) / 2, 'v', ratioTxt);
+  }
+  if (hh && hh.gap <= 1.5){
+    ctx.save(); ctx.strokeStyle = '#16a34a'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(hh.x1, hh.yT); ctx.lineTo(hh.x2, hh.yT); ctx.stroke(); ctx.restore();
+    drawSeamGlyph((hh.x1 + hh.x2) / 2, hh.yT, 'h', ratioTxt);
+  }
+}
+
+function applyMagnet(D, shiftHeld){
+  if (!ctrl.magnet() || shiftHeld) return;
+  let best = null;
+  for (const N of NEIGHBOURS){
+    const sd = seamData(D, N);
+    for (const seg of [sd.vertical, sd.horizontal]){
+      if (seg && seg.gap <= ctrl.snapTol() && (!best || seg.gap < best.gap))
+        best = { axis: seg.axis, snapVal: seg.snapVal, gap: seg.gap };
+    }
+  }
+  if (best) D[best.axis] = best.snapVal;
+}
+
+// ---- scene ----
+function drawFloorPlan(){
+  ctx.strokeStyle = '#9aa0a6'; ctx.lineWidth = 2;
+  ctx.strokeRect(60, 80, 700, 460);
+  ctx.strokeRect(540, 120, 240, 300);          // stair core
+  ctx.beginPath(); ctx.moveTo(540, 270); ctx.lineTo(780, 270); ctx.stroke();
+}
+function drawGrid(){
+  ctx.save(); ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 0.5;
+  for (let x=0; x<=W; x+=GRID){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for (let y=0; y<=H; y+=GRID){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+  ctx.restore();
+}
+function dimOutside(){
+  ctx.save(); ctx.fillStyle = 'rgba(60,60,60,0.22)'; ctx.fillRect(0,0,W,H);
+  ctx.globalCompositeOperation = 'destination-out';
+  [MESH_A, STAIR, MESH_B].forEach(m => { ctx.fillStyle='#000'; ctx.fillRect(m.x,m.y,m.w,m.h); });
+  ctx.restore();
+}
+
+let dragging = false;   // move mode
+let drawing  = false;   // draw mode: anchor placed, pulling opposite corner
+let anchor   = null;    // the pinned first corner while drawing
+
+function render(){
+  els('opacityVal').textContent = ctrl.opacity().toFixed(2);
+  els('spacingVal').textContent = ctrl.spacing();
+  els('snapTolVal').textContent = ctrl.snapTol();
+
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+  drawFloorPlan();
+  if (ctrl.showGrid()) drawGrid();
+  if (ctrl.dimOutside()) dimOutside();
+
+  fillMesh(MESH_A, false);
+  fillMesh(STAIR, false);
+  if (MESH_B.w > 0 && MESH_B.h > 0) fillMesh(MESH_B, dragging || drawing);
+
+  if (ctrl.ifaceOn() && MESH_B.w > 0 && MESH_B.h > 0)
+    NEIGHBOURS.forEach(N => drawInterface(MESH_B, N));
+
+  // anchor corner marker while drawing
+  if (drawing && anchor){
+    ctx.save(); ctx.fillStyle = '#22c55e'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(anchor.x, anchor.y, 4, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+  els('hint').innerHTML = ctrl.mode() === 'draw'
+    ? (drawing ? 'Pulling opposite corner — the glyph appears the instant an edge lands on a neighbour. Click to commit.'
+               : 'Click to drop the first corner of a new <b>MESH</b>, then pull the opposite corner toward a neighbour.')
+    : 'Drag the bright green <b>MESH</b> toward a neighbour to see the interface signal.';
+}
+
+// Mesh-priority corner snap → grid fallback (mirrors snapVertexWithMeshPriority).
+// Shift suppresses the magnet and goes straight to grid.
+function snapCorner(pt, shift){
+  let x = pt.x, y = pt.y, gotX = false, gotY = false;
+  if (ctrl.magnet() && !shift){
+    let bx=null,by=null,bdx=1e9,bdy=1e9;
+    for (const N of NEIGHBOURS){
+      for (const ex of [N.x, N.x+N.w]){ const d=Math.abs(ex-x); if (d<=ctrl.snapTol() && d<bdx){ bdx=d; bx=ex; } }
+      for (const ey of [N.y, N.y+N.h]){ const d=Math.abs(ey-y); if (d<=ctrl.snapTol() && d<bdy){ bdy=d; by=ey; } }
+    }
+    if (bx!=null){ x=bx; gotX=true; } if (by!=null){ y=by; gotY=true; }
+  }
+  if (!gotX) x = Math.round(x/GRID)*GRID;
+  if (!gotY) y = Math.round(y/GRID)*GRID;
+  return { x, y };
+}
+function setRect(a, b){ MESH_B.x = Math.min(a.x,b.x); MESH_B.y = Math.min(a.y,b.y); MESH_B.w = Math.abs(b.x-a.x); MESH_B.h = Math.abs(b.y-a.y); }
+
+const inside = (m, x, y) => x>=m.x && x<=m.x+m.w && y>=m.y && y<=m.y+m.h;
+let off = {x:0, y:0};
+
+cv.addEventListener('mousemove', e => {
+  const p = { x: e.offsetX, y: e.offsetY };
+  if (ctrl.mode() === 'draw'){
+    cv.style.cursor = 'crosshair';
+    if (drawing){ setRect(anchor, snapCorner(p, e.shiftKey)); render(); }
+    return;
+  }
+  // move mode
+  if (!dragging){ cv.style.cursor = inside(MESH_B, p.x, p.y) ? 'move' : 'default'; return; }
+  MESH_B.x = p.x - off.x; MESH_B.y = p.y - off.y;
+  applyMagnet(MESH_B, e.shiftKey);
+  render();
+});
+
+// Draw mode = click-anchor then click-commit (matches the app's two-click rect).
+cv.addEventListener('click', e => {
+  if (ctrl.mode() !== 'draw') return;
+  const p = snapCorner({ x: e.offsetX, y: e.offsetY }, e.shiftKey);
+  if (!drawing){ anchor = p; drawing = true; setRect(anchor, anchor); }
+  else { setRect(anchor, p); drawing = false; }
+  render();
+});
+
+// Move mode = press-drag-release on a placed mesh.
+cv.addEventListener('mousedown', e => {
+  if (ctrl.mode() !== 'move') return;
+  if (inside(MESH_B, e.offsetX, e.offsetY)){ dragging = true; off = { x: e.offsetX - MESH_B.x, y: e.offsetY - MESH_B.y }; render(); }
+});
+window.addEventListener('mouseup', () => { if (dragging){ dragging = false; render(); } });
+
+// Reset the draw state when switching modes so it doesn't get stuck mid-draw.
+document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener('change', () => { drawing = false; anchor = null; }));
+
+document.querySelectorAll('input').forEach(el => el.addEventListener('input', render));
+render();
+</script>
+</body>
+</html>

@@ -491,6 +491,19 @@ const [errorList, setErrorList] = useState(defaultErrorList)
             }}
           />
           <label htmlFor="selection">Selection</label>
+          {/* Set/reset scale — always available so a loaded project (or one that
+              never had a scale set) can be re-calibrated. Entering scale mode
+              clears stale scale points (see Canvas effect). */}
+          <input
+            type="radio"
+            id="scale"
+            checked={tool === "scale"}
+            onChange={() => {
+              setTool("scale")
+              setComment("")
+            }}
+          />
+          <label htmlFor="scale">Set scale</label>
           {/* non stair obstructions — not an EFS concept (a wall is drawn with the Wall tool) */}
           { currentMode !== 'efs' && <>
           <input type="radio" id="line"
