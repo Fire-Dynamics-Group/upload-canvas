@@ -46,6 +46,7 @@ const Toolbar = ({setShowModePopup}) => {
     const fsaSensorHeights = useStore((state) => state.fsaSensorHeights)
     const isSprinklered = useStore((state) => state.isSprinklered)
     const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
+    const canvasDimensions = useStore((state) => state.canvasDimensions)
     const doorLeakagesEnabled = useStore((state) => state.doorLeakagesEnabled)
     const doorLeakageConfig = useStore((state) => state.doorLeakageConfig)
     const doorOpenings = useStore((state) => state.doorOpenings)
@@ -499,7 +500,11 @@ const [errorList, setErrorList] = useState(defaultErrorList)
           <button
             type="button"
             onClick={() => { setTool("scale"); setComment("") }}
-            title="Calibrate the drawing scale from a known dimension"
+            title={pixelsPerMesh !== 1
+              ? `Each grid square = 0.1 m${canvasDimensions?.width
+                  ? ` · plan ≈ ${Math.round(canvasDimensions.width / (pixelsPerMesh * 10))} × ${Math.round(canvasDimensions.height / (pixelsPerMesh * 10))} m`
+                  : ""}. Click to re-calibrate.`
+              : "No scale set — click to calibrate from a known dimension on the plan"}
             className={`mx-1 px-2 py-1 rounded text-xs border ${
               tool === "scale"
                 ? "bg-cyan-600 text-white border-cyan-700"
@@ -508,7 +513,10 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                   : "bg-amber-100 text-amber-900 border-amber-400"
             }`}
           >
-            📏 {pixelsPerMesh !== 1 ? `Scale: 1 m = ${Math.round(pixelsPerMesh * 10)} px` : "Set scale ⚠"}
+            {/* Real-world terms, not pixels: the grid square is the unit the user
+                sees and can count against a known feature. Magnitude sanity-check
+                (plan size in m) lives in the tooltip. */}
+            📏 {pixelsPerMesh !== 1 ? "Scale ✓ · 1 square = 0.1 m" : "Set scale ⚠"}
           </button>
           {/* non stair obstructions — not an EFS concept (a wall is drawn with the Wall tool) */}
           { currentMode !== 'efs' && <>

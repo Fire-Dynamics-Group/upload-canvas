@@ -43,11 +43,14 @@ const elementConfig = {
 }
 
 // --- Mesh fill + interface-glyph helpers ---
-// Tuned against docs/mesh-fill-prototype.html. Mesh rects get a light colour
-// tint plus a faint diagonal hatch; stair meshes hatch the OPPOSITE diagonal so
-// they read as a distinct type. Where two mesh faces abut, a joint glyph + cell
-// -ratio tag marks the interface; a true 2D overlap gets a red warning band.
-const MESH_FILL_TINT_ALPHA = 0.06
+// Mesh rects get a light colour tint (green = mesh, blue = stair). The grid is
+// drawn over the top and the colour already distinguishes type, so the diagonal
+// hatch was dropped — hatch + grid together read as visual noise. The hatch code
+// is kept behind MESH_HATCH_ENABLED in case a mono/print mode wants it later.
+// Where two mesh faces abut, a joint glyph + cell-ratio tag marks the interface;
+// a true 2D overlap gets a red warning band.
+const MESH_FILL_TINT_ALPHA = 0.08
+const MESH_HATCH_ENABLED = false
 const MESH_HATCH_ALPHA = 0.26
 const MESH_HATCH_SPACING = 8
 const _meshHatchTileCache = {}
@@ -747,19 +750,21 @@ function Canvas({dimensions, isDevMode}) {
             let deltaX = p2.x - p1.x
             let deltaY = p2.y - p1.y
 
-            // Mesh rects get a light tint + faint hatch so meshed area reads as
-            // a region without hiding the floor plan beneath. Stair meshes hatch
-            // the opposite diagonal. Applies to committed AND in-progress rects.
+            // Light colour tint marks the meshed region; the grid + colour carry
+            // the rest, so no hatch by default (kept behind MESH_HATCH_ENABLED).
+            // Applies to committed AND in-progress rects.
             if (comments && comments.toLowerCase().includes('mesh')) {
                 const meshColor = elementConfig[comments] || 'green'
-                const dir = comments.toLowerCase().includes('stair') ? -1 : 1
                 context.save()
                 context.globalAlpha = MESH_FILL_TINT_ALPHA
                 context.fillStyle = meshColor
                 context.fillRect(p1.x, p1.y, deltaX, deltaY)
-                context.globalAlpha = 1
-                context.fillStyle = context.createPattern(meshHatchTile(meshColor, dir), 'repeat')
-                context.fillRect(p1.x, p1.y, deltaX, deltaY)
+                if (MESH_HATCH_ENABLED) {
+                    const dir = comments.toLowerCase().includes('stair') ? -1 : 1
+                    context.globalAlpha = 1
+                    context.fillStyle = context.createPattern(meshHatchTile(meshColor, dir), 'repeat')
+                    context.fillRect(p1.x, p1.y, deltaX, deltaY)
+                }
                 context.restore()
             }
 
