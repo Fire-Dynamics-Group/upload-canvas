@@ -43,12 +43,15 @@ const elementConfig = {
 }
 
 // --- Mesh fill + interface-glyph helpers ---
-// Mesh rects get a light colour tint (green = mesh, blue = stair). The grid is
-// drawn over the top and the colour already distinguishes type, so the diagonal
-// hatch was dropped — hatch + grid together read as visual noise. The hatch code
-// is kept behind MESH_HATCH_ENABLED in case a mono/print mode wants it later.
-// Where two mesh faces abut, a joint glyph + cell-ratio tag marks the interface;
-// a true 2D overlap gets a red warning band.
+// Emphasis is by CONTRAST: meshed regions stay at full plan brightness while the
+// non-meshed area is darkened (MESH_DIM_OUTSIDE_ALPHA), so mesh coverage reads as
+// the bright active zone. Type is carried by the coloured outline (green = mesh,
+// blue = stair) + interface glyphs. The older flat colour tint and diagonal hatch
+// are parked behind MESH_TINT_ENABLED / MESH_HATCH_ENABLED. Where two mesh faces
+// abut, a joint glyph + cell-ratio tag marks the interface; a true 2D overlap
+// gets a red warning band.
+const MESH_DIM_OUTSIDE_ALPHA = 0.22
+const MESH_TINT_ENABLED = false
 const MESH_FILL_TINT_ALPHA = 0.08
 const MESH_HATCH_ENABLED = false
 const MESH_HATCH_ALPHA = 0.26
@@ -744,16 +747,42 @@ function Canvas({dimensions, isDevMode}) {
         
         context.clearRect(0, 0, canvas.width, canvas.height)
 
+        // Dim the non-meshed area so meshed regions read as the bright active
+        // zone. Darken the whole canvas, then punch the mesh rects back to clear
+        // (destination-out) so the plan shows through bright there; everything
+        // else draws on top at full strength. Skipped until a mesh exists so an
+        // un-meshed plan isn't dimmed. Includes the in-progress mesh rect.
+        {
+            const dimBoxes = []
+            elements.forEach((el) => {
+                if (el.type === 'rect' && el.comments && el.comments.toLowerCase().includes('mesh')) {
+                    dimBoxes.push(meshBoxFromPoints(el.points, el.comments))
+                }
+            })
+            if (isDrawing && tool === 'rect' && currentRect.length === 1 && guideLine &&
+                comment && comment.toLowerCase().includes('mesh')) {
+                dimBoxes.push(meshBoxFromPoints([currentRect[0], guideLine], comment))
+            }
+            if (dimBoxes.length > 0) {
+                context.save()
+                context.fillStyle = `rgba(0,0,0,${MESH_DIM_OUTSIDE_ALPHA})`
+                context.fillRect(0, 0, canvas.width, canvas.height)
+                context.globalCompositeOperation = 'destination-out'
+                context.fillStyle = '#000'
+                dimBoxes.forEach((b) => context.fillRect(b.x, b.y, b.w, b.h))
+                context.restore()
+            }
+        }
+
         function drawRect(points, context, comments, dotted=false) {
             let p1 = points[0]
             let p2 = points[1]
             let deltaX = p2.x - p1.x
             let deltaY = p2.y - p1.y
 
-            // Light colour tint marks the meshed region; the grid + colour carry
-            // the rest, so no hatch by default (kept behind MESH_HATCH_ENABLED).
-            // Applies to committed AND in-progress rects.
-            if (comments && comments.toLowerCase().includes('mesh')) {
+            // Flat colour tint is OFF by default — emphasis is now by dimming the
+            // non-meshed area (see the dim-outside pass). Kept behind the flag.
+            if (MESH_TINT_ENABLED && comments && comments.toLowerCase().includes('mesh')) {
                 const meshColor = elementConfig[comments] || 'green'
                 context.save()
                 context.globalAlpha = MESH_FILL_TINT_ALPHA
@@ -1371,7 +1400,7 @@ function Canvas({dimensions, isDevMode}) {
             }
             for (let i = 0; i < meshBoxes.length; i++) {
                 for (let j = i + 1; j < meshBoxes.length; j++) {
-                    drawMeshInterface(context, meshBoxes[i], meshBoxes[j], true)
+                    drawMeshInterface(context, meshBoxes[i], meshBoxes[j], false)
                 }
             }
         }
