@@ -2204,9 +2204,15 @@ function Canvas({dimensions, isDevMode}) {
     <Gridlines pixelsPerMesh={pixelsPerMesh} dimensions={dimensions} hasScale={hasScale}/>
     {/* fdrobot should be on top of everything else */}
     {/* {menuOverlay} */}
-    {tool == 'scale' ? <FDRobot hintText={'Set scale: Draw two points where the distance between is known. Hold ctrl to activate ortho mode.'}/> : <>
-    </>
-    }
+    {/* Scale hint floats as a fixed overlay (not in flow) so it doesn't push the
+        in-flow PDF canvas down while the absolute draw canvas stays put — that
+        desynced the plan from its elements. pointer-events-none lets the user
+        still click the plan beneath the banner to drop scale points. */}
+    {tool == 'scale' && (
+      <div className="fixed top-2 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+        <FDRobot hintText={'Set scale: click two points a known distance apart, then enter the length. Hold Ctrl for ortho.'}/>
+      </div>
+    )}
     
       <canvas
       ref={canvasRef}

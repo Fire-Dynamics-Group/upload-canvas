@@ -491,19 +491,25 @@ const [errorList, setErrorList] = useState(defaultErrorList)
             }}
           />
           <label htmlFor="selection">Selection</label>
-          {/* Set/reset scale — always available so a loaded project (or one that
-              never had a scale set) can be re-calibrated. Entering scale mode
-              clears stale scale points (see Canvas effect). */}
-          <input
-            type="radio"
-            id="scale"
-            checked={tool === "scale"}
-            onChange={() => {
-              setTool("scale")
-              setComment("")
-            }}
-          />
-          <label htmlFor="scale">Set scale</label>
+          {/* Scale is a one-shot calibration COMMAND, not a sticky draw mode, so
+              it's a button (not a radio peer to the drawing tools) that doubles
+              as a live scale readout — Bluebeam-style. Amber when unset, shows
+              the current scale once set, cyan while calibrating. Click to
+              (re)calibrate; the Canvas effect clears stale scale points on entry. */}
+          <button
+            type="button"
+            onClick={() => { setTool("scale"); setComment("") }}
+            title="Calibrate the drawing scale from a known dimension"
+            className={`mx-1 px-2 py-1 rounded text-xs border ${
+              tool === "scale"
+                ? "bg-cyan-600 text-white border-cyan-700"
+                : pixelsPerMesh !== 1
+                  ? "bg-white text-gray-800 border-gray-400"
+                  : "bg-amber-100 text-amber-900 border-amber-400"
+            }`}
+          >
+            📏 {pixelsPerMesh !== 1 ? `Scale: 1 m = ${Math.round(pixelsPerMesh * 10)} px` : "Set scale ⚠"}
+          </button>
           {/* non stair obstructions — not an EFS concept (a wall is drawn with the Wall tool) */}
           { currentMode !== 'efs' && <>
           <input type="radio" id="line"
