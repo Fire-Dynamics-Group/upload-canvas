@@ -11,6 +11,8 @@ import ProjectDashboard from '../Components/ProjectDashboard'
 import useUserName from '../hooks/useUserName'
 import { isDbBacked } from '../store/persistenceModes'
 import { wouldClobberScale, shouldPromptForScale } from '../utils/scaleSafeguards'
+import { wouldWipeElements } from '../utils/persistenceSafeguards'
+import { describeSaveStatus } from '../utils/saveStatus'
 import { DEFAULT_RENDER_SCALE } from '../utils/scaleCalibration'
 import { savePdfToIndexedDB, loadPdfFromIndexedDB } from '../utils/pdfStorage'
 import {
@@ -166,6 +168,16 @@ export default function Home() {
         return
       }
 
+      // Safeguard: the save endpoint is a delete-then-recreate of the floor, so
+      // an empty-elements autosave deletes saved geometry. Skip a save that
+      // would wipe a floor previously saved with elements (a transient in-memory
+      // blank), comparing against the last successfully-saved payload.
+      const previousSaved = lastSavedRef.current ? JSON.parse(lastSavedRef.current) : null
+      if (wouldWipeElements(payload, previousSaved)) {
+        console.warn('Skipping autosave: would wipe saved geometry with an empty floor')
+        return
+      }
+
       const payloadStr = JSON.stringify(payload)
 
       // Skip if nothing changed
@@ -309,6 +321,9 @@ export default function Home() {
           setProjectName(name)
         } catch (err) {
           console.error('Failed to create project:', err)
+          // Surface it: without a projectId autosave never arms, so the user
+          // would otherwise draw a whole plan that is never persisted (issue #3).
+          setSaveStatus('create-failed')
           return
         }
       }
@@ -321,6 +336,7 @@ export default function Home() {
           console.log('PDF uploaded to S3')
         } catch (err) {
           console.error('Failed to upload PDF to S3:', err)
+          setSaveStatus('pdf-failed')
         }
       }
     }
@@ -395,6 +411,12 @@ export default function Home() {
       const floorDetail = await loadFloorDetail(projectId, floor.id)
       hydrateFromServer(project, floorDetail)
 
+      // Seed the last-saved baseline with what we just loaded, so the empty-save
+      // guard knows the DB already holds geometry. Without this, an empty-elements
+      // autosave fired before the first real save (previousSaved === null) could
+      // wipe the loaded floor.
+      lastSavedRef.current = JSON.stringify(useStore.getState().buildSavePayload())
+
       // Safeguard (issue #18): if the loaded floor has elements but no scale,
       // tell the user to set it — otherwise the grid silently won't show and FDS
       // export would be mis-scaled.
@@ -452,14 +474,15 @@ export default function Home() {
           </div>
         </div>
       )}
-      {/* Save status indicator */}
-      {saveStatus && (
-        <div className={`fixed top-2 left-1/2 -translate-x-1/2 z-50 text-xs px-3 py-1 rounded-full ${
-          saveStatus === "saving" ? "bg-yellow-600 text-white" :
-          saveStatus === "saved" ? "bg-green-600 text-white" :
-          "bg-red-600 text-white"
+      {/* Save status indicator — message/tone derived by describeSaveStatus so
+          previously-silent create/upload failures (issue #3) surface here. */}
+      {describeSaveStatus(saveStatus) && (
+        <div className={`fixed top-2 left-1/2 -translate-x-1/2 z-50 text-xs px-3 py-1 rounded-full text-white ${
+          describeSaveStatus(saveStatus).tone === "pending" ? "bg-yellow-600" :
+          describeSaveStatus(saveStatus).tone === "success" ? "bg-green-600" :
+          "bg-red-600"
         }`}>
-          {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved" : "Save failed"}
+          {describeSaveStatus(saveStatus).label}
         </div>
       )}
       {/* Scale-unset prompt (issue #18): non-blocking nudge to calibrate when a
