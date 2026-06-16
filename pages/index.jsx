@@ -331,7 +331,11 @@ export default function Home() {
       className="fill-current bg-gray-800"
     />
   </svg>
-  <div className="flex justify-center py-4 relative absolute z-30" style={{ zIndex: 100 }} >
+  {/* Pin the toolbar as a true fixed overlay anchored to the viewport bottom,
+      so it can't drift off-screen (the old `relative absolute` with no anchors
+      did). It carries its own solid background so the tools always sit on a bar.
+      flex-wrap lets it reflow rather than overflow on small/zoomed views. */}
+  <div className="fixed bottom-0 left-0 right-0 flex flex-wrap justify-center items-center gap-1 py-2 z-[100] bg-gray-800 text-white">
     <Toolbar setShowModePopup={setShowModePopup}/>
   </div>
 </div>
