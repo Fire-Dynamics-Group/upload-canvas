@@ -45,6 +45,15 @@ export const renameProject = async (projectId, name) => {
     return resp.json()
 }
 
+export const deleteProject = async (projectId) => {
+    const resp = await fetch(`${API_BASE}/projects/${projectId}`, {
+        method: 'DELETE',
+    })
+    if (!resp.ok) throw new Error(`Failed to delete project: ${resp.status}`)
+    // 204 No Content — nothing to parse
+    return true
+}
+
 export const saveProjectToServer = async (projectId, payload) => {
     const resp = await fetch(`${API_BASE}/projects/${projectId}/save`, {
         method: 'POST',

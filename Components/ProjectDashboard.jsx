@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { listProjects, renameProject } from './ApiCalls'
+import { listProjects, renameProject, deleteProject } from './ApiCalls'
+import { deleteConfirmationMatches } from '../utils/projectActions'
 import FDRobot from './FDRobot'
 import useStore from '../store/useStore'
 
@@ -30,6 +31,10 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
   const [renameValue, setRenameValue] = useState('')
   const [renameError, setRenameError] = useState(null)
   const [renameSaving, setRenameSaving] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null) // project being deleted
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleteError, setDeleteError] = useState(null)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     loadProjects()
@@ -100,6 +105,36 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
     } catch (err) {
       setRenameError(err.message)
       setRenameSaving(false)
+    }
+  }
+
+  const openDelete = (e, project) => {
+    e.stopPropagation()
+    setDeleteTarget(project)
+    setDeleteConfirmText('')
+    setDeleteError(null)
+  }
+
+  const closeDelete = () => {
+    setDeleteTarget(null)
+    setDeleteConfirmText('')
+    setDeleteError(null)
+    setDeleting(false)
+  }
+
+  const canDelete = !!deleteTarget && deleteConfirmationMatches(deleteConfirmText, deleteTarget.name)
+
+  const handleDelete = async () => {
+    if (!deleteTarget || !canDelete) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await deleteProject(deleteTarget.id)
+      setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id))
+      closeDelete()
+    } catch (err) {
+      setDeleteError(err.message)
+      setDeleting(false)
     }
   }
 
@@ -236,15 +271,26 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
                     No preview
                   </div>
                 )}
-                <button
-                  type="button"
-                  onClick={(e) => openRename(e, project)}
-                  title="Rename project"
-                  aria-label="Rename project"
-                  className="absolute top-2 right-2 p-1.5 rounded-md bg-gray-900 bg-opacity-70 hover:bg-opacity-100 text-gray-300 hover:text-white"
-                >
-                  ✏️
-                </button>
+                <div className="absolute top-2 right-2 flex gap-1">
+                  <button
+                    type="button"
+                    onClick={(e) => openRename(e, project)}
+                    title="Rename project"
+                    aria-label="Rename project"
+                    className="p-1.5 rounded-md bg-gray-900 bg-opacity-70 hover:bg-opacity-100 text-gray-300 hover:text-white"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => openDelete(e, project)}
+                    title="Delete project"
+                    aria-label="Delete project"
+                    className="p-1.5 rounded-md bg-gray-900 bg-opacity-70 hover:bg-opacity-100 text-gray-300 hover:text-red-400"
+                  >
+                    🗑️
+                  </button>
+                </div>
                 <div className="p-4">
                   <h3 className="font-medium text-white truncate">{project.name}</h3>
                   <p className="text-sm text-gray-400 mt-1">
@@ -296,6 +342,54 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
                 className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg disabled:opacity-50"
               >
                 {renameSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Project Modal — GitHub-style: type the name to confirm */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4 border border-red-700">
+            <h2 className="text-lg font-medium mb-2 text-red-400">Delete project</h2>
+            <p className="text-sm text-gray-300 mb-4">
+              This permanently deletes <span className="font-semibold text-white">{deleteTarget.name}</span> and
+              all its floors, elements and uploaded plans. This cannot be undone.
+            </p>
+            <label className="block text-sm text-gray-400 mb-2">
+              Type <span className="font-mono text-white">{deleteTarget.name}</span> to confirm:
+            </label>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder={deleteTarget.name}
+              className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 mb-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+              autoFocus
+              disabled={deleting}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && canDelete) handleDelete()
+                if (e.key === 'Escape') closeDelete()
+              }}
+            />
+            {deleteError && (
+              <p className="text-sm text-red-400 mb-2">{deleteError}</p>
+            )}
+            <div className="flex justify-end gap-3 mt-2">
+              <button
+                onClick={closeDelete}
+                disabled={deleting}
+                className="px-4 py-2 text-gray-400 hover:text-white disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={!canDelete || deleting}
+                className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {deleting ? 'Deleting...' : 'Delete this project'}
               </button>
             </div>
           </div>
