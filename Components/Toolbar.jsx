@@ -23,6 +23,12 @@ const Toolbar = ({setShowModePopup}) => {
     const currentMode = useStore((state) => state.currentMode)
     const tool = useStore((state) => state.tool)
     const setTool = useStore((state) => state.setTool)
+    const undo = useStore((state) => state.undo)
+    const redo = useStore((state) => state.redo)
+    // Subscribe to the stack lengths (not the canUndo/canRedo selectors) so the
+    // buttons re-render and enable/disable as the history changes.
+    const canUndo = useStore((state) => state.elementsHistory.length > 0)
+    const canRedo = useStore((state) => state.elementsFuture.length > 0)
     const comment = useStore((state) => state.comment)
     const setComment = useStore((state) => state.setComment)
     const setConvertedPoints = useStore((state) => state.setConvertedPoints)
@@ -468,6 +474,26 @@ const [errorList, setErrorList] = useState(defaultErrorList)
             type="button"
             >
             Change Mode
+          </button>
+          <button
+            onClick={undo}
+            disabled={!canUndo}
+            title="Undo (Ctrl+Z)"
+            aria-label="Undo"
+            className="text-white bg-gray-600 hover:bg-gray-500 font-medium rounded-lg text-sm px-4 py-0.1 mr-2 mb-2 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none"
+            type="button"
+            >
+            ↩ Undo
+          </button>
+          <button
+            onClick={redo}
+            disabled={!canRedo}
+            title="Redo (Ctrl+Shift+Z)"
+            aria-label="Redo"
+            className="text-white bg-gray-600 hover:bg-gray-500 font-medium rounded-lg text-sm px-4 py-0.1 mr-2 mb-2 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none"
+            type="button"
+            >
+            ↪ Redo
           </button>
         </div>
 

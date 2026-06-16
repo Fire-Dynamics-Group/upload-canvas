@@ -260,6 +260,8 @@ function Canvas({dimensions, isDevMode}) {
     const addElement = useStore((state) => state.addElement)
     const removeElement = useStore((state) => state.removeElement)
     const changeElement = useStore((state) => state.changeElement)
+    const undo = useStore((state) => state.undo)
+    const redo = useStore((state) => state.redo)
     const comment = useStore((state) => state.comment)
     const setComment = useStore((state) => state.setComment)
     const currentMode = useStore((state) => state.currentMode)
@@ -370,7 +372,32 @@ function Canvas({dimensions, isDevMode}) {
     useEffect(() => {
 
 
-        const handleKeyPress = ({key}) => {
+        const handleKeyPress = (e) => {
+            const { key } = e
+            // Undo / redo. Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y
+            // redoes. While a polyline is in progress, Ctrl+Z drops the last
+            // placed vertex (like a pen tool) instead of undoing a committed
+            // element; once the in-progress poly is empty it falls through to the
+            // committed-element history.
+            const mod = e.ctrlKey || e.metaKey
+            if (mod && (key === 'z' || key === 'Z')) {
+                e.preventDefault()
+                if (e.shiftKey) {
+                    redo()
+                } else if (currentPoly.length > 0) {
+                    const next = currentPoly.slice(0, -1)
+                    setCurrentPoly(next)
+                    if (next.length === 0) setIsDrawing(false)
+                } else {
+                    undo()
+                }
+                return
+            }
+            if (mod && (key === 'y' || key === 'Y')) {
+                e.preventDefault()
+                redo()
+                return
+            }
             // have arrow keys for controlling element location
             if (key == 'ArrowUp') {
                 event.preventDefault();
@@ -443,7 +470,7 @@ function Canvas({dimensions, isDevMode}) {
             window.removeEventListener("keydown", handleKeyPress)
             window.removeEventListener("keyup", handleCtrlRelease)
         }
-    }, [elements, currentPoly, tool, setTool, comment, addElement, selectedElement, currentId, removeElement, returnElementObject, setSelectedElement])
+    }, [elements, currentPoly, tool, setTool, comment, addElement, selectedElement, currentId, removeElement, returnElementObject, setSelectedElement, undo, redo])
 
     // LATER: move to own component -> sends back null or position object
     useEffect(() => {
