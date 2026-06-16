@@ -503,9 +503,13 @@ export default function Home() {
             </>
 
               }
+        {/* The PDF canvas stays mounted (renderPdf draws to it before
+            setSelectedFile flips, so the ref must exist), but is hidden whenever
+            no project is open — otherwise the previous project's PDF lingers
+            behind the dashboard and the user has to scroll past it. */}
         <canvas
         ref={pdfCanvasRef}
-        className='z-1'
+        className={selectedFile ? 'z-1' : 'hidden'}
         />
       </div>
     </>
