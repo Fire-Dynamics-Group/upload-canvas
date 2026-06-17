@@ -131,7 +131,7 @@ export default function Scene3D({ fdsCode }) {
             } else {
                 const mat = new THREE.MeshStandardMaterial({
                     color: it.color,
-                    transparent: it.opacity < 1 || it.overlay,
+                    transparent: it.opacity < 1 || Boolean(it.overlay),
                     opacity: it.opacity,
                     depthWrite: it.opacity >= 1 && !it.overlay, // transparent walls don't fight each other
                     depthTest: !it.overlay,                     // overlays (door leaks) draw on top
@@ -215,7 +215,9 @@ export default function Scene3D({ fdsCode }) {
             place(center, Math.max(...size, 1.5) * 2.2)
         }
         apiRef.current = { frameAll, topDown, frameFire }
-        frameAll()
+        // Default to top-down so the 3D directly overlays the 2D plan
+        // (north-up, east-right). "Frame" gives the iso 3/4 when you want depth.
+        topDown()
 
         // --- Corner orientation gizmo (axes triad mirroring the camera) ---
         const gizmoScene = new THREE.Scene()
