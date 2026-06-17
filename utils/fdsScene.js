@@ -15,12 +15,17 @@
 const DEFAULTS = {
     obst: [200, 200, 205],   // light grey — generic wall
     fire: [255, 87, 34],     // orange — fire source
+    door: [150, 95, 45],     // wood — door leaf (fills the opening HOLE)
+    doorLeak: [255, 213, 79], // amber highlight — leakage/vent gap on a door
     vent: [3, 169, 244],     // blue — interior vent
     domainVent: [120, 130, 150],
-    hole: [239, 83, 80],     // red — subtractive hole (door/damper)
+    hole: [239, 83, 80],     // red — subtractive hole (generic opening / damper)
     device: [0, 230, 118],   // green — fallback device marker
     mesh: [120, 130, 150],   // muted — domain wireframe
 }
+
+// A door's opening (HOLE) and its leakage gaps (VENT) are both ID'd with 'door'.
+const isDoorLike = (id) => /\bdoor\b/i.test(normId(id))
 
 // Colour devices by what they measure, so a sensor cloud reads at a glance.
 const QUANTITY_COLORS = {
@@ -63,6 +68,31 @@ function xbToBox(xb, { minThickness = 0.02 } = {}) {
 
 const rgbToHex = (rgb) => (rgb[0] << 16) | (rgb[1] << 8) | rgb[2]
 
+// Which FDS IDs are worth a floating label in 3D, and how to prettify them.
+// The door geometry is emitted with machine IDs (HOLE 'HoleStair_door_side',
+// dampers, etc.) — the friendly door names live on &CTRL logic, not geometry.
+// So we derive a readable label from the geometry ID: split on underscores,
+// keep the door/damper/aov/extract/inlet ones, drop the noise (leakage vents,
+// ramps, mesh vents, 'side'/'hole'/stray digits).
+const NAME_INCLUDE = /\b(door|damper|aov|extract|inlet)\b/i
+const NAME_EXCLUDE = /\b(leak|ramp|vent)\b|mesh/i
+const normId = (id) => (id || '').replace(/_/g, ' ').replace(/\s+/g, ' ').trim()
+
+function isNamed(id) {
+    const n = normId(id)
+    return !!n && NAME_INCLUDE.test(n) && !NAME_EXCLUDE.test(n)
+}
+
+// 'HoleStair_door_side' -> 'Stair Door'; 'East Lobby Natural Damper' kept as-is.
+function prettyLabel(id) {
+    const n = normId(id)
+        .replace(/\b(hole|side)\b/gi, '')
+        .replace(/\b\d+\b/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+    return n.replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
 // Build the primitive list. Each item:
 //   { category, center:[x,y,z], size:[x,y,z], color (hex), opacity, wireframe,
 //     baseOpacity, quantity?, label }
@@ -91,7 +121,7 @@ export function buildFdsScene(parsed, opts = {}) {
             items.push({
                 category: 'fire', center, size,
                 color: rgbToHex(DEFAULTS.fire), opacity: 1, baseOpacity: 1, wireframe: false,
-                emissive: true, label: obst.id || 'Fire',
+                emissive: true, label: 'Fire', named: true,
             })
             return
         }
@@ -101,30 +131,54 @@ export function buildFdsScene(parsed, opts = {}) {
             category: 'obst', center, size,
             color: rgbToHex(obst.color || DEFAULTS.obst),
             opacity: baseOpacity, baseOpacity, wireframe: false,
-            label: obst.id || obst.surfId || 'OBST',
+            label: obst.id || obst.surfId || 'OBST', named: isNamed(obst.id),
         })
     })
 
-    // Vents: interior vents are thin coloured slabs; mesh-boundary (domain)
-    // vents go in their own category so the panel can hide them by default.
+    // Vents. Mesh-boundary (domain) vents get their own hidden-by-default
+    // category. Door leakage/bottom vents become a bright "door leak" highlight
+    // overlaid on the door. Everything else is an interior vent slab.
     parsed.vents.forEach((vent) => {
         const { center, size } = xbToBox(vent.xb)
-        const domain = vent.isDomainVent
+        if (vent.isDomainVent) {
+            items.push({
+                category: 'domainVent', center, size,
+                color: rgbToHex(DEFAULTS.domainVent), opacity: 0.18, baseOpacity: 0.18, wireframe: false,
+                label: vent.id || 'VENT', named: false,
+            })
+            return
+        }
+        if (isDoorLike(vent.id)) {
+            items.push({
+                category: 'doorLeak', center, size,
+                color: rgbToHex(DEFAULTS.doorLeak), opacity: 0.95, baseOpacity: 0.95, wireframe: false,
+                emissive: true, overlay: true, label: 'leak', named: false,
+            })
+            return
+        }
         items.push({
-            category: domain ? 'domainVent' : 'vent', center, size,
-            color: rgbToHex(domain ? DEFAULTS.domainVent : ventColor(vent)),
-            opacity: domain ? 0.18 : 0.55, baseOpacity: domain ? 0.18 : 0.55, wireframe: false,
-            label: vent.id || vent.surfId || 'VENT',
+            category: 'vent', center, size,
+            color: rgbToHex(ventColor(vent)), opacity: 0.55, baseOpacity: 0.55, wireframe: false,
+            label: vent.id || vent.surfId || 'VENT', named: isNamed(vent.id),
         })
     })
 
-    // Holes: translucent red wireframe (subtractive — doors/dampers).
+    // Holes. A door opening (HOLE) is rendered as a wooden door leaf filling it;
+    // other holes (dampers, generic openings) stay red wireframe.
     parsed.holes.forEach((hole) => {
         const { center, size } = xbToBox(hole.xb)
+        if (isDoorLike(hole.id)) {
+            items.push({
+                category: 'door', center, size,
+                color: rgbToHex(DEFAULTS.door), opacity: 0.9, baseOpacity: 0.9, wireframe: false,
+                label: prettyLabel(hole.id), named: true,
+            })
+            return
+        }
         items.push({
             category: 'hole', center, size,
             color: rgbToHex(hole.color || DEFAULTS.hole), opacity: 0.4, baseOpacity: 0.4, wireframe: true,
-            label: 'HOLE',
+            label: isNamed(hole.id) ? prettyLabel(hole.id) : 'HOLE', named: isNamed(hole.id),
         })
     })
 

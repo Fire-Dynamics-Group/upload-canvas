@@ -13,15 +13,40 @@ import { buildFdsScene } from '../utils/fdsScene'
 // FDS is Z-up; three.js is Y-up. We map FDS (x, y, z) -> three (x, z, -y).
 const toThree = (x, y, z) => [x, z, -y]
 
-const CATEGORY_ORDER = ['mesh', 'obst', 'fire', 'vent', 'domainVent', 'hole', 'device']
+const CATEGORY_ORDER = ['mesh', 'obst', 'fire', 'door', 'doorLeak', 'vent', 'domainVent', 'hole', 'device']
 const CATEGORY_LABEL = {
-    mesh: 'Meshes', obst: 'Obstructions', fire: 'Fire', vent: 'Vents',
-    domainVent: 'Domain vents', hole: 'Holes', device: 'Devices',
+    mesh: 'Meshes', obst: 'Obstructions', fire: 'Fire', door: 'Doors', doorLeak: 'Door leaks',
+    vent: 'Vents', domainVent: 'Domain vents', hole: 'Holes', device: 'Devices',
 }
 // Domain (mesh-boundary) vents box the model in, so they're off by default.
 const defaultVisible = (cat) => cat !== 'domainVent'
 
 const hexCss = (n) => '#' + n.toString(16).padStart(6, '0')
+
+// Billboarded text label drawn to a canvas texture. depthTest:false so labels
+// read through transparent walls (a verification view wants names visible).
+function makeLabelSprite(text) {
+    const font = 44, padX = 10, padY = 6
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    ctx.font = `${font}px sans-serif`
+    const tw = Math.ceil(ctx.measureText(text).width)
+    canvas.width = tw + padX * 2
+    canvas.height = font + padY * 2
+    ctx.font = `${font}px sans-serif`           // resizing the canvas resets the context
+    ctx.fillStyle = 'rgba(17,19,24,0.82)'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.fillStyle = '#ffffff'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(text, padX, canvas.height / 2)
+    const tex = new THREE.CanvasTexture(canvas)
+    tex.minFilter = THREE.LinearFilter
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false }))
+    const s = 0.011 // world metres per canvas px
+    sprite.scale.set(canvas.width * s, canvas.height * s, 1)
+    sprite.renderOrder = 999
+    return sprite
+}
 
 export default function Scene3D({ fdsCode }) {
     const mountRef = useRef(null)
@@ -45,11 +70,14 @@ export default function Scene3D({ fdsCode }) {
     }
     const [layers, setLayers] = useState(() => initLayers(built))
     const [xray, setXray] = useState(false)
+    const [showLabels, setShowLabels] = useState(true)
     const layersRef = useRef(layers)
     layersRef.current = layers
+    const showLabelsRef = useRef(showLabels)
+    showLabelsRef.current = showLabels
 
     // Reset panel state when the geometry changes.
-    useEffect(() => { setLayers(initLayers(built)); setXray(false) }, [built])
+    useEffect(() => { setLayers(initLayers(built)); setXray(false); setShowLabels(true) }, [built])
 
     // --- Build the three.js scene (rebuilds when geometry changes) ---
     useEffect(() => {
@@ -103,9 +131,10 @@ export default function Scene3D({ fdsCode }) {
             } else {
                 const mat = new THREE.MeshStandardMaterial({
                     color: it.color,
-                    transparent: it.opacity < 1,
+                    transparent: it.opacity < 1 || it.overlay,
                     opacity: it.opacity,
-                    depthWrite: it.opacity >= 1,      // transparent walls don't fight each other
+                    depthWrite: it.opacity >= 1 && !it.overlay, // transparent walls don't fight each other
+                    depthTest: !it.overlay,                     // overlays (door leaks) draw on top
                     roughness: 0.85, metalness: 0.0,
                     emissive: it.emissive ? it.color : 0x000000,
                     emissiveIntensity: it.emissive ? 0.4 : 0,
@@ -113,6 +142,7 @@ export default function Scene3D({ fdsCode }) {
                 if (it.category === 'obst') obstMats.push({ mat, baseOpacity: it.baseOpacity })
                 const mesh = new THREE.Mesh(boxGeo, mat)
                 mesh.position.set(tx, ty, tz); mesh.scale.set(sx, sy, sz)
+                if (it.overlay) mesh.renderOrder = 6
                 group.add(mesh)
                 const outline = new THREE.LineSegments(
                     edgeGeo.clone(),
@@ -140,6 +170,20 @@ export default function Scene3D({ fdsCode }) {
                 }
             }
         }
+        // Floating labels for the human-named elements (doors, fire, dampers,
+        // extracts, inlets) — carried straight from the FDS `ID`s.
+        const labelGroup = new THREE.Group()
+        labelGroup.visible = showLabelsRef.current
+        scene.add(labelGroup)
+        for (const it of items) {
+            if (!it.named || !it.label) continue
+            const [lx, ly, lz] = toThree(it.center[0], it.center[1], it.center[2])
+            const sprite = makeLabelSprite(it.label)
+            sprite.position.set(lx, ly + it.size[2] / 2 + 0.25, lz)
+            labelGroup.add(sprite)
+        }
+        groups.labels = labelGroup
+
         groupsRef.current = groups
         obstMatsRef.current = obstMats
 
@@ -222,7 +266,8 @@ export default function Scene3D({ fdsCode }) {
             controls.dispose()
             scene.traverse((o) => {
                 if (o.geometry) o.geometry.dispose()
-                if (o.material) Array.isArray(o.material) ? o.material.forEach((m) => m.dispose()) : o.material.dispose()
+                const mats = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []
+                mats.forEach((m) => { if (m.map) m.map.dispose(); m.dispose() })
             })
             boxGeo.dispose(); edgeGeo.dispose()
             renderer.dispose()
@@ -239,6 +284,12 @@ export default function Scene3D({ fdsCode }) {
             if (k.startsWith('q:')) groups[k].visible = layers[k] !== false
         })
     }, [layers])
+
+    // Toggle the floating-label group.
+    useEffect(() => {
+        const g = groupsRef.current.labels
+        if (g) g.visible = showLabels
+    }, [showLabels])
 
     // X-ray walls: drop obstruction opacity without losing the FDS value.
     useEffect(() => {
@@ -272,10 +323,16 @@ export default function Scene3D({ fdsCode }) {
             <div className="absolute top-3 right-3 w-52 text-[12px] text-gray-200 bg-gray-900/85 rounded-md border border-gray-700 overflow-hidden">
                 <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between">
                     <span className="font-medium">Layers</span>
-                    <label className="flex items-center gap-1 cursor-pointer text-gray-300">
-                        <input type="checkbox" checked={xray} onChange={() => setXray((v) => !v)} />
-                        X-ray
-                    </label>
+                    <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-1 cursor-pointer text-gray-300">
+                            <input type="checkbox" checked={showLabels} onChange={() => setShowLabels((v) => !v)} />
+                            Labels
+                        </label>
+                        <label className="flex items-center gap-1 cursor-pointer text-gray-300">
+                            <input type="checkbox" checked={xray} onChange={() => setXray((v) => !v)} />
+                            X-ray
+                        </label>
+                    </div>
                 </div>
                 <div className="px-2 py-2 space-y-1 max-h-[50vh] overflow-auto">
                     {categoriesPresent.map((cat) => (
@@ -287,16 +344,20 @@ export default function Scene3D({ fdsCode }) {
                             </label>
                             {cat === 'device' && built.quantities.length > 1 && (
                                 <div className="pl-7 space-y-0.5">
-                                    {built.quantities.map((q) => (
-                                        <label key={q} className="flex items-center gap-2 cursor-pointer text-gray-400 text-[11px]">
-                                            <input
-                                                type="checkbox"
-                                                checked={layers[`q:${q}`] !== false}
-                                                onChange={() => toggle(`q:${q}`)}
-                                            />
-                                            <span>{q.toLowerCase()}</span>
-                                        </label>
-                                    ))}
+                                    {built.quantities.map((q) => {
+                                        const di = built.items.find((i) => i.category === 'device' && (i.quantity || 'OTHER').toUpperCase() === q)
+                                        return (
+                                            <label key={q} className="flex items-center gap-2 cursor-pointer text-gray-400 text-[11px]">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={layers[`q:${q}`] !== false}
+                                                    onChange={() => toggle(`q:${q}`)}
+                                                />
+                                                <span className="inline-block w-2 h-2 rounded-sm" style={{ background: di ? hexCss(di.color) : '#888' }} />
+                                                <span>{q.toLowerCase()}</span>
+                                            </label>
+                                        )
+                                    })}
                                 </div>
                             )}
                         </div>

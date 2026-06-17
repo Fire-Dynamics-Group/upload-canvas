@@ -19,8 +19,9 @@ export default function ViewTabs() {
     const elements = useStore((s) => s.elements)
     const stale = Boolean(fdsCode) && fdsElementSignature(elements) !== fdsGenSig
 
+    // Sits above the bottom toolbar (bottom-20) so it never covers undo / change-mode.
     return (
-        <div className="fixed bottom-2 left-2 z-[110] flex rounded-lg overflow-hidden shadow-lg border border-gray-700">
+        <div className="fixed bottom-20 left-2 z-[110] flex rounded-lg overflow-hidden shadow-lg border border-gray-700">
             {TABS.map((t) => (
                 <button
                     key={t.id}

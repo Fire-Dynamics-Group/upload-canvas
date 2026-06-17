@@ -89,7 +89,11 @@ export function parseFdsGeometry(fdsText) {
                     // source is emitted as OBST ID='Fire', SURF_IDS='Fire',...
                     const surfIds = readString(body, 'SURF_IDS')
                     const t = readNumbers(body, 'TRANSPARENCY', 1)
-                    const isFire = /fire/i.test(id || '') || /fire/i.test(surfIds || '') || /fire/i.test(surfId || '')
+                    // The fire is OBST with the 'Fire' SURF on top (SURF_IDS='Fire')
+                    // or ID exactly 'Fire'. Match exactly — NOT a substring — so
+                    // walls like 'Fire Floor Walls' aren't mistaken for the fire.
+                    const lc = (s) => (s || '').trim().toLowerCase()
+                    const isFire = lc(id) === 'fire' || lc(surfIds) === 'fire' || lc(surfId) === 'fire'
                     result.obsts.push({
                         xb,
                         color: readColor(body),
@@ -126,7 +130,7 @@ export function parseFdsGeometry(fdsText) {
             }
             case 'HOLE': {
                 const xb = readNumbers(body, 'XB', 6)
-                if (xb) result.holes.push({ xb, color: readColor(body) })
+                if (xb) result.holes.push({ xb, color: readColor(body), id: readString(body, 'ID') })
                 break
             }
             case 'DEVC': {

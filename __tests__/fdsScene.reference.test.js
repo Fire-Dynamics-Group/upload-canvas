@@ -31,11 +31,19 @@ describe.each(REFERENCES)('reference FDS pipeline: %s', (file) => {
         expect(fire[0].opacity).toBe(1) // fire is always solid/visible
     })
 
-    it('separates mesh-boundary (domain) vents from interior vents', () => {
+    it('separates domain vents, interior vents and door leaks', () => {
         const domain = scene.items.filter((i) => i.category === 'domainVent')
         const interior = scene.items.filter((i) => i.category === 'vent')
+        const doorLeak = scene.items.filter((i) => i.category === 'doorLeak')
         expect(domain.length).toBeGreaterThan(0)              // these models have mesh vents
-        expect(domain.length + interior.length).toBe(parsed.vents.length)
+        // every parsed VENT lands in exactly one of the three buckets
+        expect(domain.length + interior.length + doorLeak.length).toBe(parsed.vents.length)
+    })
+
+    it('renders door openings as wooden doors with readable labels', () => {
+        const doors = scene.items.filter((i) => i.category === 'door')
+        expect(doors.length).toBeGreaterThan(0)
+        expect(doors.every((d) => d.named && d.label && !/_/.test(d.label))).toBe(true)
     })
 
     it('honours wall TRANSPARENCY (some obstructions are see-through)', () => {
@@ -48,6 +56,15 @@ describe.each(REFERENCES)('reference FDS pipeline: %s', (file) => {
             expect(scene.quantities.length).toBeGreaterThan(0)
             expect(scene.quantities).toContain('TEMPERATURE')
         }
+    })
+
+    it('carries named door/element labels straight from FDS IDs', () => {
+        const named = scene.items.filter((i) => i.named)
+        expect(named.length).toBeGreaterThan(0)
+        // these models have named doors (e.g. 'Apartment Door', 'East Stair Door')
+        expect(named.some((i) => /door/i.test(i.label))).toBe(true)
+        // noisy machine-named bits are not labelled
+        expect(named.every((i) => !/_RAMP|bottom (leak|vent)|Mesh Vent/i.test(i.label))).toBe(true)
     })
 
     it('frames within the mesh domain (finite, sane bounds)', () => {
