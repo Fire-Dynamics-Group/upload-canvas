@@ -26,6 +26,32 @@ describe('SidePanel', () => {
         expect(onClose).toHaveBeenCalledTimes(1)
     })
 
+    it('closes on Escape', () => {
+        const onClose = vi.fn()
+        render(<SidePanel title="T" onClose={onClose}>body</SidePanel>)
+        fireEvent.keyDown(document, { key: 'Escape' })
+        expect(onClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('closes when clicking outside the panel', () => {
+        const onClose = vi.fn()
+        render(
+            <div>
+                <button>outside thing</button>
+                <SidePanel title="T" onClose={onClose}>body</SidePanel>
+            </div>
+        )
+        fireEvent.pointerDown(screen.getByText('outside thing'))
+        expect(onClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('does NOT close when clicking inside the panel', () => {
+        const onClose = vi.fn()
+        render(<SidePanel title="T" onClose={onClose}><p>inside content</p></SidePanel>)
+        fireEvent.pointerDown(screen.getByText('inside content'))
+        expect(onClose).not.toHaveBeenCalled()
+    })
+
     it('is a non-modal complementary region (does not block the canvas like a dialog)', () => {
         render(<SidePanel title="T" onClose={() => {}}>body</SidePanel>)
         expect(screen.getByRole('complementary')).toBeTruthy()
