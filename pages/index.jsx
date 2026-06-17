@@ -11,6 +11,7 @@ import ProjectDashboard from '../Components/ProjectDashboard'
 import useUserName from '../hooks/useUserName'
 import { isDbBacked } from '../store/persistenceModes'
 import { savePdfToIndexedDB, loadPdfFromIndexedDB } from '../utils/pdfStorage'
+import { computeFramingScroll, elementPixelBox } from '../utils/viewportFraming'
 import {
   createProject,
   saveProjectToServer,
@@ -111,6 +112,12 @@ export default function Home() {
 
   const elements = useStore((state) => state.elements)
   const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
+  // Highlighted element ids — set while configuring a specific element in the
+  // docked inputs panel. Used to auto-frame that element beside the panel.
+  const highlightedDoorId = useStore((state) => state.highlightedDoorId)
+  const highlightedExtractId = useStore((state) => state.highlightedExtractId)
+  const highlightedInletId = useStore((state) => state.highlightedInletId)
+  const highlightedLandingId = useStore((state) => state.highlightedLandingId)
   const setPdfData = useStore((state) => state.setPdfData)
   const pdfData = useStore((state) => state.pdfData)
   const toggleIsPdfGreyscale = useStore((state) => state.toggleIsPdfGreyscale)
@@ -220,6 +227,24 @@ export default function Home() {
     })
     return () => unsub()
   }, [triggerAutoSave])
+
+  // Auto-frame the element being configured. When a door/extract/inlet/landing
+  // is highlighted from the docked inputs panel, scroll so it sits in the clear
+  // area beside the panel instead of behind it. window.scrollTo today; this is
+  // the seam the planned canvas pan/zoom will replace (see computeFramingScroll).
+  useEffect(() => {
+    const id = highlightedDoorId ?? highlightedExtractId ?? highlightedInletId ?? highlightedLandingId
+    if (id == null || typeof window === 'undefined') return
+    const box = elementPixelBox(elements.find((el) => el.id === id))
+    if (!box) return
+    const panelWidth = Math.min(384, window.innerWidth * 0.9) // SidePanel w-96 / max-w-90vw
+    const { left, top } = computeFramingScroll(
+      box,
+      { width: window.innerWidth, height: window.innerHeight },
+      { side: 'right', width: panelWidth },
+    )
+    window.scrollTo({ left, top, behavior: 'smooth' })
+  }, [highlightedDoorId, highlightedExtractId, highlightedInletId, highlightedLandingId, elements])
 
   console.log("elements log: ", elements)
 
@@ -348,7 +373,11 @@ export default function Home() {
       className="fill-current bg-gray-800"
     />
   </svg>
-  <div className="flex justify-center py-4 relative absolute z-30" style={{ zIndex: 100 }} >
+  {/* Pin the toolbar as a true fixed overlay anchored to the viewport bottom,
+      so it can't drift off-screen (the old `relative absolute` with no anchors
+      did). It carries its own solid background so the tools always sit on a bar.
+      flex-wrap lets it reflow rather than overflow on small/zoomed views. */}
+  <div className="fixed bottom-0 left-0 right-0 flex flex-wrap justify-center items-center gap-1 py-2 z-[100] bg-gray-800 text-white">
     <Toolbar setShowModePopup={setShowModePopup}/>
   </div>
 </div>
@@ -481,7 +510,9 @@ export default function Home() {
           )}
         </div>
       )}
-      {tool != "scale" ? (<>
+      {/* Toolbar belongs to the canvas — only show it when a plan is open, not
+          on the dashboard / upload / loading screens (it's a fixed overlay now). */}
+      {selectedFile && tool != "scale" ? (<>
       {menuOverlay}
       </>
       )

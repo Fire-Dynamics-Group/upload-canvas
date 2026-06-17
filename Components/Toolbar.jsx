@@ -461,7 +461,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
     return (
     <>
       {/* perhaps popup can't be located in menu bar? */}
-      {showFDSInputsPopup && <FDSInputsPopup handleUserInput={handleFDSInput}/>}
+      {showFDSInputsPopup && <FDSInputsPopup handleUserInput={handleFDSInput} onClose={() => setShowFDSInputsPopup(false)}/>}
       {showErrorPopup && <ErrorPopup setShowPopup={setShowErrorPopup} errorList={errorList}/>}
       {showTimeEqPopup && <TimeEquivalenceInputPopup mockData={null}/>}
       {showFireInputsPopup && <FireInputsPopup handleUserInput={handleFireInput}/>}

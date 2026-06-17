@@ -4,6 +4,8 @@ import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { computeCenterlinePoints, findCorridorObstruction, computeStairSensorPositions } from '../utils/corridorCenterline'
 import { findEnclosedRegions } from '../utils/findEnclosedRegions'
 import { runFsaPathfinding } from '../utils/fsaPathfinding'
+// @ts-ignore — JS component, no type declarations
+import SidePanel from './SidePanel'
 
 /**
  * Text input that uses local state while typing, only syncing to store on blur.
@@ -29,7 +31,7 @@ const BlurInput = ({ value, onChange, className = '', ...props }) => {
 }
 
 // @ts-ignore
-const FDSInputsPopup = ({handleUserInput}) => {
+const FDSInputsPopup = ({handleUserInput, onClose}) => {
     const fireFloorZ = useStore((state) => state.fireFloorZ)
     const setFireFloorZ = useStore((state) => state.setFireFloorZ)
     const fireFloorNumber = useStore((state) => state.fireFloorNumber)
@@ -1577,37 +1579,38 @@ const FDSInputsPopup = ({handleUserInput}) => {
     }
 
     return (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-            <div ref={scrollRef} className="bg-white p-4 rounded-lg shadow-lg text-black max-h-[80vh] overflow-y-auto min-w-[400px]">
-                <div className="mb-4 border-b flex flex-wrap">
-                    <TabButton tab="general" label="General" />
-                    <TabButton tab="fire" label="Fire" />
-                    <TabButton tab="scenario" label="Scenario" />
-                    <TabButton tab="doors" label="Doors" />
-                    <TabButton tab="devices" label="Devices" />
-                    <TabButton tab="stairs" label="Stairs" />
-                    <TabButton tab="extracts" label="Extracts" />
-                    <TabButton tab="zones" label="Zones" />
-                    <TabButton tab="display" label="Display" />
-                </div>
-
-                <div className="mt-4">
-                    {activeTab === 'general' && <GeneralInputs />}
-                    {activeTab === 'fire' && <FireInputs />}
-                    {activeTab === 'scenario' && <ScenarioInputs />}
-                    {activeTab === 'doors' && <DoorInputs />}
-                    {activeTab === 'devices' && <DeviceInputs />}
-                    {activeTab === 'stairs' && <StairInputs />}
-                    {activeTab === 'extracts' && <><ExtractInputs /><InletInputs /></>}
-                    {activeTab === 'zones' && zoneContent}
-                    {activeTab === 'display' && <DisplayInputs />}
-                </div>
-
-                <button className="px-4 py-2 bg-blue-500 text-white rounded-lg mt-4" onClick={handleClick}>
-                    Enter
-                </button>
+        // Docked, non-modal panel (no full-screen dim) so the canvas stays
+        // visible while configuring inputs — the door/element being edited can
+        // sit beside the panel instead of behind a centered modal.
+        <SidePanel title="FDS Inputs" side="right" onClose={onClose} contentRef={scrollRef}>
+            <div className="mb-4 border-b flex flex-wrap">
+                <TabButton tab="general" label="General" />
+                <TabButton tab="fire" label="Fire" />
+                <TabButton tab="scenario" label="Scenario" />
+                <TabButton tab="doors" label="Doors" />
+                <TabButton tab="devices" label="Devices" />
+                <TabButton tab="stairs" label="Stairs" />
+                <TabButton tab="extracts" label="Extracts" />
+                <TabButton tab="zones" label="Zones" />
+                <TabButton tab="display" label="Display" />
             </div>
-        </div>
+
+            <div className="mt-4">
+                {activeTab === 'general' && <GeneralInputs />}
+                {activeTab === 'fire' && <FireInputs />}
+                {activeTab === 'scenario' && <ScenarioInputs />}
+                {activeTab === 'doors' && <DoorInputs />}
+                {activeTab === 'devices' && <DeviceInputs />}
+                {activeTab === 'stairs' && <StairInputs />}
+                {activeTab === 'extracts' && <><ExtractInputs /><InletInputs /></>}
+                {activeTab === 'zones' && zoneContent}
+                {activeTab === 'display' && <DisplayInputs />}
+            </div>
+
+            <button className="px-4 py-2 bg-blue-500 text-white rounded-lg mt-4" onClick={handleClick}>
+                Enter
+            </button>
+        </SidePanel>
     );
 };
 
