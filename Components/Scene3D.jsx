@@ -10,8 +10,12 @@ import { buildFdsScene } from '../utils/fdsScene'
 // a re-extrusion of the 2D drawing, so a mismatch here is a real divergence
 // between intent and generated input.
 //
-// FDS is Z-up; three.js is Y-up. We map FDS (x, y, z) -> three (x, z, -y).
-const toThree = (x, y, z) => [x, z, -y]
+// FDS is Z-up; three.js is Y-up. We map FDS (x, y, z) -> three (x, z, y).
+// Note the +y (not -y): the backend's pixel->metre conversion maps screen-down
+// to FDS +Y, so FDS north is the *bottom* of the 2D plan the user drew. Using
+// +y here orients the 3D the same way as that 2D canvas (fire drawn bottom of
+// plan shows at the bottom here), which is the reference the user verifies against.
+const toThree = (x, y, z) => [x, z, y]
 
 const CATEGORY_ORDER = ['mesh', 'obst', 'fire', 'door', 'doorLeak', 'vent', 'domainVent', 'hole', 'device']
 const CATEGORY_LABEL = {
