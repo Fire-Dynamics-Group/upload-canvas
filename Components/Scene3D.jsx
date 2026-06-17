@@ -202,10 +202,14 @@ export default function Scene3D({ fdsCode }) {
         const topDown = () => {
             const c = bounds ? bounds.center : [0, 0, 0]
             const [cx, cy, cz] = toThree(c[0], c[1], c[2])
-            const d = bounds ? Math.max(...bounds.size, 4) * 1.3 : 12
+            const d = bounds ? Math.max(...bounds.size, 4) : 12
+            // Keep WORLD up (0,1,0) so OrbitControls can still orbit — a custom
+            // up + straight-down view hits the gimbal pole and locks rotation.
+            // Steep bird's-eye from the south reads as a plan (north up, east
+            // right) without being dead-vertical.
+            camera.up.set(0, 1, 0)
             controls.target.set(cx, cy, cz)
-            camera.up.set(0, 0, -1)               // look straight down, north up
-            camera.position.set(cx, cy + d, cz + 0.001)
+            camera.position.set(cx, cy + d * 1.7, cz + d * 0.55)
             camera.lookAt(controls.target); controls.update()
         }
         const frameFire = () => {
