@@ -10,11 +10,13 @@ const SAMPLE = `
 
 &MESH IJK=50,40,30 XB=0.0,5.0,0.0,4.0,0.0,3.0 /
 
-&OBST XB=1.0,2.0, 1.0,3.0, 0.0,3.0 SURF_ID='WALL' COLOR='GRAY' /  a wall
+&OBST ID='Stair Wall', XB=1.0,2.0, 1.0,3.0, 0.0,3.0 SURF_ID='WALL' COLOR='GRAY' TRANSPARENCY=0.247 /  a wall
 &OBST XB=3.0,3.2,0.0,4.0,0.0,3.0,
       RGB=12,34,56, SURF_ID='INERT' /
+&OBST ID='Fire', XB=2.4,2.6,1.9,2.1,0.0,0.2, SURF_IDS='Fire','Plasterboard','Plasterboard'/
 
-&VENT XB=0.0,0.0,0.0,4.0,0.0,3.0, SURF_ID='OPEN' /
+&VENT ID='Mesh Vent: MESH [ZMAX]', SURF_ID='OPEN', XB=0.0,5.0,0.0,4.0,3.0,3.0 /
+&VENT ID='Door leakage', XB=0.0,0.0,0.0,4.0,0.0,3.0, SURF_ID='INERT' /
 &HOLE XB=1.4,1.6,1.0,1.2,0.0,2.1 /
 
 &DEVC ID='temp_1', XYZ=2.5,2.0,2.0, QUANTITY='TEMPERATURE' /
@@ -33,7 +35,7 @@ describe('parseFdsGeometry', () => {
     })
 
     it('parses obstructions including multi-line and trailing text', () => {
-        expect(parsed.obsts).toHaveLength(2)
+        expect(parsed.obsts).toHaveLength(3)
         expect(parsed.obsts[0].xb).toEqual([1, 2, 1, 3, 0, 3])
         expect(parsed.obsts[0].surfId).toBe('WALL')
         expect(parsed.obsts[1].xb).toEqual([3, 3.2, 0, 4, 0, 3])
@@ -44,9 +46,25 @@ describe('parseFdsGeometry', () => {
         expect(parsed.obsts[1].color).toEqual([12, 34, 56])
     })
 
-    it('parses vents and holes', () => {
-        expect(parsed.vents).toHaveLength(1)
-        expect(parsed.vents[0].xb).toEqual([0, 0, 0, 4, 0, 3])
+    it('reads TRANSPARENCY and ID on obstructions', () => {
+        expect(parsed.obsts[0].id).toBe('Stair Wall')
+        expect(parsed.obsts[0].transparency).toBeCloseTo(0.247)
+        expect(parsed.obsts[1].transparency).toBeNull()
+    })
+
+    it('flags the fire OBST via ID/SURF_IDS (plural)', () => {
+        const fire = parsed.obsts.filter((o) => o.isFire)
+        expect(fire).toHaveLength(1)
+        expect(fire[0].id).toBe('Fire')
+        expect(fire[0].surfIds).toBe('Fire')
+        // non-fire walls are not flagged
+        expect(parsed.obsts[0].isFire).toBe(false)
+    })
+
+    it('parses vents and flags mesh-boundary (domain) vents', () => {
+        expect(parsed.vents).toHaveLength(2)
+        expect(parsed.vents[0].isDomainVent).toBe(true)   // 'Mesh Vent: …'
+        expect(parsed.vents[1].isDomainVent).toBe(false)  // door leakage vent
         expect(parsed.holes).toHaveLength(1)
         expect(parsed.holes[0].xb).toEqual([1.4, 1.6, 1, 1.2, 0, 2.1])
     })
@@ -95,7 +113,7 @@ describe('computeBounds', () => {
 describe('summarizeFds', () => {
     it('counts each geometry kind', () => {
         expect(summarizeFds(parseFdsGeometry(SAMPLE))).toEqual({
-            meshes: 1, obsts: 2, vents: 1, holes: 1, devices: 2,
+            meshes: 1, obsts: 3, vents: 2, holes: 1, devices: 2,
         })
     })
 })

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { saveAs } from 'file-saver'
 import useStore from '../store/useStore'
 import { fdsElementSignature } from '../utils/fdsSignature'
@@ -16,6 +16,15 @@ export default function FdsCodeView() {
     const [error, setError] = useState(null)
 
     const stale = Boolean(fdsCode) && fdsElementSignature(elements) !== fdsGenSig
+
+    // Auto-refresh on tab-open when stale (Q4) — see ThreeView for rationale.
+    const didAuto = useRef(false)
+    useEffect(() => {
+        if (didAuto.current) return
+        didAuto.current = true
+        if (useStore.getState().isFdsStale()) regenerate()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
 
     const regenerate = async () => {
         setBusy(true)

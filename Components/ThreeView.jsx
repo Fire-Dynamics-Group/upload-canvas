@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import useStore from '../store/useStore'
 import { fdsElementSignature } from '../utils/fdsSignature'
@@ -26,6 +26,18 @@ export default function ThreeView() {
     const [error, setError] = useState(null)
 
     const stale = Boolean(fdsCode) && fdsElementSignature(elements) !== fdsGenSig
+
+    // Auto-refresh on tab-open when the FDS is stale (Q4): switching to 3D should
+    // show current geometry without regenerating during 2D drawing. Empty (never
+    // generated) is left to the explicit button so we don't surprise-call the
+    // backend. Guarded so React StrictMode's double-mount fires it once.
+    const didAuto = useRef(false)
+    useEffect(() => {
+        if (didAuto.current) return
+        didAuto.current = true
+        if (useStore.getState().isFdsStale()) regenerate()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
 
     const regenerate = async () => {
         setBusy(true)

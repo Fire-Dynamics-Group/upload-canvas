@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { parseFdsGeometry, summarizeFds } from '../utils/fdsParse'
@@ -13,15 +13,49 @@ import { buildFdsScene } from '../utils/fdsScene'
 // FDS is Z-up; three.js is Y-up. We map FDS (x, y, z) -> three (x, z, -y).
 const toThree = (x, y, z) => [x, z, -y]
 
+const CATEGORY_ORDER = ['mesh', 'obst', 'fire', 'vent', 'domainVent', 'hole', 'device']
+const CATEGORY_LABEL = {
+    mesh: 'Meshes', obst: 'Obstructions', fire: 'Fire', vent: 'Vents',
+    domainVent: 'Domain vents', hole: 'Holes', device: 'Devices',
+}
+// Domain (mesh-boundary) vents box the model in, so they're off by default.
+const defaultVisible = (cat) => cat !== 'domainVent'
+
+const hexCss = (n) => '#' + n.toString(16).padStart(6, '0')
+
 export default function Scene3D({ fdsCode }) {
     const mountRef = useRef(null)
+    const apiRef = useRef(null)       // { frameAll, topDown, frameFire }
+    const groupsRef = useRef({})      // category -> THREE.Group (+ q:<quantity> subgroups)
+    const obstMatsRef = useRef([])    // [{ mat, baseOpacity }]
 
+    // Parse once per fdsCode; drives both the render and the panel.
+    const built = useMemo(() => buildFdsScene(parseFdsGeometry(fdsCode)), [fdsCode])
+    const counts = useMemo(() => summarizeFds(parseFdsGeometry(fdsCode)), [fdsCode])
+    const categoriesPresent = useMemo(
+        () => CATEGORY_ORDER.filter((c) => built.items.some((it) => it.category === c)),
+        [built],
+    )
+
+    const initLayers = (b) => {
+        const l = {}
+        CATEGORY_ORDER.forEach((c) => { l[c] = defaultVisible(c) })
+        b.quantities.forEach((q) => { l[`q:${q}`] = true })
+        return l
+    }
+    const [layers, setLayers] = useState(() => initLayers(built))
+    const [xray, setXray] = useState(false)
+    const layersRef = useRef(layers)
+    layersRef.current = layers
+
+    // Reset panel state when the geometry changes.
+    useEffect(() => { setLayers(initLayers(built)); setXray(false) }, [built])
+
+    // --- Build the three.js scene (rebuilds when geometry changes) ---
     useEffect(() => {
         const mount = mountRef.current
         if (!mount) return
-
-        const parsed = parseFdsGeometry(fdsCode)
-        const { items, bounds } = buildFdsScene(parsed)
+        const { items, bounds } = built
 
         const width = mount.clientWidth || 800
         const height = mount.clientHeight || 600
@@ -33,89 +67,151 @@ export default function Scene3D({ fdsCode }) {
         const renderer = new THREE.WebGLRenderer({ antialias: true })
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
         renderer.setSize(width, height)
+        renderer.autoClear = true
         mount.appendChild(renderer.domElement)
 
         const controls = new OrbitControls(camera, renderer.domElement)
         controls.enableDamping = true
 
-        // Lights
-        scene.add(new THREE.AmbientLight(0xffffff, 0.75))
-        const dir = new THREE.DirectionalLight(0xffffff, 0.9)
+        scene.add(new THREE.AmbientLight(0xffffff, 0.8))
+        const dir = new THREE.DirectionalLight(0xffffff, 0.85)
         dir.position.set(1, 2, 1.5)
         scene.add(dir)
 
-        // Ground grid + axes sized to the domain (fallback to a default span).
         const span = bounds ? Math.max(bounds.size[0], bounds.size[1], 4) : 10
         const grid = new THREE.GridHelper(Math.ceil(span * 1.5), Math.ceil(span * 1.5), 0x55607a, 0x3a4154)
         if (bounds) grid.position.set(bounds.center[0], 0, -bounds.center[1])
         scene.add(grid)
-        scene.add(new THREE.AxesHelper(Math.max(1, span * 0.15)))
 
-        // Build meshes
+        // Category groups (+ per-quantity subgroups under the device group).
+        const groups = {}
+        CATEGORY_ORDER.forEach((c) => { groups[c] = new THREE.Group(); scene.add(groups[c]) })
+        const obstMats = []
         const boxGeo = new THREE.BoxGeometry(1, 1, 1)
-        for (const it of items) {
-            const [tx, ty, tz] = toThree(it.center[0], it.center[1], it.center[2])
-            // FDS size (sx,sy,sz) -> three (sx, sz, sy)
-            const sx = it.size[0], sy = it.size[2], sz = it.size[1]
+        const edgeGeo = new THREE.EdgesGeometry(boxGeo)
 
+        const addBoxTo = (group, it) => {
+            const [tx, ty, tz] = toThree(it.center[0], it.center[1], it.center[2])
+            const sx = it.size[0], sy = it.size[2], sz = it.size[1] // FDS (x,y,z) -> three (x,z,y-as-z)
             if (it.wireframe) {
-                const edges = new THREE.EdgesGeometry(boxGeo)
                 const line = new THREE.LineSegments(
-                    edges,
+                    edgeGeo.clone(),
                     new THREE.LineBasicMaterial({ color: it.color, transparent: it.opacity < 1, opacity: it.opacity }),
                 )
-                line.position.set(tx, ty, tz)
-                line.scale.set(sx, sy, sz)
-                scene.add(line)
+                line.position.set(tx, ty, tz); line.scale.set(sx, sy, sz)
+                group.add(line)
             } else {
                 const mat = new THREE.MeshStandardMaterial({
                     color: it.color,
                     transparent: it.opacity < 1,
                     opacity: it.opacity,
-                    roughness: 0.85,
-                    metalness: 0.0,
+                    depthWrite: it.opacity >= 1,      // transparent walls don't fight each other
+                    roughness: 0.85, metalness: 0.0,
+                    emissive: it.emissive ? it.color : 0x000000,
+                    emissiveIntensity: it.emissive ? 0.4 : 0,
                 })
+                if (it.category === 'obst') obstMats.push({ mat, baseOpacity: it.baseOpacity })
                 const mesh = new THREE.Mesh(boxGeo, mat)
-                mesh.position.set(tx, ty, tz)
-                mesh.scale.set(sx, sy, sz)
-                scene.add(mesh)
-                // Crisp outline so abutting boxes stay readable.
+                mesh.position.set(tx, ty, tz); mesh.scale.set(sx, sy, sz)
+                group.add(mesh)
                 const outline = new THREE.LineSegments(
-                    new THREE.EdgesGeometry(boxGeo),
-                    new THREE.LineBasicMaterial({ color: 0x1c2026, transparent: true, opacity: 0.35 }),
+                    edgeGeo.clone(),
+                    new THREE.LineBasicMaterial({ color: 0x1c2026, transparent: true, opacity: 0.3 }),
                 )
-                outline.position.set(tx, ty, tz)
-                outline.scale.set(sx, sy, sz)
-                scene.add(outline)
+                outline.position.set(tx, ty, tz); outline.scale.set(sx, sy, sz)
+                group.add(outline)
             }
         }
 
-        // Frame the camera on the domain.
-        if (bounds) {
-            const [cx, cy, cz] = toThree(bounds.center[0], bounds.center[1], bounds.center[2])
-            const radius = Math.max(...bounds.size, 2)
-            controls.target.set(cx, cy, cz)
-            camera.position.set(cx + radius * 1.2, cz + radius * 1.1, -cy + radius * 1.4)
-        } else {
-            camera.position.set(8, 8, 8)
+        const fireBox = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] }
+        for (const it of items) {
+            if (it.category === 'device') {
+                const q = (it.quantity || 'OTHER').toUpperCase()
+                const key = `q:${q}`
+                if (!groups[key]) { groups[key] = new THREE.Group(); groups.device.add(groups[key]) }
+                addBoxTo(groups[key], it)
+            } else {
+                addBoxTo(groups[it.category], it)
+                if (it.category === 'fire') {
+                    for (let a = 0; a < 3; a++) {
+                        fireBox.min[a] = Math.min(fireBox.min[a], it.center[a] - it.size[a] / 2)
+                        fireBox.max[a] = Math.max(fireBox.max[a], it.center[a] + it.size[a] / 2)
+                    }
+                }
+            }
         }
-        camera.lookAt(controls.target)
-        controls.update()
+        groupsRef.current = groups
+        obstMatsRef.current = obstMats
+
+        // --- Camera framing helpers ---
+        const place = (targetFds, distance, isoDir = [1.2, 1.1, 1.4]) => {
+            const [cx, cy, cz] = toThree(targetFds[0], targetFds[1], targetFds[2])
+            controls.target.set(cx, cy, cz)
+            camera.position.set(cx + distance * isoDir[0], cy + distance * isoDir[1], cz + distance * isoDir[2])
+            camera.up.set(0, 1, 0)
+            camera.lookAt(controls.target); controls.update()
+        }
+        const frameAll = () => {
+            if (!bounds) { place([0, 0, 0], 8); return }
+            place(bounds.center, Math.max(...bounds.size, 2) * 1.1)
+        }
+        const topDown = () => {
+            const c = bounds ? bounds.center : [0, 0, 0]
+            const [cx, cy, cz] = toThree(c[0], c[1], c[2])
+            const d = bounds ? Math.max(...bounds.size, 4) * 1.3 : 12
+            controls.target.set(cx, cy, cz)
+            camera.up.set(0, 0, -1)               // look straight down, north up
+            camera.position.set(cx, cy + d, cz + 0.001)
+            camera.lookAt(controls.target); controls.update()
+        }
+        const frameFire = () => {
+            if (fireBox.min[0] === Infinity) { frameAll(); return }
+            const center = [0, 1, 2].map((a) => (fireBox.min[a] + fireBox.max[a]) / 2)
+            const size = [0, 1, 2].map((a) => fireBox.max[a] - fireBox.min[a])
+            place(center, Math.max(...size, 1.5) * 2.2)
+        }
+        apiRef.current = { frameAll, topDown, frameFire }
+        frameAll()
+
+        // --- Corner orientation gizmo (axes triad mirroring the camera) ---
+        const gizmoScene = new THREE.Scene()
+        const gizmoCam = new THREE.OrthographicCamera(-1.6, 1.6, 1.6, -1.6, 0.1, 10)
+        gizmoCam.position.set(0, 0, 4)
+        const gizmoAxes = new THREE.AxesHelper(1.2)
+        gizmoScene.add(gizmoAxes)
+
+        // Apply current panel state to the freshly built groups.
+        const syncVisibility = () => {
+            const L = layersRef.current
+            CATEGORY_ORDER.forEach((c) => { if (groups[c]) groups[c].visible = L[c] })
+            Object.keys(groups).forEach((k) => {
+                if (k.startsWith('q:')) groups[k].visible = L[k] !== false
+            })
+        }
+        syncVisibility()
 
         let raf
         const animate = () => {
             raf = requestAnimationFrame(animate)
             controls.update()
+            renderer.setViewport(0, 0, mount.clientWidth, mount.clientHeight)
             renderer.render(scene, camera)
+            // gizmo overlay, bottom-left
+            const gs = 96
+            renderer.clearDepth()
+            renderer.setScissorTest(true)
+            renderer.setScissor(10, 10, gs, gs)
+            renderer.setViewport(10, 10, gs, gs)
+            gizmoAxes.quaternion.copy(camera.quaternion).invert()
+            renderer.render(gizmoScene, gizmoCam)
+            renderer.setScissorTest(false)
         }
         animate()
 
         const onResize = () => {
             const w = mount.clientWidth, h = mount.clientHeight
             if (!w || !h) return
-            camera.aspect = w / h
-            camera.updateProjectionMatrix()
-            renderer.setSize(w, h)
+            camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h)
         }
         const ro = new ResizeObserver(onResize)
         ro.observe(mount)
@@ -128,31 +224,102 @@ export default function Scene3D({ fdsCode }) {
                 if (o.geometry) o.geometry.dispose()
                 if (o.material) Array.isArray(o.material) ? o.material.forEach((m) => m.dispose()) : o.material.dispose()
             })
-            boxGeo.dispose()
+            boxGeo.dispose(); edgeGeo.dispose()
             renderer.dispose()
             if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement)
+            apiRef.current = null; groupsRef.current = {}; obstMatsRef.current = []
         }
-    }, [fdsCode])
+    }, [built])
 
-    const counts = summarizeFds(parseFdsGeometry(fdsCode))
+    // Sync group visibility when the panel changes.
+    useEffect(() => {
+        const groups = groupsRef.current
+        CATEGORY_ORDER.forEach((c) => { if (groups[c]) groups[c].visible = layers[c] })
+        Object.keys(groups).forEach((k) => {
+            if (k.startsWith('q:')) groups[k].visible = layers[k] !== false
+        })
+    }, [layers])
+
+    // X-ray walls: drop obstruction opacity without losing the FDS value.
+    useEffect(() => {
+        obstMatsRef.current.forEach(({ mat, baseOpacity }) => {
+            const op = xray ? Math.min(baseOpacity, 0.1) : baseOpacity
+            mat.opacity = op
+            mat.transparent = op < 1
+            mat.depthWrite = op >= 1
+            mat.needsUpdate = true
+        })
+    }, [xray])
+
     const total = counts.meshes + counts.obsts + counts.vents + counts.holes + counts.devices
+    const toggle = (key) => setLayers((l) => ({ ...l, [key]: !l[key] }))
+    const swatch = (cat) => {
+        const it = built.items.find((i) => i.category === cat)
+        return it ? hexCss(it.color) : '#888'
+    }
 
     return (
         <div className="absolute inset-0">
             <div ref={mountRef} className="w-full h-full" />
+
             {total === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <p className="text-gray-300 text-sm">No geometry found in the FDS file.</p>
                 </div>
             )}
-            <div className="absolute top-3 left-3 text-[11px] text-gray-200 bg-black/40 rounded px-2 py-1 leading-5 pointer-events-none">
-                <div><span className="text-gray-400">meshes</span> {counts.meshes}</div>
-                <div><span className="text-gray-400">obstructions</span> {counts.obsts}</div>
-                <div><span className="text-gray-400">vents</span> {counts.vents} · <span className="text-gray-400">holes</span> {counts.holes}</div>
-                <div><span className="text-gray-400">devices</span> {counts.devices}</div>
+
+            {/* Visibility panel (PyroSim-style) */}
+            <div className="absolute top-3 right-3 w-52 text-[12px] text-gray-200 bg-gray-900/85 rounded-md border border-gray-700 overflow-hidden">
+                <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between">
+                    <span className="font-medium">Layers</span>
+                    <label className="flex items-center gap-1 cursor-pointer text-gray-300">
+                        <input type="checkbox" checked={xray} onChange={() => setXray((v) => !v)} />
+                        X-ray
+                    </label>
+                </div>
+                <div className="px-2 py-2 space-y-1 max-h-[50vh] overflow-auto">
+                    {categoriesPresent.map((cat) => (
+                        <div key={cat}>
+                            <label className="flex items-center gap-2 cursor-pointer px-1 py-0.5 rounded hover:bg-white/5">
+                                <input type="checkbox" checked={!!layers[cat]} onChange={() => toggle(cat)} />
+                                <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: swatch(cat) }} />
+                                <span>{CATEGORY_LABEL[cat]}</span>
+                            </label>
+                            {cat === 'device' && built.quantities.length > 1 && (
+                                <div className="pl-7 space-y-0.5">
+                                    {built.quantities.map((q) => (
+                                        <label key={q} className="flex items-center gap-2 cursor-pointer text-gray-400 text-[11px]">
+                                            <input
+                                                type="checkbox"
+                                                checked={layers[`q:${q}`] !== false}
+                                                onChange={() => toggle(`q:${q}`)}
+                                            />
+                                            <span>{q.toLowerCase()}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
             </div>
-            <div className="absolute bottom-3 left-3 text-[11px] text-gray-400 pointer-events-none">
-                drag to orbit · scroll to zoom · right-drag to pan
+
+            {/* Camera presets */}
+            <div className="absolute top-3 left-3 flex gap-1">
+                {[['Frame', 'frameAll'], ['Top', 'topDown'], ['Fire', 'frameFire']].map(([label, fn]) => (
+                    <button
+                        key={fn}
+                        type="button"
+                        onClick={() => apiRef.current?.[fn]?.()}
+                        className="text-[11px] px-2 py-1 rounded bg-gray-800/80 hover:bg-gray-700 text-gray-200 border border-gray-700"
+                    >
+                        {label}
+                    </button>
+                ))}
+            </div>
+
+            <div className="absolute bottom-3 right-3 text-[11px] text-gray-400 pointer-events-none">
+                drag orbit · scroll zoom · right-drag pan
             </div>
         </div>
     )

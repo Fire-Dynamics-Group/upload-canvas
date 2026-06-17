@@ -82,7 +82,24 @@ export function parseFdsGeometry(fdsText) {
         switch (group) {
             case 'OBST': {
                 const xb = readNumbers(body, 'XB', 6)
-                if (xb) result.obsts.push({ xb, color: readColor(body), surfId: readString(body, 'SURF_ID') })
+                if (xb) {
+                    const id = readString(body, 'ID')
+                    const surfId = readString(body, 'SURF_ID')
+                    // SURF_IDS (plural) lists top/side/bottom surfaces; the fire
+                    // source is emitted as OBST ID='Fire', SURF_IDS='Fire',...
+                    const surfIds = readString(body, 'SURF_IDS')
+                    const t = readNumbers(body, 'TRANSPARENCY', 1)
+                    const isFire = /fire/i.test(id || '') || /fire/i.test(surfIds || '') || /fire/i.test(surfId || '')
+                    result.obsts.push({
+                        xb,
+                        color: readColor(body),
+                        surfId,
+                        surfIds,
+                        id,
+                        transparency: t ? t[0] : null,
+                        isFire,
+                    })
+                }
                 break
             }
             case 'MESH': {
@@ -92,7 +109,19 @@ export function parseFdsGeometry(fdsText) {
             }
             case 'VENT': {
                 const xb = readNumbers(body, 'XB', 6)
-                if (xb) result.vents.push({ xb, color: readColor(body), surfId: readString(body, 'SURF_ID') })
+                if (xb) {
+                    const id = readString(body, 'ID')
+                    // Mesh-boundary OPEN vents (ID='Mesh Vent: … [ZMAX]') sit on
+                    // the domain faces and box the model in; flagged so the view
+                    // can hide them by default.
+                    result.vents.push({
+                        xb,
+                        color: readColor(body),
+                        surfId: readString(body, 'SURF_ID'),
+                        id,
+                        isDomainVent: /mesh\s*vent/i.test(id || ''),
+                    })
+                }
                 break
             }
             case 'HOLE': {
