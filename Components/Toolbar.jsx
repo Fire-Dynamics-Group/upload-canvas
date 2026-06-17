@@ -6,6 +6,7 @@ import FDSInputsPopup from './FDSInputsPopup.tsx'
 import TimeEquivalenceInputPopup from './TimeEquivalenceInputPopup'
 import EfsPopup from './EfsPopup'
 import {sendFdsData} from './ApiCalls'
+import { generateFdsCode } from '@/utils/generateFds'
 import { computeAutoSprinklerPositions } from '@/utils/autoSprinklers'
 import { computeCenterlinePoints, findCorridorObstruction, computeStairSensorPositions } from '@/utils/corridorCenterline'
 import { runFsaPathfinding } from '@/utils/fsaPathfinding'
@@ -242,64 +243,11 @@ const [errorList, setErrorList] = useState(defaultErrorList)
       }
 
       function handleFDSClick() {
-        // Refresh elements (sensors should already be computed via Regen Sensors button)
-        const freshElements = useStore.getState().elements
-
-        // Inject auto-placed sprinklers as elements so backend uses frontend-computed positions
-        let elementsToSend = freshElements
-        const hasManualSprinklers = freshElements.some(el => el.comments === 'sprinkler')
-        if (isSprinklered && !hasManualSprinklers) {
-            const autoPositions = computeAutoSprinklerPositions(freshElements, pixelsPerMesh)
-            if (autoPositions.length > 0) {
-                const maxId = Math.max(0, ...freshElements.map(el => el.id || 0))
-                const sprinklerEls = autoPositions.map((pos, i) => ({
-                    id: maxId + 1 + i,
-                    type: 'point',
-                    comments: 'sprinkler',
-                    points: [{ x: pos.x, y: pos.y }]
-                }))
-                elementsToSend = [...freshElements, ...sprinklerEls]
-            }
-        }
-        sendFdsData(
-                    elementsToSend,
-                    Number(fireFloorZ),
-                    Number(wallHeight),
-                    Number(topStoreyHeight),
-                    Number(fireFloorNumber),
-                    Number(totalFloors),
-                    Number(stairRoofZ),
-                    0.2, // wall_thickness
-                    pixelsPerMesh * 10, // px_per_m — derived from scale calibration
-                    commonCorridorMode ? scenarioType : null,
-                    simEndTime,
-                    includeSensors,
-                    corridorSensorHeights,
-                    stairSensorHeights,
-                    fsaSensorHeights,
-                    isSprinklered,
-                    doorLeakagesEnabled,
-                    doorLeakageConfig,
-                    doorOpenings,
-                    doorRoles,
-                    landingRoles,
-                    landingUpSide,
-                    stairStyle,
-                    obstructionTransparency,
-                    aovMode,
-                    aovActivationTime,
-                    extractConfig,
-                    inletConfig,
-                    zoneConfig,
-                    fireHRR,
-                    fireDimension,
-                    fireHeightAboveFloor,
-                    fireBase,
-                    fireType,
-                    fireGrowthRate,
-                    fireCustomAlpha,
-                    sliceZHeight
-                    )
+        // Generate (downloads test.fds as before) and capture the returned text
+        // into the store so the 3D / FDS-code view tabs reflect it. All inputs
+        // are read off the store inside generateFdsCode — see utils/generateFds.js.
+        // (Sensors should already be computed via the Regen Sensors button.)
+        generateFdsCode({ download: true })
       }
 
       function handleFDSInput() {

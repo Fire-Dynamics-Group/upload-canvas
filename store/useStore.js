@@ -4,6 +4,7 @@ import {findOriginPixels, returnFinalCoordinates} from '../utils/pointManipulati
 import { clearPdfFromIndexedDB } from '../utils/pdfStorage'
 import { defaultDoorTimings } from './defaultDoorTimings'
 import { isDbBacked, MODE_PERSISTENCE, PERSIST_VERSION, migratePersistedState, mergePersistedState, partializeState } from './persistenceModes'
+import { fdsElementSignature } from '../utils/fdsSignature'
 
 const useStore = create(persist((set, get) => {
     const defaultStairObject = {"fire_floor": 0, "total_floors": 5, "stair_roof_z": 25, "top_storey_height": 21}
@@ -149,6 +150,16 @@ const useStore = create(persist((set, get) => {
         // types: "corridor"|"lobby"|"fire_room"|"internal_corridor"|"other"
         zoneConfig: {},
         sliceZHeight: 2.0, // Z slice height above fire floor (m)
+
+        // --- View tabs (2D draw / 3D model / FDS code) ---
+        // Both the 3D view and the FDS-code view are derived from the FDS text
+        // the backend returns (`fdsCode`), so they show ground truth — what FDS
+        // will actually simulate — rather than a re-extrusion of the 2D elements.
+        // `fdsGenSig` records the element signature at generation time so the
+        // views can flag themselves stale once the drawing is edited further.
+        viewMode: '2d',   // '2d' | '3d' | 'fds'
+        fdsCode: '',      // last FDS text returned by the backend
+        fdsGenSig: '',    // element signature captured when fdsCode was generated
 
         // Debug: decomposed rectangles for sensor visualization (pixel coords)
         debugRects: [], // flat array [x1,y1,x2,y2, ...] of rect corners in pixels
@@ -496,6 +507,20 @@ const useStore = create(persist((set, get) => {
         setObstructionTransparency: (newVal) => set(() => ({ obstructionTransparency: newVal })),
         setDebugRects: (newVal) => set(() => ({ debugRects: newVal })),
 
+        // --- View tabs + captured FDS text ---
+        setViewMode: (newVal) => set(() => ({ viewMode: newVal })),
+        // Store the FDS text the backend returned, tagging it with the current
+        // element signature so the 3D/FDS views know when they've gone stale.
+        captureFds: (text) => set((state) => ({
+            fdsCode: typeof text === 'string' ? text : '',
+            fdsGenSig: fdsElementSignature(state.elements),
+        })),
+        // True once fdsCode exists and the drawing has changed since it was made.
+        isFdsStale: () => {
+            const s = get()
+            return Boolean(s.fdsCode) && fdsElementSignature(s.elements) !== s.fdsGenSig
+        },
+
         // Project persistence setters
         setProjectId: (newVal) => set(() => ({ projectId: newVal })),
         setFloorId: (newVal) => set(() => ({ floorId: newVal })),
@@ -538,6 +563,9 @@ const useStore = create(persist((set, get) => {
                 saveStatus: null,
                 elements: [],
                 elementsByMode: { fdsGen: [], radiation: [], timeEq: [], efs: [] },
+                viewMode: '2d',
+                fdsCode: '',
+                fdsGenSig: '',
                 tool: "scale",
                 selectedElement: null,
                 comment: "",
