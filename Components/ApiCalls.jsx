@@ -180,6 +180,7 @@ export const sendFdsData = async (
   fire_growth_rate="medium",
   fire_custom_alpha=null,
   slice_z_height=2.0,
+  options={}, // { download?: boolean } — set download:false to fetch the FDS text without saving a file
 ) => {
     let bodyContent = JSON.stringify( {
       elementList,
@@ -229,8 +230,13 @@ export const sendFdsData = async (
     });  
     try{
       const data = await response.json();
-      const blob = new Blob([data], { type: "text/plain;charset=utf-8" });
-      saveAs(blob, "test.fds");
+      // Default behaviour downloads test.fds (the existing "Generate FDS code"
+      // button). The 3D / FDS-code views pass { download: false } so they can
+      // refresh the in-app preview without spamming file downloads.
+      if (options.download !== false) {
+        const blob = new Blob([data], { type: "text/plain;charset=utf-8" });
+        saveAs(blob, "test.fds");
+      }
       return data;
 
     } catch (err) {

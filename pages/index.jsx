@@ -6,6 +6,9 @@ import useStore from '../store/useStore'
 import ModePopup from '../Components/ModePopup'
 import Toolbar from '../Components/Toolbar'
 import ErrorPopup from '../Components/ErrorPopup'
+import ViewTabs from '../Components/ViewTabs'
+import ThreeView from '../Components/ThreeView'
+import FdsCodeView from '../Components/FdsCodeView'
 
 import ProjectDashboard from '../Components/ProjectDashboard'
 import useUserName from '../hooks/useUserName'
@@ -101,6 +104,7 @@ export default function Home() {
 
   const [showModePopup, setShowModePopup] = useState(false)
   const currentMode = useStore((state) => state.currentMode)
+  const viewMode = useStore((state) => state.viewMode)
   const setPdfCanvasRef = useStore((state) => state.setPdfCanvasRef)
   const pdfCanvasRefLocal = useRef()
   useEffect(() => { setPdfCanvasRef(pdfCanvasRefLocal) }, [setPdfCanvasRef])
@@ -511,12 +515,21 @@ export default function Home() {
         </div>
       )}
       {/* Toolbar belongs to the canvas — only show it when a plan is open, not
-          on the dashboard / upload / loading screens (it's a fixed overlay now). */}
-      {selectedFile && tool != "scale" ? (<>
+          on the dashboard / upload / loading screens (it's a fixed overlay now).
+          Hidden in the 3D / FDS views, which are read-only. */}
+      {selectedFile && tool != "scale" && viewMode === '2d' ? (<>
       {menuOverlay}
       </>
       )
       :null}
+      {/* View switcher (2D / 3D / FDS) + the 3D / FDS overlays. The 2D Canvas
+          stays mounted underneath so its in-progress state survives a toggle;
+          the overlays simply cover it. */}
+      {selectedFile && (<>
+        <ViewTabs />
+        {viewMode === '3d' && <ThreeView />}
+        {viewMode === 'fds' && <FdsCodeView />}
+      </>)}
       {showModePopup && <ModePopup setToggleShowPopup={setShowModePopup} onModeSelected={handleModeSelected}/>}
       <div>
         { isLoadingFromServer ? (
