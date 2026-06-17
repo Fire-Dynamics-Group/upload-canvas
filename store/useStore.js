@@ -16,6 +16,19 @@ const useStore = create(persist((set, get) => {
         elementsByMode: { ...state.elementsByMode, [state.currentMode]: nextElements },
     })
 
+    // Undo/redo history depth (number of committed-element snapshots kept).
+    const HISTORY_LIMIT = 50
+
+    // Like writeElements, but records the prior elements on the undo stack and
+    // clears the redo stack. Used for undoable user edits (add/remove/change).
+    // Non-edit element writes (mode switch, hydrate, reset) use writeElements and
+    // reset history themselves, so switching context never leaves a stale undo.
+    const commitElements = (state, nextElements) => ({
+        ...writeElements(state, nextElements),
+        elementsHistory: [...state.elementsHistory, state.elements].slice(-HISTORY_LIMIT),
+        elementsFuture: [],
+    })
+
     return {
 
         // Project persistence
@@ -25,6 +38,9 @@ const useStore = create(persist((set, get) => {
         saveStatus: null, // null | "saving" | "saved" | "error"
 
         elements: [],
+        // Undo/redo stacks of committed-element snapshots (see commitElements).
+        elementsHistory: [],
+        elementsFuture: [],
         // Per-mode geometry buckets. `elements` is the live "checkout" of the
         // active mode's bucket; setCurrentMode stashes/restores between them so
         // modes can't clobber each other's shapes. See docs/phase2-*.md.
@@ -162,7 +178,31 @@ const useStore = create(persist((set, get) => {
             stairObject: newStairObject
         })),
         
-        addElement: (newEl) => set((state) => writeElements(state, [...state.elements, newEl])),
+        addElement: (newEl) => set((state) => commitElements(state, [...state.elements, newEl])),
+
+        // Undo/redo over committed elements. undo() steps back to the previous
+        // snapshot (pushing the current onto the redo stack); redo() reverses it.
+        // Both are no-ops at the ends of the stacks.
+        undo: () => set((state) => {
+            if (state.elementsHistory.length === 0) return {}
+            const prev = state.elementsHistory[state.elementsHistory.length - 1]
+            return {
+                ...writeElements(state, prev),
+                elementsHistory: state.elementsHistory.slice(0, -1),
+                elementsFuture: [state.elements, ...state.elementsFuture].slice(0, HISTORY_LIMIT),
+            }
+        }),
+        redo: () => set((state) => {
+            if (state.elementsFuture.length === 0) return {}
+            const next = state.elementsFuture[0]
+            return {
+                ...writeElements(state, next),
+                elementsHistory: [...state.elementsHistory, state.elements].slice(-HISTORY_LIMIT),
+                elementsFuture: state.elementsFuture.slice(1),
+            }
+        }),
+        canUndo: () => get().elementsHistory.length > 0,
+        canRedo: () => get().elementsFuture.length > 0,
         // Replace all sensorTree and fsaSensor elements with new ones
         setSensorTreeElements: (sensorPoints, fsaPoints = []) => set((state) => {
             const withoutSensors = state.elements.filter(el => el.comments !== 'sensorTree' && el.comments !== 'fsaSensor')
@@ -185,11 +225,11 @@ const useStore = create(persist((set, get) => {
             }))
             return writeElements(state, [...withoutSensors, ...newSensors, ...newFsa])
         }),
-        changeElement: (changedEl) => set((state) => writeElements(
+        changeElement: (changedEl) => set((state) => commitElements(
             state,
             state.elements.map(element => element.id === changedEl.id ? changedEl : element)
         )),
-        removeElement: (selectedID) => set((state) => writeElements(
+        removeElement: (selectedID) => set((state) => commitElements(
             state,
             state.elements.filter(element => element.id !== selectedID)
         )),
@@ -228,6 +268,10 @@ const useStore = create(persist((set, get) => {
             const next = {
                 currentMode: newMode,
                 elements: state.elementsByMode?.[newMode] ?? [],
+                // Undo history is per editing context; don't let an undo reach
+                // back across a mode switch into another mode's geometry.
+                elementsHistory: [],
+                elementsFuture: [],
             }
             if (!isDbBacked(newMode)) {
                 return {
