@@ -3,8 +3,9 @@
 // Scene3D.jsx consumes this and instantiates the actual meshes.
 //
 // Coordinate note: FDS is Z-up (x east, y north, z up). three.js is Y-up, so
-// Scene3D maps FDS (x,y,z) -> three (x, z, -y). That mapping lives in the
-// renderer; here everything stays in honest FDS metres.
+// Scene3D maps FDS (x,y,z) -> three (x, z, y) (see utils/fdsThree) so the
+// top-down 3D reproduces the 2D canvas the user drew (+x right, +y down). That
+// mapping lives in the renderer; here everything stays in honest FDS metres.
 //
 // Each item carries a `category` so the renderer can group items and the
 // visibility panel can toggle whole categories. Categories:

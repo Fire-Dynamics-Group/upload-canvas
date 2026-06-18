@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { parseFdsGeometry, summarizeFds } from '../utils/fdsParse'
 import { buildFdsScene } from '../utils/fdsScene'
+import { toThree, topDownPlacement } from '../utils/fdsThree'
 
 // Read-only 3D view of the geometry described by an FDS file. We parse the FDS
 // text (ground truth — what the solver will actually run) and draw each
@@ -10,12 +11,9 @@ import { buildFdsScene } from '../utils/fdsScene'
 // a re-extrusion of the 2D drawing, so a mismatch here is a real divergence
 // between intent and generated input.
 //
-// FDS is Z-up; three.js is Y-up. We map FDS (x, y, z) -> three (x, z, y).
-// Note the +y (not -y): the backend's pixel->metre conversion maps screen-down
-// to FDS +Y, so FDS north is the *bottom* of the 2D plan the user drew. Using
-// +y here orients the 3D the same way as that 2D canvas (fire drawn bottom of
-// plan shows at the bottom here), which is the reference the user verifies against.
-const toThree = (x, y, z) => [x, z, y]
+// FDS -> three.js orientation (and the top-down camera) live in utils/fdsThree
+// so the renderer and the orientation regression test stay in lockstep. The
+// mapping reproduces the 2D canvas under the top-down view: +x right, +y down.
 
 const CATEGORY_ORDER = ['mesh', 'obst', 'fire', 'door', 'doorLeak', 'vent', 'domainVent', 'hole', 'device']
 const CATEGORY_LABEL = {
@@ -112,7 +110,7 @@ export default function Scene3D({ fdsCode }) {
 
         const span = bounds ? Math.max(bounds.size[0], bounds.size[1], 4) : 10
         const grid = new THREE.GridHelper(Math.ceil(span * 1.5), Math.ceil(span * 1.5), 0x55607a, 0x3a4154)
-        if (bounds) grid.position.set(bounds.center[0], 0, -bounds.center[1])
+        if (bounds) { const [gx, , gz] = toThree(bounds.center[0], bounds.center[1], bounds.center[2]); grid.position.set(gx, 0, gz) }
         scene.add(grid)
 
         // Category groups (+ per-quantity subgroups under the device group).
@@ -204,16 +202,13 @@ export default function Scene3D({ fdsCode }) {
             place(bounds.center, Math.max(...bounds.size, 2) * 1.1)
         }
         const topDown = () => {
-            const c = bounds ? bounds.center : [0, 0, 0]
-            const [cx, cy, cz] = toThree(c[0], c[1], c[2])
-            const d = bounds ? Math.max(...bounds.size, 4) : 12
-            // Keep WORLD up (0,1,0) so OrbitControls can still orbit — a custom
-            // up + straight-down view hits the gimbal pole and locks rotation.
-            // Steep bird's-eye from the south reads as a plan (north up, east
-            // right) without being dead-vertical.
-            camera.up.set(0, 1, 0)
-            controls.target.set(cx, cy, cz)
-            camera.position.set(cx, cy + d * 1.7, cz + d * 0.55)
+            // Placement lives in utils/fdsThree (shared with the orientation test).
+            // World up (0,1,0) + a slight tilt keeps OrbitControls off the gimbal
+            // pole while reading as a plan: north up, east right.
+            const { up, target, eye } = topDownPlacement(bounds)
+            camera.up.set(up[0], up[1], up[2])
+            controls.target.set(target[0], target[1], target[2])
+            camera.position.set(eye[0], eye[1], eye[2])
             camera.lookAt(controls.target); controls.update()
         }
         const frameFire = () => {
