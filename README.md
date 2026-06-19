@@ -1,5 +1,13 @@
 This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
 
+## Conventions (read before touching geometry)
+
+- **Coordinate / orientation rules** — [`docs/orientation-verification.md`](docs/orientation-verification.md).
+  FDS is the human view of the page: **+x right, +y top, +z out of the page**.
+  The 2D→FDS→3D chain and the one-line render mapping are defined there (R1–R6).
+- **Stair geometry** — [`docs/stair-step-rules.md`](docs/stair-step-rules.md).
+- **Mesh alignment** — [`docs/fds-mesh-alignment-rules.md`](docs/fds-mesh-alignment-rules.md).
+
 ## Getting Started
 
 First, run the development server:

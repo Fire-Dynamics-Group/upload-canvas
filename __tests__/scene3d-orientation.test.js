@@ -2,58 +2,68 @@ import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
 import { toThree, topDownPlacement } from '../utils/fdsThree'
 
-// Orientation must match BOTH the fds-viewer reference and the 2D canvas.
+// The top-down 3D view must reproduce the 2D plan the user drew. That is an
+// END-TO-END property across two coordinate systems, so this test models the
+// whole chain — it does NOT just assert that toThree() returns some tuple.
 //
-// fds-viewer (github.com/ProfRino/fds-viewer) maps FDS (x,y,z) -> three (x,z,y)
-// — "FDS Y→three Z, FDS Z→three Y", no negation. Under our top-down camera that
-// reads on screen as:
-//     +x (east)  -> RIGHT
-//     +y (north) -> DOWN   (same as the raw, y-down 2D canvas the user draws on)
-//     +z (up)    -> OUT of the screen, toward the viewer
-// We verify the mapping equals the reference, and that the projected screen
-// directions follow. Deterministic: no WebGL, no backend.
+//   2D canvas:  +x RIGHT, +y DOWN  (screen pixels; top of plan = small y)
+//   backend:    emits FDS y-UP via  y_fds = maxY - y_canvas   (fds.py)
+//               => FDS Y runs OPPOSITE to canvas Y
+//   frontend:   toThree maps FDS -> three, then the top-down camera projects it
+//
+// Requirement: an element drawn HIGHER on the canvas must appear HIGHER on
+// screen; an element drawn further RIGHT must appear further right. If toThree
+// stops cancelling the backend's Y-flip, the N–S assertion below fails — which
+// is exactly the mirror bug a pure "toThree === [x,z,y]" check missed.
 
-const BOUNDS = { center: [0, 0, 0], size: [20, 20, 10] }
+const CANVAS_MAX_Y = 20 // arbitrary plan height in metres for the model
+
+// Reproduce the backend's canvas->FDS transform (the part that matters for
+// orientation: x passes through, y is flipped about the plan height).
+const canvasToFds = ({ x, y }) => ({ x, y: CANVAS_MAX_Y - y, z: 0 })
+
+const BOUNDS = { center: [10, 10, 5], size: [20, 20, 10] }
 
 function makeCamera() {
     const cam = new THREE.PerspectiveCamera(50, 800 / 600, 0.05, 5000)
     const { up, target, eye } = topDownPlacement(BOUNDS)
-    cam.up.set(up[0], up[1], up[2])
-    cam.position.set(eye[0], eye[1], eye[2])
-    cam.lookAt(new THREE.Vector3(target[0], target[1], target[2]))
+    cam.up.set(...up)
+    cam.position.set(...eye)
+    cam.lookAt(new THREE.Vector3(...target))
     cam.updateMatrixWorld(true)
     cam.updateProjectionMatrix()
     return cam
 }
-function ndc(cam, [x, y, z]) {
-    const v = new THREE.Vector3(...toThree(x, y, z)).project(cam)
-    return { x: v.x, y: v.y, z: v.z }
+
+// Project a CANVAS point all the way to normalized device coords, through the
+// real backend transform + toThree + camera. NDC: x right-positive, y up-positive.
+function projectCanvasPoint(cam, canvasPt) {
+    const f = canvasToFds(canvasPt)
+    const v = new THREE.Vector3(...toThree(f.x, f.y, f.z)).project(cam)
+    return { x: v.x, y: v.y }
 }
 
-describe('FDS -> 3D orientation matches fds-viewer and the 2D canvas', () => {
-    it('uses the fds-viewer mapping: FDS (x,y,z) -> three (x, z, y)', () => {
-        // FDS Y -> three Z, FDS Z -> three Y, no negation.
-        expect(toThree(1, 2, 3)).toEqual([1, 3, 2])
-        expect(toThree(-4, 5, -6)).toEqual([-4, -6, 5])
-    })
-
+describe('3D top-down view reproduces the 2D plan orientation', () => {
     const cam = makeCamera()
 
-    it('+x (east) is to the RIGHT', () => {
-        expect(ndc(cam, [6, 0, 0]).x).toBeGreaterThan(ndc(cam, [-6, 0, 0]).x)
+    it('an element at the TOP of the canvas appears at the TOP of the 3D view', () => {
+        const top = projectCanvasPoint(cam, { x: 10, y: 2 })     // small canvas-y = high on plan
+        const bottom = projectCanvasPoint(cam, { x: 10, y: 18 })  // large canvas-y = low on plan
+        // higher on screen = larger NDC y
+        expect(top.y).toBeGreaterThan(bottom.y)
     })
 
-    it('+y (north) is DOWNWARD on screen — same as the y-down 2D canvas', () => {
-        // NDC y is up-positive, so "lower on screen" = smaller NDC y.
-        expect(ndc(cam, [0, 6, 0]).y).toBeLessThan(ndc(cam, [0, -6, 0]).y)
+    it('an element to the RIGHT on the canvas appears to the RIGHT in the 3D view', () => {
+        const right = projectCanvasPoint(cam, { x: 18, y: 10 })
+        const left = projectCanvasPoint(cam, { x: 2, y: 10 })
+        expect(right.x).toBeGreaterThan(left.x)
     })
 
-    it('+z (up) comes OUT of the screen, toward the viewer', () => {
-        const { eye } = topDownPlacement(BOUNDS)
-        const e = new THREE.Vector3(eye[0], eye[1], eye[2])
-        expect(e.distanceTo(new THREE.Vector3(...toThree(0, 0, 4))))
-            .toBeLessThan(e.distanceTo(new THREE.Vector3(...toThree(0, 0, -4))))
-        expect(ndc(cam, [0, 0, 4]).z).toBeLessThan(ndc(cam, [0, 0, -4]).z)
+    it('maps FDS Z (up) to three Y (the up axis) and cancels the backend Y-flip', () => {
+        // FDS Z -> three Y; FDS Y -> three Z negated. Guards the mapping shape so
+        // Scene3D and this test can't silently diverge.
+        expect(toThree(1, 2, 3)).toEqual([1, 3, -2])
+        expect(toThree(-4, 5, -6)).toEqual([-4, -6, -5])
     })
 
     it('views the model from above (camera higher than the geometry)', () => {
