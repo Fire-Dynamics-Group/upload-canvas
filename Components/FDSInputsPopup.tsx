@@ -51,6 +51,8 @@ const FDSInputsPopup = ({handleUserInput, onClose}) => {
     const setAovMode = useStore((state) => state.setAovMode)
     const aovActivationTime = useStore((state) => state.aovActivationTime)
     const setAovActivationTime = useStore((state) => state.setAovActivationTime)
+    const aovType = useStore((state) => state.aovType)
+    const setAovType = useStore((state) => state.setAovType)
 
     // Common corridor mode
     const commonCorridorMode = useStore((state) => state.commonCorridorMode)
@@ -256,6 +258,25 @@ const FDSInputsPopup = ({handleUserInput, onClose}) => {
                 value={stairRoofZ}
                 onChange={(e) => setStairRoofZ(e.target.value)}
             />
+
+            <h2 className="text-lg font-bold mb-2">AOV Roof Termination</h2>
+            <div className="flex flex-col gap-2 mb-4">
+                {[
+                    { value: "hole", label: "Hole only (roof opening)" },
+                    { value: "shaft", label: "Shaft (1.4m, 2m above roof)" },
+                ].map((option) => (
+                    <label key={option.value} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="aovType"
+                            value={option.value}
+                            checked={aovType === option.value}
+                            onChange={(e) => setAovType(e.target.value)}
+                        />
+                        <span>{option.label}</span>
+                    </label>
+                ))}
+            </div>
 
             <h2 className="text-lg font-bold mb-2">AOV Activation</h2>
             <div className="flex flex-col gap-2 mb-4">

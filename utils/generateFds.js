@@ -59,6 +59,7 @@ export async function generateFdsCode({ download = true } = {}) {
         s.obstructionTransparency,
         s.aovMode,
         s.aovActivationTime,
+        s.aovType,
         s.extractConfig,
         s.inletConfig,
         s.zoneConfig,

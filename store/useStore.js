@@ -167,6 +167,7 @@ const useStore = create(persist((set, get) => {
         // AOV settings
         aovMode: "always_open", // "always_open" | "timed" | "sprinkler"
         aovActivationTime: null, // seconds, used when aovMode is "timed"
+        aovType: "hole", // "hole" (just a roof opening) | "shaft" (1.4m shaft 2m above roof)
 
         // Obstruction transparency settings (0 = opaque, 1 = fully transparent)
         obstructionTransparency: {
@@ -419,6 +420,9 @@ const useStore = create(persist((set, get) => {
         setAovActivationTime: (newVal) => set(() => ({
             aovActivationTime: newVal
         })),
+        setAovType: (newVal) => set(() => ({
+            aovType: newVal
+        })),
 
         setCommonCorridorMode: (newVal) => set(() => ({
             commonCorridorMode: newVal,
@@ -623,6 +627,7 @@ const useStore = create(persist((set, get) => {
                 sliceZHeight: 2.0,
                 aovMode: "always_open",
                 aovActivationTime: null,
+                aovType: "hole",
                 obstructionTransparency: { stairWalls: 0.25, stairRoof: 0.25, fireFloorWalls: 0.0 },
                 stairObject: [],
             }))
