@@ -8,7 +8,7 @@ import { calcDistance } from '@/utils/helperFunctions'
 import { computeShaftRect } from '@/utils/shaftGeometry'
 import { computeAutoSprinklerPositions, shouldShowAutoSprinklers } from '@/utils/autoSprinklers'
 import { computeTimeEqLabels } from '@/utils/timeEqLabels'
-import { buildBoundaryArrows, gridlineStations } from '@/utils/efsViewFactor'
+import { buildBoundaryArrows, gridlineStations, buildRequiredBoundaryLine, projectSpanOntoWall, baysCoveredBySpan, polylineLength, splitIntoElevations, pointToPolylineDistance } from '@/utils/efsViewFactor'
 import { get } from 'http'
 
 /**
@@ -37,7 +37,9 @@ const elementConfig = {
     "sensorTree": "#00ff88",
     "fsaSensor": "#ff9900",
     "efsWall": "#eab308",
-    "efsBoundary": "#ef4444"
+    "efsBoundary": "#ef4444",
+    "efsProtected": "#374151",
+    "efsUnprotected": "#2563eb"
 }
 
 // --- module-level pure helpers for point-alignment snap (testable from tests) ---
@@ -258,6 +260,8 @@ function Canvas({dimensions, isDevMode}) {
     const addElement = useStore((state) => state.addElement)
     const removeElement = useStore((state) => state.removeElement)
     const changeElement = useStore((state) => state.changeElement)
+    const undo = useStore((state) => state.undo)
+    const redo = useStore((state) => state.redo)
     const comment = useStore((state) => state.comment)
     const setComment = useStore((state) => state.setComment)
     const currentMode = useStore((state) => state.currentMode)
@@ -274,6 +278,10 @@ function Canvas({dimensions, isDevMode}) {
     const efsColumnSpacing = useStore((state) => state.efsColumnSpacing)
     const efsPopupOpen = useStore((state) => state.efsPopupOpen)
     const efsCalcDone = useStore((state) => state.efsCalcDone)
+    const efsActiveElevation = useStore((state) => state.efsActiveElevation)
+    const efsProtectedByElev = useStore((state) => state.efsProtectedByElev)
+    const efsRequiredByElev = useStore((state) => state.efsRequiredByElev)
+    const efsEndSpacingByElev = useStore((state) => state.efsEndSpacingByElev)
     const setPixelsPerMesh = useStore((state) => state.setPixelsPerMesh)
 
 
@@ -364,7 +372,32 @@ function Canvas({dimensions, isDevMode}) {
     useEffect(() => {
 
 
-        const handleKeyPress = ({key}) => {
+        const handleKeyPress = (e) => {
+            const { key } = e
+            // Undo / redo. Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y
+            // redoes. While a polyline is in progress, Ctrl+Z drops the last
+            // placed vertex (like a pen tool) instead of undoing a committed
+            // element; once the in-progress poly is empty it falls through to the
+            // committed-element history.
+            const mod = e.ctrlKey || e.metaKey
+            if (mod && (key === 'z' || key === 'Z')) {
+                e.preventDefault()
+                if (e.shiftKey) {
+                    redo()
+                } else if (currentPoly.length > 0) {
+                    const next = currentPoly.slice(0, -1)
+                    setCurrentPoly(next)
+                    if (next.length === 0) setIsDrawing(false)
+                } else {
+                    undo()
+                }
+                return
+            }
+            if (mod && (key === 'y' || key === 'Y')) {
+                e.preventDefault()
+                redo()
+                return
+            }
             // have arrow keys for controlling element location
             if (key == 'ArrowUp') {
                 event.preventDefault();
@@ -437,7 +470,7 @@ function Canvas({dimensions, isDevMode}) {
             window.removeEventListener("keydown", handleKeyPress)
             window.removeEventListener("keyup", handleCtrlRelease)
         }
-    }, [elements, currentPoly, tool, setTool, comment, addElement, selectedElement, currentId, removeElement, returnElementObject, setSelectedElement])
+    }, [elements, currentPoly, tool, setTool, comment, addElement, selectedElement, currentId, removeElement, returnElementObject, setSelectedElement, undo, redo])
 
     // LATER: move to own component -> sends back null or position object
     useEffect(() => {
@@ -1219,11 +1252,104 @@ function Canvas({dimensions, isDevMode}) {
             const pxPerM = pixelsPerMesh * 10
             const spacingM = Number(efsColumnSpacing)
             if (wall?.points?.length >= 2 && spacingM > 0 && pxPerM > 0) {
-                // Column markers (filled squares) at each gridline. While the EFS
-                // popup is open or a calc has been run, also label each with its
-                // gridline number so they line up with the popup table.
+                const spacingPx = spacingM * pxPerM
+                const losPts = wall.points // full outline for line-of-sight
+                // Split the drawn outline into elevations (#10); the active tab's
+                // face gets the full overlay, the others just their column markers.
+                const elevations = splitIntoElevations(wall.points)
+                const activeIdx = elevations.length ? Math.min(efsActiveElevation, elevations.length - 1) : 0
+                const face = elevations[activeIdx] || { points: wall.points }
+                const facePts = face.points
                 const showGridlineLabels = efsPopupOpen || efsCalcDone
-                const stations = gridlineStations(wall.points, spacingM * pxPerM)
+                // Per-elevation custom end-bay spacing, scaled to pixels.
+                const optsForElev = (idx) => {
+                    const cfg = efsEndSpacingByElev[idx] || {}
+                    return {
+                        firstSpacing: cfg.firstEnabled && cfg.firstSpacing > 0 ? Number(cfg.firstSpacing) * pxPerM : undefined,
+                        lastSpacing: cfg.lastEnabled && cfg.lastSpacing > 0 ? Number(cfg.lastSpacing) * pxPerM : undefined,
+                    }
+                }
+                const activeOpts = optsForElev(activeIdx)
+                const stations = gridlineStations(facePts, spacingPx, activeOpts)
+
+                // Faint column markers on every (non-active) elevation so the whole
+                // building's grid is visible; the active face is drawn richly below.
+                elevations.forEach((e, idx) => {
+                    if (idx === activeIdx) return
+                    gridlineStations(e.points, spacingPx, optsForElev(idx)).forEach((st) => {
+                        context.save()
+                        context.fillStyle = 'rgba(234,179,8,0.5)'
+                        context.beginPath()
+                        context.rect(st.point.x - 3, st.point.y - 3, 6, 6)
+                        context.fill()
+                        context.restore()
+                    })
+                })
+
+                // Shade a single bay span (between its two bounding columns) with
+                // a fill/stroke and a label — used for protected bays and regions.
+                const shadeBay = (bay, fill, stroke, label) => {
+                    const a = stations[bay - 1]
+                    const b = stations[bay]
+                    if (!a || !b) return
+                    const ang = Math.atan2(b.point.y - a.point.y, b.point.x - a.point.x)
+                    const w = 14 // hatch band half-width (px)
+                    const nx = -Math.sin(ang) * w
+                    const ny = Math.cos(ang) * w
+                    context.save()
+                    context.fillStyle = fill
+                    context.strokeStyle = stroke
+                    context.lineWidth = 1.5
+                    context.beginPath()
+                    context.moveTo(a.point.x + nx, a.point.y + ny)
+                    context.lineTo(b.point.x + nx, b.point.y + ny)
+                    context.lineTo(b.point.x - nx, b.point.y - ny)
+                    context.lineTo(a.point.x - nx, a.point.y - ny)
+                    context.closePath()
+                    context.fill()
+                    context.stroke()
+                    const mx = (a.point.x + b.point.x) / 2
+                    const my = (a.point.y + b.point.y) / 2
+                    context.font = 'bold 11px sans-serif'
+                    context.fillStyle = '#111827'
+                    context.fillText(label, mx - 8, my + 4)
+                    context.restore()
+                }
+
+                // Protected (fire-rated) bays for the active elevation (issue #8).
+                const activeProtected = efsProtectedByElev[activeIdx] || []
+                activeProtected.forEach((bay) => shadeBay(bay, 'rgba(120,120,120,0.35)', '#374151', `P${bay}`))
+
+                // Drawn protected/unprotected region polylines bound to the active
+                // elevation (issue #11): shade the bays they snap to, by kind. The
+                // vertical band is an elevation property, not shown on this plan.
+                const faceWidthPx = polylineLength(facePts)
+                elements
+                    .filter((el) => (el.comments === 'efsProtected' || el.comments === 'efsUnprotected') && el.points?.length >= 1)
+                    .forEach((el) => {
+                        const mid = el.points.reduce(
+                            (acc, p) => ({ x: acc.x + p.x / el.points.length, y: acc.y + p.y / el.points.length }),
+                            { x: 0, y: 0 },
+                        )
+                        let bestIdx = 0
+                        let bestD = Infinity
+                        elevations.forEach((e, idx) => {
+                            const d = pointToPolylineDistance(mid, e.points)
+                            if (d < bestD) { bestD = d; bestIdx = idx }
+                        })
+                        if (bestIdx !== activeIdx) return
+                        const protectedKind = el.comments === 'efsProtected'
+                        const { start, end } = projectSpanOntoWall(facePts, el.points)
+                        baysCoveredBySpan(faceWidthPx, spacingPx, start, end, activeOpts).forEach((bay) => {
+                            shadeBay(
+                                bay,
+                                protectedKind ? 'rgba(55,65,81,0.30)' : 'rgba(37,99,235,0.22)',
+                                protectedKind ? '#1f2937' : '#1d4ed8',
+                                protectedKind ? `Pr${bay}` : `Un${bay}`,
+                            )
+                        })
+                    })
+
                 stations.forEach((st) => {
                     const r = 5
                     context.save()
@@ -1276,9 +1402,41 @@ function Canvas({dimensions, isDevMode}) {
                     context.fillText(label, mx + 4, my - 4)
                     context.restore()
                 }
-                // 0.1 m sampling along each segment to find the worst case
-                const arrows = buildBoundaryArrows(wall.points, boundary?.points, spacingM * pxPerM, 0.1 * pxPerM)
+                // 0.1 m sampling along each segment to find the worst case (active
+                // face; full outline for line-of-sight).
+                const arrows = buildBoundaryArrows(facePts, boundary?.points, spacingPx, 0.1 * pxPerM, losPts, activeOpts)
                 arrows.forEach((a) => drawBoundaryArrow(a.from, a.to, a.distance / pxPerM))
+
+                // "Needed boundary" locus (after the calc): offset each gridline
+                // outward by its required distance. The actual boundary must lie
+                // beyond this dashed line everywhere to comply.
+                const activeRequired = efsRequiredByElev[activeIdx]
+                if (efsCalcDone && boundary?.points?.length >= 2
+                    && Array.isArray(activeRequired) && activeRequired.length) {
+                    const requiredPx = activeRequired.map((d) => d * pxPerM)
+                    const line = buildRequiredBoundaryLine(facePts, boundary.points, spacingPx, requiredPx, losPts, activeOpts)
+                    const pts = line.map((l) => l.point).filter(Boolean)
+                    if (pts.length >= 2) {
+                        context.save()
+                        context.strokeStyle = '#16a34a' // green: the required line
+                        context.lineWidth = 2
+                        context.setLineDash([8, 5])
+                        context.beginPath()
+                        context.moveTo(pts[0].x, pts[0].y)
+                        for (let i = 1; i < pts.length; i++) context.lineTo(pts[i].x, pts[i].y)
+                        context.stroke()
+                        context.setLineDash([])
+                        // label near the first point
+                        const label = 'needed boundary'
+                        context.font = 'bold 12px sans-serif'
+                        context.lineWidth = 3
+                        context.strokeStyle = 'white'
+                        context.strokeText(label, pts[0].x + 4, pts[0].y - 4)
+                        context.fillStyle = '#166534'
+                        context.fillText(label, pts[0].x + 4, pts[0].y - 4)
+                        context.restore()
+                    }
+                }
             }
         }
 
@@ -1415,7 +1573,7 @@ function Canvas({dimensions, isDevMode}) {
             context.restore()
         }
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, debugRects, snapGuides, candidateCycleState])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsActiveElevation, efsProtectedByElev, efsRequiredByElev, efsEndSpacingByElev, debugRects, snapGuides, candidateCycleState])
 
     // Generate thumbnail by compositing PDF + drawing canvases
     const thumbnailTimerRef = useRef(null)

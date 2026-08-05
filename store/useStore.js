@@ -4,6 +4,7 @@ import {findOriginPixels, returnFinalCoordinates} from '../utils/pointManipulati
 import { clearPdfFromIndexedDB } from '../utils/pdfStorage'
 import { defaultDoorTimings } from './defaultDoorTimings'
 import { isDbBacked, MODE_PERSISTENCE, PERSIST_VERSION, migratePersistedState, mergePersistedState, partializeState } from './persistenceModes'
+import { fdsElementSignature } from '../utils/fdsSignature'
 
 const useStore = create(persist((set, get) => {
     const defaultStairObject = {"fire_floor": 0, "total_floors": 5, "stair_roof_z": 25, "top_storey_height": 21}
@@ -16,6 +17,19 @@ const useStore = create(persist((set, get) => {
         elementsByMode: { ...state.elementsByMode, [state.currentMode]: nextElements },
     })
 
+    // Undo/redo history depth (number of committed-element snapshots kept).
+    const HISTORY_LIMIT = 50
+
+    // Like writeElements, but records the prior elements on the undo stack and
+    // clears the redo stack. Used for undoable user edits (add/remove/change).
+    // Non-edit element writes (mode switch, hydrate, reset) use writeElements and
+    // reset history themselves, so switching context never leaves a stale undo.
+    const commitElements = (state, nextElements) => ({
+        ...writeElements(state, nextElements),
+        elementsHistory: [...state.elementsHistory, state.elements].slice(-HISTORY_LIMIT),
+        elementsFuture: [],
+    })
+
     return {
 
         // Project persistence
@@ -25,6 +39,9 @@ const useStore = create(persist((set, get) => {
         saveStatus: null, // null | "saving" | "saved" | "error"
 
         elements: [],
+        // Undo/redo stacks of committed-element snapshots (see commitElements).
+        elementsHistory: [],
+        elementsFuture: [],
         // Per-mode geometry buckets. `elements` is the live "checkout" of the
         // active mode's bucket; setCurrentMode stashes/restores between them so
         // modes can't clobber each other's shapes. See docs/phase2-*.md.
@@ -47,10 +64,28 @@ const useStore = create(persist((set, get) => {
         // EFS view-factor mode: column spacing (m) along the elevation. Shared by
         // the EFS popup and the canvas boundary-distance overlay.
         efsColumnSpacing: 8,
+        // Elevation height + fire temperature inputs. Held in the store (not local
+        // popup state) so they survive closing and reopening the popup.
+        efsHeight: 18,
+        efsFireTempC: 1040,
         // Whether the EFS popup is open, and whether a calc has been run — either
         // shows the gridline number labels on the canvas.
         efsPopupOpen: false,
         efsCalcDone: false,
+        // EFS auto-protect (issue #8): scratch set of protected (fire-rated) bay
+        // indices, and whether the auto-suggester protects corner bays first.
+        efsCornersFirst: true,
+        // Multiple elevations (issue #10): the drawn outline is split into faces;
+        // the active tab index and per-elevation state keyed by face index.
+        efsActiveElevation: 0,
+        efsProtectedByElev: {},   // { [elevIdx]: number[] } protected bays per face
+        efsRequiredByElev: {},    // { [elevIdx]: number[] } needed-boundary locus
+        // Optional custom end-bay spacing per elevation (tick-box driven):
+        // { [elevIdx]: { firstEnabled, firstSpacing, lastEnabled, lastSpacing } }.
+        efsEndSpacingByElev: {},
+        // Per-region vertical band (issue #11), keyed by the drawn region
+        // element's id: { base, top } in metres (default 0..elevation height).
+        efsRegionConfig: {},
 
         // Fire configuration
         fireHRR: 1000,              // kW
@@ -116,12 +151,23 @@ const useStore = create(persist((set, get) => {
         zoneConfig: {},
         sliceZHeight: 2.0, // Z slice height above fire floor (m)
 
+        // --- View tabs (2D draw / 3D model / FDS code) ---
+        // Both the 3D view and the FDS-code view are derived from the FDS text
+        // the backend returns (`fdsCode`), so they show ground truth — what FDS
+        // will actually simulate — rather than a re-extrusion of the 2D elements.
+        // `fdsGenSig` records the element signature at generation time so the
+        // views can flag themselves stale once the drawing is edited further.
+        viewMode: '2d',   // '2d' | '3d' | 'fds'
+        fdsCode: '',      // last FDS text returned by the backend
+        fdsGenSig: '',    // element signature captured when fdsCode was generated
+
         // Debug: decomposed rectangles for sensor visualization (pixel coords)
         debugRects: [], // flat array [x1,y1,x2,y2, ...] of rect corners in pixels
 
         // AOV settings
         aovMode: "always_open", // "always_open" | "timed" | "sprinkler"
         aovActivationTime: null, // seconds, used when aovMode is "timed"
+        aovType: "hole", // "hole" (just a roof opening) | "shaft" (1.4m shaft 2m above roof)
 
         // Obstruction transparency settings (0 = opaque, 1 = fully transparent)
         obstructionTransparency: {
@@ -144,7 +190,31 @@ const useStore = create(persist((set, get) => {
             stairObject: newStairObject
         })),
         
-        addElement: (newEl) => set((state) => writeElements(state, [...state.elements, newEl])),
+        addElement: (newEl) => set((state) => commitElements(state, [...state.elements, newEl])),
+
+        // Undo/redo over committed elements. undo() steps back to the previous
+        // snapshot (pushing the current onto the redo stack); redo() reverses it.
+        // Both are no-ops at the ends of the stacks.
+        undo: () => set((state) => {
+            if (state.elementsHistory.length === 0) return {}
+            const prev = state.elementsHistory[state.elementsHistory.length - 1]
+            return {
+                ...writeElements(state, prev),
+                elementsHistory: state.elementsHistory.slice(0, -1),
+                elementsFuture: [state.elements, ...state.elementsFuture].slice(0, HISTORY_LIMIT),
+            }
+        }),
+        redo: () => set((state) => {
+            if (state.elementsFuture.length === 0) return {}
+            const next = state.elementsFuture[0]
+            return {
+                ...writeElements(state, next),
+                elementsHistory: [...state.elementsHistory, state.elements].slice(-HISTORY_LIMIT),
+                elementsFuture: state.elementsFuture.slice(1),
+            }
+        }),
+        canUndo: () => get().elementsHistory.length > 0,
+        canRedo: () => get().elementsFuture.length > 0,
         // Replace all sensorTree and fsaSensor elements with new ones
         setSensorTreeElements: (sensorPoints, fsaPoints = []) => set((state) => {
             const withoutSensors = state.elements.filter(el => el.comments !== 'sensorTree' && el.comments !== 'fsaSensor')
@@ -167,11 +237,11 @@ const useStore = create(persist((set, get) => {
             }))
             return writeElements(state, [...withoutSensors, ...newSensors, ...newFsa])
         }),
-        changeElement: (changedEl) => set((state) => writeElements(
+        changeElement: (changedEl) => set((state) => commitElements(
             state,
             state.elements.map(element => element.id === changedEl.id ? changedEl : element)
         )),
-        removeElement: (selectedID) => set((state) => writeElements(
+        removeElement: (selectedID) => set((state) => commitElements(
             state,
             state.elements.filter(element => element.id !== selectedID)
         )),
@@ -210,6 +280,10 @@ const useStore = create(persist((set, get) => {
             const next = {
                 currentMode: newMode,
                 elements: state.elementsByMode?.[newMode] ?? [],
+                // Undo history is per editing context; don't let an undo reach
+                // back across a mode switch into another mode's geometry.
+                elementsHistory: [],
+                elementsFuture: [],
             }
             if (!isDbBacked(newMode)) {
                 return {
@@ -236,9 +310,38 @@ const useStore = create(persist((set, get) => {
         setPixelsPerMesh: (pxPerMesh) => set(() => ({
             pixelsPerMesh: pxPerMesh
         })),
-        setEfsColumnSpacing: (v) => set(() => ({ efsColumnSpacing: v })),
+        // Changing the column spacing re-lays the bays, so any protected-bay
+        // selection (indexed by bay) no longer maps — clear it for all faces.
+        setEfsColumnSpacing: (v) => set(() => ({ efsColumnSpacing: v, efsProtectedByElev: {}, efsRequiredByElev: {} })),
+        setEfsHeight: (v) => set(() => ({ efsHeight: v })),
+        setEfsFireTempC: (v) => set(() => ({ efsFireTempC: v })),
+        // (efsRegionConfig is keyed by element id, so it survives a spacing change;
+        // regions re-snap to the new bays on the next assessment.)
         setEfsPopupOpen: (v) => set(() => ({ efsPopupOpen: v })),
         setEfsCalcDone: (v) => set(() => ({ efsCalcDone: v })),
+        setEfsActiveElevation: (i) => set(() => ({ efsActiveElevation: i })),
+        // Protected bays per elevation (issues #8/#10): the shared set the manual
+        // table toggles and the auto-suggester read/write, keyed by face index.
+        setEfsProtectedForElev: (i, bays) => set((state) => ({
+            efsProtectedByElev: { ...state.efsProtectedByElev, [i]: [...bays].sort((a, b) => a - b) },
+        })),
+        toggleEfsProtectedForElev: (i, bay) => set((state) => {
+            const cur = state.efsProtectedByElev[i] || []
+            const next = cur.includes(bay)
+                ? cur.filter((b) => b !== bay)
+                : [...cur, bay].sort((a, b) => a - b)
+            return { efsProtectedByElev: { ...state.efsProtectedByElev, [i]: next } }
+        }),
+        setEfsRequiredForElev: (i, arr) => set((state) => ({
+            efsRequiredByElev: { ...state.efsRequiredByElev, [i]: arr },
+        })),
+        setEfsCornersFirst: (v) => set(() => ({ efsCornersFirst: v })),
+        setEfsEndSpacingForElev: (i, patch) => set((state) => ({
+            efsEndSpacingByElev: { ...state.efsEndSpacingByElev, [i]: { ...state.efsEndSpacingByElev[i], ...patch } },
+        })),
+        setEfsRegionBand: (id, band) => set((state) => ({
+            efsRegionConfig: { ...state.efsRegionConfig, [id]: { ...state.efsRegionConfig[id], ...band } },
+        })),
 
         setConvertedPoints: () => set((state) => {
             let tempOrigin = findOriginPixels(state.elements, state.canvasDimensions.height)
@@ -316,6 +419,9 @@ const useStore = create(persist((set, get) => {
         })),
         setAovActivationTime: (newVal) => set(() => ({
             aovActivationTime: newVal
+        })),
+        setAovType: (newVal) => set(() => ({
+            aovType: newVal
         })),
 
         setCommonCorridorMode: (newVal) => set(() => ({
@@ -405,6 +511,20 @@ const useStore = create(persist((set, get) => {
         setObstructionTransparency: (newVal) => set(() => ({ obstructionTransparency: newVal })),
         setDebugRects: (newVal) => set(() => ({ debugRects: newVal })),
 
+        // --- View tabs + captured FDS text ---
+        setViewMode: (newVal) => set(() => ({ viewMode: newVal })),
+        // Store the FDS text the backend returned, tagging it with the current
+        // element signature so the 3D/FDS views know when they've gone stale.
+        captureFds: (text) => set((state) => ({
+            fdsCode: typeof text === 'string' ? text : '',
+            fdsGenSig: fdsElementSignature(state.elements),
+        })),
+        // True once fdsCode exists and the drawing has changed since it was made.
+        isFdsStale: () => {
+            const s = get()
+            return Boolean(s.fdsCode) && fdsElementSignature(s.elements) !== s.fdsGenSig
+        },
+
         // Project persistence setters
         setProjectId: (newVal) => set(() => ({ projectId: newVal })),
         setFloorId: (newVal) => set(() => ({ floorId: newVal })),
@@ -447,6 +567,9 @@ const useStore = create(persist((set, get) => {
                 saveStatus: null,
                 elements: [],
                 elementsByMode: { fdsGen: [], radiation: [], timeEq: [], efs: [] },
+                viewMode: '2d',
+                fdsCode: '',
+                fdsGenSig: '',
                 tool: "scale",
                 selectedElement: null,
                 comment: "",
@@ -455,6 +578,12 @@ const useStore = create(persist((set, get) => {
                 originPixels: null,
                 convertedPoints: [],
                 hasDoor: false,
+                efsActiveElevation: 0,
+                efsProtectedByElev: {},
+                efsRequiredByElev: {},
+                efsEndSpacingByElev: {},
+                efsRegionConfig: {},
+                efsCalcDone: false,
                 pdfData: null,
                 pdfIsGreyscale: false,
                 totalHeatFlux: 476,
@@ -498,6 +627,7 @@ const useStore = create(persist((set, get) => {
                 sliceZHeight: 2.0,
                 aovMode: "always_open",
                 aovActivationTime: null,
+                aovType: "hole",
                 obstructionTransparency: { stairWalls: 0.25, stairRoof: 0.25, fireFloorWalls: 0.0 },
                 stairObject: [],
             }))

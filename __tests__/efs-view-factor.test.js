@@ -10,11 +10,25 @@ import {
     solveElevation,
     assessElevation,
     pointToPolylineDistance,
+    polylineLength,
     pointAtDistanceAlong,
     buildBoundaryArrows,
     boundaryDistanceOutward,
     gridlineStations,
     lineOfSightClear,
+    totalViewFactorPartial,
+    columnPositions,
+    assessElevationBays,
+    suggestProtection,
+    outwardNormalAt,
+    buildRequiredBoundaryLine,
+    rectVFAt,
+    totalViewFactorPieces,
+    buildEmitter,
+    baysCoveredBySpan,
+    projectSpanOntoWall,
+    splitIntoElevations,
+    bre135ElevationsFromWall,
 } from '../utils/efsViewFactor'
 
 // Ground truth from EFS.xlsx (South sheet): elevation 96 m wide x 18 m high,
@@ -253,6 +267,458 @@ describe('boundaryDistanceOutward — real building rectangle never measures thr
     })
 })
 
+describe('totalViewFactorPartial — holed emitter (protected bays)', () => {
+    it('reproduces totalViewFactor exactly for a single all-unprotected bay', () => {
+        // single bay spanning the whole 96 m elevation, receiver at various xR
+        for (const xR of [0, 8, 24, 48, 72, 96]) {
+            const S = 60
+            const partial = totalViewFactorPartial(xR, [[0, 96]], S, 9, 9)
+            const full = totalViewFactor(xR, 96 - xR, S, 9, 9)
+            expect(partial).toBeCloseTo(full, 9)
+        }
+    })
+
+    it('a hole (protected bay) lowers the view factor vs the full face', () => {
+        // emitter [0,96] vs emitter with the centre [40,56] removed
+        const S = 60
+        const full = totalViewFactorPartial(0, [[0, 96]], S, 9, 9)
+        const holed = totalViewFactorPartial(0, [[0, 40], [56, 96]], S, 9, 9)
+        expect(holed).toBeLessThan(full)
+        expect(holed).toBeGreaterThan(0)
+    })
+
+    it('summing adjacent bays equals the merged interval (strips telescope)', () => {
+        const S = 50
+        const split = totalViewFactorPartial(20, [[0, 40], [40, 96]], S, 9, 9)
+        const merged = totalViewFactorPartial(20, [[0, 96]], S, 9, 9)
+        expect(split).toBeCloseTo(merged, 9)
+    })
+})
+
+describe('columnPositions — bay layout', () => {
+    it('lays columns at 0, spacing, ..., width (far edge included)', () => {
+        expect(columnPositions(96, 8)).toEqual([0, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96])
+        expect(columnPositions(40, 8)).toHaveLength(6) // 5 bays
+    })
+
+    it('honours a custom first-bay spacing', () => {
+        // first bay 5 m wide, then the regular 8 m grid, last bay the remainder
+        const xs = columnPositions(40, 8, { firstSpacing: 5 })
+        expect(xs[0]).toBe(0)
+        expect(xs[1]).toBe(5)
+        expect(xs[2]).toBe(13)
+        expect(xs[xs.length - 1]).toBe(40)
+    })
+
+    it('honours a custom last-bay spacing', () => {
+        // last bay 6 m wide -> a column at width - 6 = 34, then 40
+        const xs = columnPositions(40, 8, { lastSpacing: 6 })
+        expect(xs[xs.length - 1]).toBe(40)
+        expect(xs[xs.length - 2]).toBe(34)
+        expect(40 - 34).toBe(6)
+    })
+
+    it('honours custom first and last bays together', () => {
+        const xs = columnPositions(50, 10, { firstSpacing: 4, lastSpacing: 6 })
+        expect(xs[0]).toBe(0)
+        expect(xs[1]).toBe(4)            // first bay 4
+        expect(xs[xs.length - 1]).toBe(50)
+        expect(xs[xs.length - 2]).toBe(44) // last bay 6
+    })
+})
+
+describe('assessElevationBays — custom end-bay spacing', () => {
+    const wallPoints = [{ x: 0, y: 0 }, { x: 96, y: 0 }]
+
+    it('changes the bay layout when first/last spacing are given', () => {
+        const plain = assessElevationBays({ wallPoints, boundaryPoints: [], height: 18, T, spacing: 8 })
+        const custom = assessElevationBays({
+            wallPoints, boundaryPoints: [], height: 18, T, spacing: 8, firstSpacing: 5, lastSpacing: 5,
+        })
+        // first/last bay widths differ from the uniform grid
+        expect(custom.rows[0].rightW + custom.rows[0].leftW).toBeGreaterThan(0)
+        expect(plain.nBays).not.toBe(custom.nBays)
+    })
+})
+
+describe('assessElevationBays — per-bay assessment', () => {
+    const wallPoints = [{ x: 0, y: 0 }, { x: 96, y: 0 }]
+
+    it('reports one row per bay (columns - 1)', () => {
+        const r = assessElevationBays({ wallPoints, boundaryPoints: [], height: 18, T, spacing: 8 })
+        expect(r.nBays).toBe(12)
+        expect(r.rows).toHaveLength(12)
+        expect(r.rows.every((row) => row.protected === false)).toBe(true)
+    })
+
+    it('governing required matches the gridline sweep when nothing is protected', () => {
+        const r = assessElevationBays({ wallPoints, boundaryPoints: [], height: 18, T, spacing: 8 })
+        // worst point of the centre bays approaches the 48/48 split governing value
+        expect(r.governingRequiredBoundaryDistance).toBeCloseTo(38.341, 1)
+    })
+
+    it('protecting bays removes them from the emitter and lowers required everywhere', () => {
+        const all = assessElevationBays({ wallPoints, boundaryPoints: [], height: 18, T, spacing: 8 })
+        const someProtected = assessElevationBays({
+            wallPoints, boundaryPoints: [], height: 18, T, spacing: 8, protectedBays: [1, 12],
+        })
+        expect(someProtected.governingRequiredBoundaryDistance)
+            .toBeLessThan(all.governingRequiredBoundaryDistance)
+        // protected bays are compliant by construction
+        expect(someProtected.rows.find((r) => r.bay === 1).protected).toBe(true)
+        expect(someProtected.rows.find((r) => r.bay === 1).pass).toBe(true)
+    })
+
+    it('flags failing bays when the boundary is too close', () => {
+        const boundaryPoints = [{ x: 0, y: -30 }, { x: 96, y: -30 }]
+        const r = assessElevationBays({ wallPoints, boundaryPoints, height: 18, T, spacing: 8 })
+        expect(r.allPass).toBe(false)
+        expect(r.failingCount).toBeGreaterThan(0)
+        // a centre bay (required ~38 > 30) must fail
+        const centre = r.rows.find((row) => row.bay === 6)
+        expect(centre.pass).toBe(false)
+    })
+
+    it('finds a mid-bay worst point at a boundary notch (critical-point, not endpoints)', () => {
+        const wall = [{ x: 0, y: 0 }, { x: 40, y: 0 }]
+        // boundary dips closest to the wall at the bay midpoint (x = 20)
+        const boundary = [{ x: 0, y: -60 }, { x: 20, y: -8 }, { x: 40, y: -60 }]
+        const r = assessElevationBays({ wallPoints: wall, boundaryPoints: boundary, height: 18, T, spacing: 40 })
+        expect(r.rows).toHaveLength(1)
+        // the worst (smallest actual) sits mid-bay, not at the columns
+        expect(r.rows[0].actualBoundaryDistance).toBeCloseTo(8, 0)
+        expect(r.rows[0].xWorst).toBeCloseTo(20, 0)
+    })
+})
+
+describe('suggestProtection — auto-protect loop', () => {
+    const wallPoints = [{ x: 0, y: 0 }, { x: 96, y: 0 }]
+
+    it('returns not-achievable / no-boundary when no boundary is drawn', () => {
+        const r = suggestProtection({ wallPoints, boundaryPoints: [], height: 18, T, spacing: 8 })
+        expect(r.achievable).toBe(false)
+        expect(r.reason).toBe('no-boundary')
+    })
+
+    it('protects bays until the elevation is compliant', () => {
+        // parallel boundary at 30 m: centre bays fail (required ~38), so some
+        // protection is needed; protecting bays lowers required until all pass
+        const boundaryPoints = [{ x: 0, y: -30 }, { x: 96, y: -30 }]
+        const r = suggestProtection({ wallPoints, boundaryPoints, height: 18, T, spacing: 8 })
+        expect(r.achievable).toBe(true)
+        expect(r.protectedBays.length).toBeGreaterThan(0)
+        expect(r.protectedBays.length).toBeLessThan(12) // shouldn't need to protect everything
+        // re-assessing with the suggested set must pass
+        const check = assessElevationBays({
+            wallPoints, boundaryPoints, height: 18, T, spacing: 8, protectedBays: r.protectedBays,
+        })
+        expect(check.allPass).toBe(true)
+    })
+
+    it('corners-first protects an end bay first; off picks the worst-shortfall bay', () => {
+        // boundary notched closest near the centre, so the worst-shortfall bay is
+        // interior; corners-first overrides that to take an end bay first.
+        const boundary = [{ x: 0, y: -34 }, { x: 48, y: -22 }, { x: 96, y: -34 }]
+        const on = suggestProtection({
+            wallPoints, boundaryPoints: boundary, height: 18, T, spacing: 8, cornersFirst: true,
+        })
+        const off = suggestProtection({
+            wallPoints, boundaryPoints: boundary, height: 18, T, spacing: 8, cornersFirst: false,
+        })
+        expect([1, 12]).toContain(on.steps[0])         // an end bay first
+        expect(off.steps[0]).toBeGreaterThan(1)        // an interior bay first
+        expect(off.steps[0]).toBeLessThan(12)
+        expect(on.achievable).toBe(true)
+        expect(off.achievable).toBe(true)
+    })
+})
+
+describe('outwardNormalAt — perpendicular unit normal toward the boundary', () => {
+    const wall = [{ x: 0, y: 0 }, { x: 40, y: 0 }]
+
+    it('points toward a parallel boundary below the wall', () => {
+        const boundary = [{ x: -10, y: -20 }, { x: 50, y: -20 }]
+        const n = outwardNormalAt(wall, 20, boundary)
+        expect(n.x).toBeCloseTo(0, 6)
+        expect(n.y).toBeCloseTo(-1, 6) // straight down, toward the boundary
+    })
+
+    it('is a unit vector', () => {
+        const boundary = [{ x: 0, y: -10 }, { x: 40, y: -30 }]
+        const n = outwardNormalAt(wall, 20, boundary)
+        expect(Math.hypot(n.x, n.y)).toBeCloseTo(1, 6)
+    })
+
+    it('falls back to the nearest boundary direction when no perpendicular meets it', () => {
+        // boundary off to the side of the right end (the perpendicular misses it)
+        const boundary = [{ x: 0, y: -10 }, { x: 0, y: -50 }]
+        const n = outwardNormalAt(wall, 40, boundary)
+        expect(Math.hypot(n.x, n.y)).toBeCloseTo(1, 6)
+    })
+})
+
+describe('buildRequiredBoundaryLine — needed-boundary locus (required distance offset)', () => {
+    const wall = [{ x: 0, y: 0 }, { x: 40, y: 0 }]
+    const boundary = [{ x: -10, y: -100 }, { x: 50, y: -100 }] // parallel, well below
+
+    it('offsets each station outward by its required distance', () => {
+        // 5 stations at 0,10,20,30,40; required = 10 m everywhere
+        const required = [10, 10, 10, 10, 10]
+        const line = buildRequiredBoundaryLine(wall, boundary, 10, required)
+        expect(line).toHaveLength(5)
+        for (const p of line) {
+            expect(p.point.y).toBeCloseTo(-10, 6) // 10 below the wall (toward boundary)
+        }
+        expect(line[2].point.x).toBeCloseTo(20, 6)
+    })
+
+    it('reflects a varying required distance (the locus bulges where required is larger)', () => {
+        const required = [5, 10, 20, 10, 5]
+        const line = buildRequiredBoundaryLine(wall, boundary, 10, required)
+        expect(line[0].point.y).toBeCloseTo(-5, 6)
+        expect(line[2].point.y).toBeCloseTo(-20, 6) // bulges out at the centre
+        expect(line[4].point.y).toBeCloseTo(-5, 6)
+    })
+
+    it('returns [] without a boundary to define the outward side', () => {
+        expect(buildRequiredBoundaryLine(wall, [], 10, [10, 10])).toEqual([])
+    })
+})
+
+describe('assessElevationBays.requiredByStation — needed-boundary input', () => {
+    const wallPoints = [{ x: 0, y: 0 }, { x: 96, y: 0 }]
+
+    it('gives a required distance per column station that the locus can offset by', () => {
+        const r = assessElevationBays({ wallPoints, boundaryPoints: [], height: 18, T, spacing: 8 })
+        expect(r.requiredByStation).toHaveLength(r.nBays + 1) // one per column station
+        // centre station (48 m) governs at ~38.341 m, same as the gridline sweep
+        const centreIdx = 6 // station at 48 m (0,8,...,48 -> index 6)
+        expect(r.requiredByStation[centreIdx]).toBeCloseTo(38.341, 1)
+        expect(r.requiredByStation.every((d) => d >= 0)).toBe(true)
+    })
+
+    it('shrinks when bays are protected (smaller emitter -> nearer needed boundary)', () => {
+        const open = assessElevationBays({ wallPoints, boundaryPoints: [], height: 18, T, spacing: 8 })
+        const prot = assessElevationBays({
+            wallPoints, boundaryPoints: [], height: 18, T, spacing: 8, protectedBays: [1, 2, 11, 12],
+        })
+        const maxOpen = Math.max(...open.requiredByStation)
+        const maxProt = Math.max(...prot.requiredByStation)
+        expect(maxProt).toBeLessThan(maxOpen)
+    })
+})
+
+describe('rectVFAt — 2-D telescoping view factor with a vertical band', () => {
+    it('reproduces the full-height corner-rectangle sum (band 0..H, m = H/2)', () => {
+        const H = 18, m = H / 2, S = 60
+        // single full bay [0,96], receiver at xR -> matches totalViewFactor
+        for (const xR of [0, 24, 48, 96]) {
+            const banded = rectVFAt(xR, 0, 96, 0, H, m, S)
+            const full = totalViewFactor(xR, 96 - xR, S, m, m)
+            expect(banded).toBeCloseTo(full, 9)
+        }
+    })
+
+    it('a part-height band radiates less than the full height', () => {
+        const H = 18, m = H / 2, S = 60
+        const full = rectVFAt(20, 0, 96, 0, H, m, S)
+        const band = rectVFAt(20, 0, 96, 6, 12, m, S) // central 6..12 m only
+        expect(band).toBeLessThan(full)
+        expect(band).toBeGreaterThan(0)
+    })
+
+    it('a band split into two stacked sub-bands equals the whole band', () => {
+        const m = 9, S = 50
+        const whole = rectVFAt(20, 0, 96, 0, 18, m, S)
+        const lower = rectVFAt(20, 0, 96, 0, 9, m, S)
+        const upper = rectVFAt(20, 0, 96, 9, 18, m, S)
+        expect(lower + upper).toBeCloseTo(whole, 9)
+    })
+})
+
+describe('baysCoveredBySpan / projectSpanOntoWall — snapping regions to bays', () => {
+    it('includes every bay the span touches (snap, extend into the next bay)', () => {
+        // width 96, spacing 8 -> bays 1..12 at [0,8],[8,16],...
+        expect(baysCoveredBySpan(96, 8, 0, 8)).toEqual([1])
+        expect(baysCoveredBySpan(96, 8, 4, 20)).toEqual([1, 2, 3]) // crosses into bay 3
+        expect(baysCoveredBySpan(96, 8, 17, 17.5)).toEqual([3])
+    })
+
+    it('projects a drawn region polyline onto the wall arc-length span', () => {
+        const wall = [{ x: 0, y: 0 }, { x: 96, y: 0 }]
+        const region = [{ x: 10, y: 3 }, { x: 30, y: -2 }] // roughly over x 10..30
+        const { start, end } = projectSpanOntoWall(wall, region)
+        expect(start).toBeCloseTo(10, 5)
+        expect(end).toBeCloseTo(30, 5)
+    })
+})
+
+describe('buildEmitter — protected/unprotected regions (#11)', () => {
+    const base = { width: 96, spacing: 8, height: 18 }
+
+    it('a full-height protected region removes the whole bay', () => {
+        const r = buildEmitter({ ...base, regions: [{ kind: 'protected', bays: [6], base: 0, top: 18 }] })
+        const bay6 = r.bayStatus.find((s) => s.bay === 6)
+        expect(bay6.status).toBe('protected')
+        expect(bay6.emitting).toHaveLength(0)
+        expect(r.pieces.some((p) => p.a === 40 && p.b === 48)).toBe(false) // bay6 not emitting
+    })
+
+    it('a part-height protected band leaves the complement emitting', () => {
+        const r = buildEmitter({ ...base, regions: [{ kind: 'protected', bays: [6], base: 6, top: 12 }] })
+        const bay6 = r.bayStatus.find((s) => s.bay === 6)
+        expect(bay6.status).toBe('partially-protected')
+        // complement = [0,6] and [12,18]
+        expect(bay6.emitting).toEqual([{ base: 0, top: 6 }, { base: 12, top: 18 }])
+    })
+
+    it('an unprotected band locks the bay but leaves the emitter unchanged', () => {
+        const r = buildEmitter({ ...base, regions: [{ kind: 'unprotected', bays: [3], base: 4, top: 10 }] })
+        const bay3 = r.bayStatus.find((s) => s.bay === 3)
+        expect(bay3.status).toBe('unprotected')
+        expect(bay3.emitting).toEqual([{ base: 0, top: 18 }]) // whole face still emits
+        expect(r.lockedBays).toContain(3)
+    })
+
+    it('protected + unprotected bands that overlap vertically are a conflict (apply neither)', () => {
+        const r = buildEmitter({
+            ...base,
+            regions: [
+                { kind: 'protected', bays: [5], base: 0, top: 10 },
+                { kind: 'unprotected', bays: [5], base: 6, top: 14 },
+            ],
+        })
+        expect(r.conflictBays).toContain(5)
+        const bay5 = r.bayStatus.find((s) => s.bay === 5)
+        expect(bay5.status).toBe('conflict')
+        expect(bay5.emitting).toEqual([{ base: 0, top: 18 }]) // reverted to normal
+    })
+
+    it('protected + unprotected bands that DO NOT overlap compose (no conflict)', () => {
+        const r = buildEmitter({
+            ...base,
+            regions: [
+                { kind: 'protected', bays: [5], base: 0, top: 6 },   // protect lower
+                { kind: 'unprotected', bays: [5], base: 10, top: 18 }, // keep upper open
+            ],
+        })
+        expect(r.conflictBays).not.toContain(5)
+        const bay5 = r.bayStatus.find((s) => s.bay === 5)
+        expect(bay5.emitting).toEqual([{ base: 6, top: 18 }]) // lower 0..6 removed
+        expect(r.lockedBays).toContain(5)
+    })
+})
+
+describe('assessElevationBays with regions (#11)', () => {
+    const wallPoints = [{ x: 0, y: 0 }, { x: 96, y: 0 }]
+
+    it('matches the no-region result when no regions are supplied', () => {
+        const a = assessElevationBays({ wallPoints, boundaryPoints: [], height: 18, T, spacing: 8 })
+        expect(a.governingRequiredBoundaryDistance).toBeCloseTo(38.341, 1)
+    })
+
+    it('a protected region lowers required like protecting those bays', () => {
+        const open = assessElevationBays({ wallPoints, boundaryPoints: [], height: 18, T, spacing: 8 })
+        const withRegion = assessElevationBays({
+            wallPoints, boundaryPoints: [], height: 18, T, spacing: 8,
+            regions: [{ kind: 'protected', bays: [1, 2, 11, 12], base: 0, top: 18 }],
+        })
+        expect(withRegion.governingRequiredBoundaryDistance).toBeLessThan(open.governingRequiredBoundaryDistance)
+        expect(withRegion.rows.find((r) => r.bay === 1).protected).toBe(true)
+    })
+
+    it('flags conflicts on the assessment', () => {
+        const a = assessElevationBays({
+            wallPoints, boundaryPoints: [], height: 18, T, spacing: 8,
+            regions: [
+                { kind: 'protected', bays: [6], base: 0, top: 10 },
+                { kind: 'unprotected', bays: [6], base: 6, top: 14 },
+            ],
+        })
+        expect(a.hasConflict).toBe(true)
+        expect(a.conflictBays).toContain(6)
+    })
+})
+
+describe('suggestProtection respects unprotected regions (#11)', () => {
+    const wallPoints = [{ x: 0, y: 0 }, { x: 96, y: 0 }]
+    const boundaryPoints = [{ x: 0, y: -30 }, { x: 96, y: -30 }]
+
+    it('never auto-protects a bay carrying an unprotected band', () => {
+        const r = suggestProtection({
+            wallPoints, boundaryPoints, height: 18, T, spacing: 8,
+            regions: [{ kind: 'unprotected', bays: [6, 7], base: 0, top: 18 }],
+        })
+        expect(r.protectedBays).not.toContain(6)
+        expect(r.protectedBays).not.toContain(7)
+    })
+})
+
+describe('splitIntoElevations — decompose a building outline into faces (#10)', () => {
+    it('splits a closed rectangle into four elevations', () => {
+        const rect = [
+            { x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 20 }, { x: 0, y: 20 }, { x: 0, y: 0 },
+        ]
+        const els = splitIntoElevations(rect)
+        expect(els).toHaveLength(4)
+        expect(els.map((e) => e.index)).toEqual([1, 2, 3, 4])
+        // each face is one straight edge (2 points)
+        for (const e of els) expect(e.points).toHaveLength(2)
+        // widths: 40, 20, 40, 20
+        expect(polylineLength(els[0].points)).toBeCloseTo(40, 6)
+        expect(polylineLength(els[1].points)).toBeCloseTo(20, 6)
+    })
+
+    it('merges a near-collinear jog into one elevation', () => {
+        // an L-ish wall with a tiny bend (<20 deg) part-way -> still one face
+        const wall = [{ x: 0, y: 0 }, { x: 20, y: 1 }, { x: 40, y: 0 }] // ~3 deg bend
+        const els = splitIntoElevations(wall)
+        expect(els).toHaveLength(1)
+        expect(els[0].points).toHaveLength(3)
+    })
+
+    it('splits an open polyline at a real (90 deg) corner', () => {
+        const wall = [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 30 }]
+        const els = splitIntoElevations(wall)
+        expect(els).toHaveLength(2)
+        expect(polylineLength(els[0].points)).toBeCloseTo(40, 6)
+        expect(polylineLength(els[1].points)).toBeCloseTo(30, 6)
+    })
+
+    it('splits an L-shaped closed outline into its six faces', () => {
+        const L = [
+            { x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 20 }, { x: 30, y: 20 },
+            { x: 30, y: 40 }, { x: 0, y: 40 }, { x: 0, y: 0 },
+        ]
+        const els = splitIntoElevations(L)
+        expect(els).toHaveLength(6)
+    })
+})
+
+describe('buildingPoints line-of-sight — a face cannot measure through the building', () => {
+    // A closed square building; the boundary wraps far outside on all sides. The
+    // bottom face's outward normal points DOWN (-y); without the full outline for
+    // line-of-sight a normal could otherwise pick the boundary across the building.
+    const building = [
+        { x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 40 }, { x: 0, y: 40 }, { x: 0, y: 0 },
+    ]
+    const boundary = [
+        { x: -50, y: -20 }, { x: 90, y: -20 }, { x: 90, y: 90 }, { x: -50, y: 90 }, { x: -50, y: -20 },
+    ]
+    const bottomFace = [{ x: 0, y: 0 }, { x: 40, y: 0 }]
+
+    it('measures the bottom face outward (down) to the near boundary, not through the building', () => {
+        const r = assessElevationBays({
+            wallPoints: bottomFace, boundaryPoints: boundary, height: 18, T, spacing: 10,
+            buildingPoints: building,
+        })
+        // boundary below sits at y = -20, so actual ~20 m for every bay
+        for (const row of r.rows) {
+            expect(row.actualBoundaryDistance).toBeCloseTo(20, 1)
+        }
+    })
+})
+
 describe('gridlineStations — column positions along the wall', () => {
     it('places a station at 0, spacing, ... and the far edge', () => {
         const wall = [{ x: 0, y: 0 }, { x: 40, y: 0 }]
@@ -261,5 +727,45 @@ describe('gridlineStations — column positions along the wall', () => {
         expect(st[0].point).toEqual({ x: 0, y: 0 })
         expect(st[st.length - 1].point).toEqual({ x: 40, y: 0 })
         expect(st[2].point).toEqual({ x: 16, y: 0 })
+    })
+})
+
+describe('bre135ElevationsFromWall — derive BRE 135 elevations from the drawn outline', () => {
+    // Reuses splitIntoElevations (one elevation per face) so the BR 187 and
+    // BRE 135 methods agree on what an "elevation" is; each face carries its
+    // width and the worst-case (smallest) perpendicular boundary distance.
+    it('returns one elevation per face with its width (L-shaped open wall)', () => {
+        const wall = [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 40 }]
+        const elevs = bre135ElevationsFromWall(wall, [])
+        expect(elevs).toHaveLength(2)
+        expect(elevs[0].width).toBeCloseTo(60, 6)
+        expect(elevs[1].width).toBeCloseTo(40, 6)
+        expect(elevs[0].boundaryDistance).toBe(null) // no boundary supplied
+    })
+
+    it('seeds the boundary distance from the worst-case approach to the boundary', () => {
+        const wall = [{ x: 0, y: 0 }, { x: 60, y: 0 }]
+        // boundary parallel, 10 m off in +y, but dips to 7 m near the middle
+        const boundary = [{ x: 0, y: 10 }, { x: 30, y: 7 }, { x: 60, y: 10 }]
+        const elevs = bre135ElevationsFromWall(wall, boundary)
+        expect(elevs).toHaveLength(1)
+        // worst case (smallest perpendicular distance anywhere along the face) ~ 7
+        expect(elevs[0].boundaryDistance).toBeGreaterThan(6.9)
+        expect(elevs[0].boundaryDistance).toBeLessThan(7.2)
+    })
+
+    it('splits a closed rectangle into four elevations', () => {
+        const rect = [
+            { x: 0, y: 0 }, { x: 80, y: 0 }, { x: 80, y: 30 }, { x: 0, y: 30 }, { x: 0, y: 0 },
+        ]
+        const elevs = bre135ElevationsFromWall(rect, [])
+        expect(elevs).toHaveLength(4)
+        const widths = elevs.map((e) => Math.round(e.width)).sort((a, b) => a - b)
+        expect(widths).toEqual([30, 30, 80, 80])
+    })
+
+    it('returns [] when no wall is drawn', () => {
+        expect(bre135ElevationsFromWall([], [])).toEqual([])
+        expect(bre135ElevationsFromWall(null, [])).toEqual([])
     })
 })

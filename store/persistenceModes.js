@@ -133,6 +133,7 @@ export function partializeState(state) {
         sliceZHeight: state.sliceZHeight,
         aovMode: state.aovMode,
         aovActivationTime: state.aovActivationTime,
+        aovType: state.aovType,
         obstructionTransparency: state.obstructionTransparency,
     }
 

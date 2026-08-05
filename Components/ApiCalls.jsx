@@ -45,6 +45,15 @@ export const renameProject = async (projectId, name) => {
     return resp.json()
 }
 
+export const deleteProject = async (projectId) => {
+    const resp = await fetch(`${API_BASE}/projects/${projectId}`, {
+        method: 'DELETE',
+    })
+    if (!resp.ok) throw new Error(`Failed to delete project: ${resp.status}`)
+    // 204 No Content — nothing to parse
+    return true
+}
+
 export const saveProjectToServer = async (projectId, payload) => {
     const resp = await fetch(`${API_BASE}/projects/${projectId}/save`, {
         method: 'POST',
@@ -160,6 +169,7 @@ export const sendFdsData = async (
   obstruction_transparency={},
   aov_mode="always_open",
   aov_activation_time=null,
+  aov_type="hole",
   extract_config={},
   inlet_config={},
   zone_config={},
@@ -171,6 +181,7 @@ export const sendFdsData = async (
   fire_growth_rate="medium",
   fire_custom_alpha=null,
   slice_z_height=2.0,
+  options={}, // { download?: boolean } — set download:false to fetch the FDS text without saving a file
 ) => {
     let bodyContent = JSON.stringify( {
       elementList,
@@ -199,6 +210,7 @@ export const sendFdsData = async (
       obstruction_transparency,
       aov_mode,
       aov_activation_time,
+      aov_type,
       extract_config,
       inlet_config,
       zone_config,
@@ -220,8 +232,13 @@ export const sendFdsData = async (
     });  
     try{
       const data = await response.json();
-      const blob = new Blob([data], { type: "text/plain;charset=utf-8" });
-      saveAs(blob, "test.fds");
+      // Default behaviour downloads test.fds (the existing "Generate FDS code"
+      // button). The 3D / FDS-code views pass { download: false } so they can
+      // refresh the in-app preview without spamming file downloads.
+      if (options.download !== false) {
+        const blob = new Blob([data], { type: "text/plain;charset=utf-8" });
+        saveAs(blob, "test.fds");
+      }
       return data;
 
     } catch (err) {
@@ -399,7 +416,36 @@ export const sendTimeEqReliabilityData = async (
   //       console.log("host", server_urls.localhost)
   //     }
 
-  //   } catch (err) { 
+  //   } catch (err) {
   //     showMessage("Error: ",err)
   //   }
   // }
+
+// --- External Fire Spread (BRE 135 enclosing-rectangle) API ---
+// Ported app lives in backendForNextApp (routers/efs.py, services/efs_calculator.py).
+// `elevations` is an array of { boundary_distance, height, width, has_suppression }.
+export const calculateEfs = async (elevations, isCommercial = true) => {
+    const resp = await fetch(`${API_BASE}/efs/calculate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ elevations, is_commercial: isCommercial }),
+    })
+    if (!resp.ok) {
+        let detail = ''
+        try { detail = (await resp.json()).detail } catch (_) { /* no JSON body */ }
+        throw new Error(detail || `EFS calculation failed: ${resp.status}`)
+    }
+    return resp.json()
+}
+
+// Generate the BRE 135 Word report and trigger a download.
+export const downloadEfsReport = async (elevations, isCommercial = true) => {
+    const resp = await fetch(`${API_BASE}/efs/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ elevations, is_commercial: isCommercial }),
+    })
+    if (!resp.ok) throw new Error(`Failed to generate EFS report: ${resp.status}`)
+    const blob = await resp.blob()
+    saveAs(blob, 'EFS_Report.docx')
+}

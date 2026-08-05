@@ -6,6 +6,7 @@ import FDSInputsPopup from './FDSInputsPopup.tsx'
 import TimeEquivalenceInputPopup from './TimeEquivalenceInputPopup'
 import EfsPopup from './EfsPopup'
 import {sendFdsData} from './ApiCalls'
+import { generateFdsCode } from '@/utils/generateFds'
 import { computeAutoSprinklerPositions } from '@/utils/autoSprinklers'
 import { computeCenterlinePoints, findCorridorObstruction, computeStairSensorPositions } from '@/utils/corridorCenterline'
 import { runFsaPathfinding } from '@/utils/fsaPathfinding'
@@ -23,6 +24,12 @@ const Toolbar = ({setShowModePopup}) => {
     const currentMode = useStore((state) => state.currentMode)
     const tool = useStore((state) => state.tool)
     const setTool = useStore((state) => state.setTool)
+    const undo = useStore((state) => state.undo)
+    const redo = useStore((state) => state.redo)
+    // Subscribe to the stack lengths (not the canUndo/canRedo selectors) so the
+    // buttons re-render and enable/disable as the history changes.
+    const canUndo = useStore((state) => state.elementsHistory.length > 0)
+    const canRedo = useStore((state) => state.elementsFuture.length > 0)
     const comment = useStore((state) => state.comment)
     const setComment = useStore((state) => state.setComment)
     const setConvertedPoints = useStore((state) => state.setConvertedPoints)
@@ -236,64 +243,11 @@ const [errorList, setErrorList] = useState(defaultErrorList)
       }
 
       function handleFDSClick() {
-        // Refresh elements (sensors should already be computed via Regen Sensors button)
-        const freshElements = useStore.getState().elements
-
-        // Inject auto-placed sprinklers as elements so backend uses frontend-computed positions
-        let elementsToSend = freshElements
-        const hasManualSprinklers = freshElements.some(el => el.comments === 'sprinkler')
-        if (isSprinklered && !hasManualSprinklers) {
-            const autoPositions = computeAutoSprinklerPositions(freshElements, pixelsPerMesh)
-            if (autoPositions.length > 0) {
-                const maxId = Math.max(0, ...freshElements.map(el => el.id || 0))
-                const sprinklerEls = autoPositions.map((pos, i) => ({
-                    id: maxId + 1 + i,
-                    type: 'point',
-                    comments: 'sprinkler',
-                    points: [{ x: pos.x, y: pos.y }]
-                }))
-                elementsToSend = [...freshElements, ...sprinklerEls]
-            }
-        }
-        sendFdsData(
-                    elementsToSend,
-                    Number(fireFloorZ),
-                    Number(wallHeight),
-                    Number(topStoreyHeight),
-                    Number(fireFloorNumber),
-                    Number(totalFloors),
-                    Number(stairRoofZ),
-                    0.2, // wall_thickness
-                    pixelsPerMesh * 10, // px_per_m — derived from scale calibration
-                    commonCorridorMode ? scenarioType : null,
-                    simEndTime,
-                    includeSensors,
-                    corridorSensorHeights,
-                    stairSensorHeights,
-                    fsaSensorHeights,
-                    isSprinklered,
-                    doorLeakagesEnabled,
-                    doorLeakageConfig,
-                    doorOpenings,
-                    doorRoles,
-                    landingRoles,
-                    landingUpSide,
-                    stairStyle,
-                    obstructionTransparency,
-                    aovMode,
-                    aovActivationTime,
-                    extractConfig,
-                    inletConfig,
-                    zoneConfig,
-                    fireHRR,
-                    fireDimension,
-                    fireHeightAboveFloor,
-                    fireBase,
-                    fireType,
-                    fireGrowthRate,
-                    fireCustomAlpha,
-                    sliceZHeight
-                    )
+        // Generate (downloads test.fds as before) and capture the returned text
+        // into the store so the 3D / FDS-code view tabs reflect it. All inputs
+        // are read off the store inside generateFdsCode — see utils/generateFds.js.
+        // (Sensors should already be computed via the Regen Sensors button.)
+        generateFdsCode({ download: true })
       }
 
       function handleFDSInput() {
@@ -432,12 +386,30 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                 setComment("efsBoundary")
                 }} />
                 <label htmlFor="efsBoundary">Boundary</label>
+                {/* protected (fire-rated) region polyline */}
+                <input type="radio"
+                id="efsProtected"
+                checked={tool === "polyline" && comment == 'efsProtected'}
+                onChange={() => {
+                setTool("polyline")
+                setComment("efsProtected")
+                }} />
+                <label htmlFor="efsProtected">Protected</label>
+                {/* must-stay-unprotected region polyline */}
+                <input type="radio"
+                id="efsUnprotected"
+                checked={tool === "polyline" && comment == 'efsUnprotected'}
+                onChange={() => {
+                setTool("polyline")
+                setComment("efsUnprotected")
+                }} />
+                <label htmlFor="efsUnprotected">Unprotected</label>
         </>
     )
     return (
     <>
       {/* perhaps popup can't be located in menu bar? */}
-      {showFDSInputsPopup && <FDSInputsPopup handleUserInput={handleFDSInput}/>}
+      {showFDSInputsPopup && <FDSInputsPopup handleUserInput={handleFDSInput} onClose={() => setShowFDSInputsPopup(false)}/>}
       {showErrorPopup && <ErrorPopup setShowPopup={setShowErrorPopup} errorList={errorList}/>}
       {showTimeEqPopup && <TimeEquivalenceInputPopup mockData={null}/>}
       {showFireInputsPopup && <FireInputsPopup handleUserInput={handleFireInput}/>}
@@ -450,6 +422,26 @@ const [errorList, setErrorList] = useState(defaultErrorList)
             type="button"
             >
             Change Mode
+          </button>
+          <button
+            onClick={undo}
+            disabled={!canUndo}
+            title="Undo (Ctrl+Z)"
+            aria-label="Undo"
+            className="text-white bg-gray-600 hover:bg-gray-500 font-medium rounded-lg text-sm px-4 py-0.1 mr-2 mb-2 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none"
+            type="button"
+            >
+            ↩ Undo
+          </button>
+          <button
+            onClick={redo}
+            disabled={!canRedo}
+            title="Redo (Ctrl+Shift+Z)"
+            aria-label="Redo"
+            className="text-white bg-gray-600 hover:bg-gray-500 font-medium rounded-lg text-sm px-4 py-0.1 mr-2 mb-2 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none"
+            type="button"
+            >
+            ↪ Redo
           </button>
         </div>
 

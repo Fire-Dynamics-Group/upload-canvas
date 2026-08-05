@@ -6,11 +6,15 @@ import useStore from '../store/useStore'
 import ModePopup from '../Components/ModePopup'
 import Toolbar from '../Components/Toolbar'
 import ErrorPopup from '../Components/ErrorPopup'
+import ViewTabs from '../Components/ViewTabs'
+import ThreeView from '../Components/ThreeView'
+import FdsCodeView from '../Components/FdsCodeView'
 
 import ProjectDashboard from '../Components/ProjectDashboard'
 import useUserName from '../hooks/useUserName'
 import { isDbBacked } from '../store/persistenceModes'
 import { savePdfToIndexedDB, loadPdfFromIndexedDB } from '../utils/pdfStorage'
+import { computeFramingScroll, elementPixelBox } from '../utils/viewportFraming'
 import {
   createProject,
   saveProjectToServer,
@@ -19,6 +23,8 @@ import {
   uploadFloorPdf,
   getFloorPdfUrl,
 } from '../Components/ApiCalls'
+import { wouldWipeElements } from '../utils/persistenceSafeguards'
+import { describeSaveStatus } from '../utils/saveStatus'
 
 
 
@@ -98,6 +104,7 @@ export default function Home() {
 
   const [showModePopup, setShowModePopup] = useState(false)
   const currentMode = useStore((state) => state.currentMode)
+  const viewMode = useStore((state) => state.viewMode)
   const setPdfCanvasRef = useStore((state) => state.setPdfCanvasRef)
   const pdfCanvasRefLocal = useRef()
   useEffect(() => { setPdfCanvasRef(pdfCanvasRefLocal) }, [setPdfCanvasRef])
@@ -109,6 +116,12 @@ export default function Home() {
 
   const elements = useStore((state) => state.elements)
   const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
+  // Highlighted element ids — set while configuring a specific element in the
+  // docked inputs panel. Used to auto-frame that element beside the panel.
+  const highlightedDoorId = useStore((state) => state.highlightedDoorId)
+  const highlightedExtractId = useStore((state) => state.highlightedExtractId)
+  const highlightedInletId = useStore((state) => state.highlightedInletId)
+  const highlightedLandingId = useStore((state) => state.highlightedLandingId)
   const setPdfData = useStore((state) => state.setPdfData)
   const pdfData = useStore((state) => state.pdfData)
   const toggleIsPdfGreyscale = useStore((state) => state.toggleIsPdfGreyscale)
@@ -152,6 +165,17 @@ export default function Home() {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
       const payload = useStore.getState().buildSavePayload()
+
+      // Safeguard: the save endpoint is a delete-then-recreate of the floor, so
+      // an empty-elements autosave deletes saved geometry. Skip a save that
+      // would wipe a floor previously saved with elements (a transient in-memory
+      // blank), comparing against the last successfully-saved payload.
+      const previousSaved = lastSavedRef.current ? JSON.parse(lastSavedRef.current) : null
+      if (wouldWipeElements(payload, previousSaved)) {
+        console.warn('Skipping autosave: would wipe saved geometry with an empty floor')
+        return
+      }
+
       const payloadStr = JSON.stringify(payload)
 
       // Skip if nothing changed
@@ -207,6 +231,24 @@ export default function Home() {
     })
     return () => unsub()
   }, [triggerAutoSave])
+
+  // Auto-frame the element being configured. When a door/extract/inlet/landing
+  // is highlighted from the docked inputs panel, scroll so it sits in the clear
+  // area beside the panel instead of behind it. window.scrollTo today; this is
+  // the seam the planned canvas pan/zoom will replace (see computeFramingScroll).
+  useEffect(() => {
+    const id = highlightedDoorId ?? highlightedExtractId ?? highlightedInletId ?? highlightedLandingId
+    if (id == null || typeof window === 'undefined') return
+    const box = elementPixelBox(elements.find((el) => el.id === id))
+    if (!box) return
+    const panelWidth = Math.min(384, window.innerWidth * 0.9) // SidePanel w-96 / max-w-90vw
+    const { left, top } = computeFramingScroll(
+      box,
+      { width: window.innerWidth, height: window.innerHeight },
+      { side: 'right', width: panelWidth },
+    )
+    window.scrollTo({ left, top, behavior: 'smooth' })
+  }, [highlightedDoorId, highlightedExtractId, highlightedInletId, highlightedLandingId, elements])
 
   console.log("elements log: ", elements)
 
@@ -291,6 +333,9 @@ export default function Home() {
           setProjectName(name)
         } catch (err) {
           console.error('Failed to create project:', err)
+          // Surface it: without a projectId autosave never arms, so the user
+          // would otherwise draw a whole plan that is never persisted (issue #3).
+          setSaveStatus('create-failed')
           return
         }
       }
@@ -303,6 +348,7 @@ export default function Home() {
           console.log('PDF uploaded to S3')
         } catch (err) {
           console.error('Failed to upload PDF to S3:', err)
+          setSaveStatus('pdf-failed')
         }
       }
     }
@@ -331,7 +377,11 @@ export default function Home() {
       className="fill-current bg-gray-800"
     />
   </svg>
-  <div className="flex justify-center py-4 relative absolute z-30" style={{ zIndex: 100 }} >
+  {/* Pin the toolbar as a true fixed overlay anchored to the viewport bottom,
+      so it can't drift off-screen (the old `relative absolute` with no anchors
+      did). It carries its own solid background so the tools always sit on a bar.
+      flex-wrap lets it reflow rather than overflow on small/zoomed views. */}
+  <div className="fixed bottom-0 left-0 right-0 flex flex-wrap justify-center items-center gap-1 py-2 z-[100] bg-gray-800 text-white">
     <Toolbar setShowModePopup={setShowModePopup}/>
   </div>
 </div>
@@ -376,6 +426,12 @@ export default function Home() {
 
       const floorDetail = await loadFloorDetail(projectId, floor.id)
       hydrateFromServer(project, floorDetail)
+
+      // Seed the last-saved baseline with what we just loaded, so the empty-save
+      // guard knows the DB already holds geometry. Without this, an empty-elements
+      // autosave fired before the first real save (previousSaved === null) could
+      // wipe the loaded floor.
+      lastSavedRef.current = JSON.stringify(useStore.getState().buildSavePayload())
 
       if (floor.pdf_s3_key) {
         const { url } = await getFloorPdfUrl(projectId, floor.id)
@@ -426,13 +482,13 @@ export default function Home() {
         </div>
       )}
       {/* Save status indicator */}
-      {saveStatus && (
-        <div className={`fixed top-2 left-1/2 -translate-x-1/2 z-50 text-xs px-3 py-1 rounded-full ${
-          saveStatus === "saving" ? "bg-yellow-600 text-white" :
-          saveStatus === "saved" ? "bg-green-600 text-white" :
-          "bg-red-600 text-white"
+      {describeSaveStatus(saveStatus) && (
+        <div className={`fixed top-2 left-1/2 -translate-x-1/2 z-50 text-xs px-3 py-1 rounded-full text-white ${
+          describeSaveStatus(saveStatus).tone === "pending" ? "bg-yellow-600" :
+          describeSaveStatus(saveStatus).tone === "success" ? "bg-green-600" :
+          "bg-red-600"
         }`}>
-          {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved" : "Save failed"}
+          {describeSaveStatus(saveStatus).label}
         </div>
       )}
       {/* Top bar - visible when working on a project */}
@@ -458,11 +514,22 @@ export default function Home() {
           )}
         </div>
       )}
-      {tool != "scale" ? (<>
+      {/* Toolbar belongs to the canvas — only show it when a plan is open, not
+          on the dashboard / upload / loading screens (it's a fixed overlay now).
+          Hidden in the 3D / FDS views, which are read-only. */}
+      {selectedFile && tool != "scale" && viewMode === '2d' ? (<>
       {menuOverlay}
       </>
       )
       :null}
+      {/* View switcher (2D / 3D / FDS) + the 3D / FDS overlays. The 2D Canvas
+          stays mounted underneath so its in-progress state survives a toggle;
+          the overlays simply cover it. */}
+      {selectedFile && (<>
+        <ViewTabs />
+        {viewMode === '3d' && <ThreeView />}
+        {viewMode === 'fds' && <FdsCodeView />}
+      </>)}
       {showModePopup && <ModePopup setToggleShowPopup={setShowModePopup} onModeSelected={handleModeSelected}/>}
       <div>
         { isLoadingFromServer ? (
@@ -503,9 +570,13 @@ export default function Home() {
             </>
 
               }
+        {/* The PDF canvas stays mounted (renderPdf draws to it before
+            setSelectedFile flips, so the ref must exist), but is hidden whenever
+            no project is open — otherwise the previous project's PDF lingers
+            behind the dashboard and the user has to scroll past it. */}
         <canvas
         ref={pdfCanvasRef}
-        className='z-1'
+        className={selectedFile ? 'z-1' : 'hidden'}
         />
       </div>
     </>

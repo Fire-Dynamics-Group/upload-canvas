@@ -1,0 +1,237 @@
+&HEAD CHID='model'/
+&TIME T_END=300/
+&DUMP DT_RESTART=300.0, DT_SL3D=0.25/
+&COMB SUPPRESSION=.FALSE./
+&SURF ID='Plasterboard',
+      COLOR='GRAY 80',
+      DEFAULT=.TRUE.,
+      BACKING='VOID',
+      MATL_ID(1,1)='GYPSUM PLASTER',
+      MATL_MASS_FRACTION(1,1)=1.0,
+      THICKNESS(1)=0.05/
+&MATL ID='GYPSUM PLASTER',
+      FYI='Quintiere, Fire Behavior - NIST NRC Validation',
+      SPECIFIC_HEAT=0.84,
+      CONDUCTIVITY=0.48,
+      DENSITY=1440.0/
+&MESH ID='Mesh0', IJK=73,19,30, XB=0.0,7.3,8.2,10.1,10,13/
+&MESH ID='Mesh1', IJK=20,65,30, XB=2.3,4.3,1.7,8.2,10,13/
+&MESH ID='Mesh2', IJK=73,17,30, XB=0.1,7.4,0.0,1.7,10,13/
+&MESH ID='Stair Mesh_Lower0', IJK=14,31,50, XB=5.3,8.1,2.0,8.2,0.0,10.0/
+&MESH ID='Stair Mesh_Middle0', IJK=28,62,30, XB=5.3,8.1,2.0,8.2,10.0,13.0/
+&MESH ID='Stair Mesh_Upper0', IJK=14,31,125, XB=5.3,8.1,2.0,8.2,13.0,38.0/
+&VENT ID='Mesh Vent: Stair Mesh_Upper0 [ZMAX]', SURF_ID='OPEN', XB=5.3,8.1,2.0,8.2,38.0,38.0/
+&OBST ID='Fire Floor Walls', XB=0.1,7.47,-0.2,0.0,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=7.27,7.47,-0.2,1.82,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=4.34,7.27,1.62,1.82,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=4.34,4.54,1.62,8.38,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=4.34,7.37,8.18,8.38,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=7.17,7.37,8.18,10.1,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=0.0,7.17,9.9,10.1,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=0.0,0.2,8.38,9.9,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=0.0,2.62,8.38,8.58,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=2.42,2.62,1.52,8.38,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=0.1,2.42,1.52,1.72,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=0.1,0.3,-0.2,1.52,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=0.67,6.82,9.53,9.73,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=6.62,6.82,8.34,9.53,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=0.67,6.62,8.34,8.54,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=1.56,2.95,9.24,9.44,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=2.75,2.95,8.64,9.24,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=1.56,2.75,8.64,8.84,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=3.35,4.74,8.05,8.25,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=4.54,4.74,7.15,8.05,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=3.35,4.54,7.15,7.35,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=5.13,6.53,6.26,6.46,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=6.33,6.53,5.37,6.26,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Fire Floor Walls', XB=5.13,6.33,5.37,5.57,10.0,13.0, SURF_ID='Plasterboard'/
+&OBST ID='Stair Walls', XB=5.45,8.18,1.92,2.12,0.0,35.0, SURF_ID='Plasterboard', RGB=255,255,255, TRANSPARENCY=0.25/
+&OBST ID='Stair Walls', XB=7.98,8.18,1.92,8.08,0.0,35.0, SURF_ID='Plasterboard', RGB=255,255,255, TRANSPARENCY=0.25/
+&OBST ID='Stair Walls', XB=6.97,7.98,7.88,8.08,0.0,35.0, SURF_ID='Plasterboard', RGB=255,255,255, TRANSPARENCY=0.25/
+&OBST ID='Stair Walls', XB=6.97,7.17,7.37,7.88,0.0,35.0, SURF_ID='Plasterboard', RGB=255,255,255, TRANSPARENCY=0.25/
+&OBST ID='Stair Walls', XB=5.25,6.97,7.37,7.57,0.0,35.0, SURF_ID='Plasterboard', RGB=255,255,255, TRANSPARENCY=0.25/
+&OBST ID='Stair Walls', XB=5.25,5.45,1.92,7.37,0.0,35.0, SURF_ID='Plasterboard', RGB=255,255,255, TRANSPARENCY=0.25/
+&OBST ID='Stair Walls', XB=5.25,5.75,1.92,2.12,0.0,35.0, SURF_ID='Plasterboard', RGB=255,255,255, TRANSPARENCY=0.25/
+&RAMP ID = 'Apartment Door Hole_RAMP', T = 29.75, F=-1.0/
+&RAMP ID = 'Apartment Door Hole_RAMP', T = 30.25, F=1.0/
+&RAMP ID = 'Apartment Door Hole_RAMP', T = 59.75, F=1.0/
+&RAMP ID = 'Apartment Door Hole_RAMP', T = 60.25, F=-1.0/
+&CTRL ID = 'Apartment Door Hole', FUNCTION_TYPE = 'CUSTOM', RAMP_ID = 'Apartment Door Hole_RAMP', LATCH =.FALSE., INPUT_ID='TIME'/
+&DEVC ID = 'TIME', QUANTITY='TIME', XYZ = 0.0,0.0,0.0/
+&RAMP ID = 'Stair Door Hole_RAMP', T = 34.75, F=-1.0/
+&RAMP ID = 'Stair Door Hole_RAMP', T = 35.25, F=1.0/
+&RAMP ID = 'Stair Door Hole_RAMP', T = 64.75, F=1.0/
+&RAMP ID = 'Stair Door Hole_RAMP', T = 65.25, F=-1.0/
+&CTRL ID = 'Stair Door Hole', FUNCTION_TYPE = 'CUSTOM', RAMP_ID = 'Stair Door Hole_RAMP', LATCH =.FALSE., INPUT_ID='TIME'/
+&DEVC ID = 'TIME', QUANTITY='TIME', XYZ = 0.0,0.0,0.0/
+&HOLE ID='door0 Door Hole', XB =4.711848183056619,5.511848183056619,6.19922,7.32022,9.999,12.1/
+&HOLE ID='door1 Door Hole', XB =6.750032426774021,7.550032426774021,8.64504,9.76604,9.999,12.1/
+&SURF ID='Fire',
+      COLOR='RED',
+      HRRPUA=510.20408163265313
+      RAMP_Q='Fire_RAMP_Q'
+      TMP_FRONT=300.0/
+&OBST ID='Fire', XB = 9.98,11.38,14.93,16.33,10.0,10.5, SURF_IDS='Fire','Plasterboard','Plasterboard'/
+&RAMP ID='Fire_RAMP_Q', T=0.0, F=0.0/
+&RAMP ID='Fire_RAMP_Q', T=10.0, F=0.0012/
+&RAMP ID='Fire_RAMP_Q', T=20.0, F=0.0047/
+&RAMP ID='Fire_RAMP_Q', T=30.0, F=0.0105/
+&RAMP ID='Fire_RAMP_Q', T=40.0, F=0.0188/
+&RAMP ID='Fire_RAMP_Q', T=50.0, F=0.0293/
+&RAMP ID='Fire_RAMP_Q', T=60.0, F=0.0422/
+&RAMP ID='Fire_RAMP_Q', T=70.0, F=0.0574/
+&RAMP ID='Fire_RAMP_Q', T=80.0, F=0.075/
+&RAMP ID='Fire_RAMP_Q', T=90.0, F=0.0949/
+&RAMP ID='Fire_RAMP_Q', T=100.0, F=0.1172/
+&RAMP ID='Fire_RAMP_Q', T=110.0, F=0.1418/
+&RAMP ID='Fire_RAMP_Q', T=120.0, F=0.1688/
+&RAMP ID='Fire_RAMP_Q', T=130.0, F=0.1981/
+&RAMP ID='Fire_RAMP_Q', T=140.0, F=0.2297/
+&RAMP ID='Fire_RAMP_Q', T=150.0, F=0.2637/
+&RAMP ID='Fire_RAMP_Q', T=160.0, F=0.3/
+&RAMP ID='Fire_RAMP_Q', T=170.0, F=0.3387/
+&RAMP ID='Fire_RAMP_Q', T=180.0, F=0.3797/
+&RAMP ID='Fire_RAMP_Q', T=190.0, F=0.4231/
+&RAMP ID='Fire_RAMP_Q', T=200.0, F=0.4688/
+&RAMP ID='Fire_RAMP_Q', T=210.0, F=0.5169/
+&RAMP ID='Fire_RAMP_Q', T=220.0, F=0.5672/
+&RAMP ID='Fire_RAMP_Q', T=230.0, F=0.62/
+&RAMP ID='Fire_RAMP_Q', T=240.0, F=0.6751/
+&RAMP ID='Fire_RAMP_Q', T=250.0, F=0.7325/
+&RAMP ID='Fire_RAMP_Q', T=260.0, F=0.7923/
+&RAMP ID='Fire_RAMP_Q', T=270.0, F=0.8544/
+&RAMP ID='Fire_RAMP_Q', T=280.0, F=0.9188/
+&RAMP ID='Fire_RAMP_Q', T=290.0, F=0.9857/
+&RAMP ID='Fire_RAMP_Q', T=292.1, F=1.0/
+&RAMP ID='Fire_RAMP_Q', T=300.0, F=1.0/
+&SPEC ID='REAC_FUEL', FORMULA='C6.3H7.1O2.1N1.0', SPECIFIC_HEAT=1.0/
+&REAC ID='POLYURETHANE',
+      FYI='NFPA Babrauskas',
+      FUEL = 'REAC_FUEL',
+      SOOT_YIELD = 0.07,
+      HEAT_OF_COMBUSTION = 25000/
+&OBST ID='LANDING', XB = 5.25, 8.078, 5.957, 7.472,-0.2, 0.0, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.957, 7.472,-0.238, 0.0, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 6.392, 7.112,0.0, 0.238, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 6.032, 6.752,0.238, 0.476, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.672, 6.392,0.476, 0.714, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.312, 6.032,0.714, 0.951, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.952, 5.672,0.951, 1.189, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.592, 5.312,1.189, 1.427, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.232, 4.952,1.427, 1.665, SURF_ID = 'Plasterboard'/
+&OBST ID='LANDING', XB = 5.25, 8.078, 5.957, 7.472,3.13, 3.33, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.957, 7.472,3.092, 3.33, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 6.392, 7.112,3.33, 3.568, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 6.032, 6.752,3.568, 3.806, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.672, 6.392,3.806, 4.044, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.312, 6.032,4.044, 4.281, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.952, 5.672,4.281, 4.519, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.592, 5.312,4.519, 4.757, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.232, 4.952,4.757, 4.995, SURF_ID = 'Plasterboard'/
+&OBST ID='LANDING', XB = 5.25, 8.078, 5.957, 7.472,6.46, 6.66, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.957, 7.472,6.422, 6.66, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 6.392, 7.112,6.66, 6.898, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 6.032, 6.752,6.898, 7.136, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.672, 6.392,7.136, 7.374, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.312, 6.032,7.374, 7.611, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.952, 5.672,7.611, 7.849, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.592, 5.312,7.849, 8.087, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.232, 4.952,8.087, 8.325, SURF_ID = 'Plasterboard'/
+&OBST ID='LANDING', XB = 5.25, 8.078, 5.957, 7.472,9.8, 10.0, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.957, 7.472,9.554, 10.0, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 6.392, 7.112,10.0, 10.446, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 6.032, 6.752,10.446, 10.893, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.672, 6.392,10.893, 11.339, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.312, 6.032,11.339, 11.786, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.952, 5.672,11.786, 12.232, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.592, 5.312,12.232, 12.679, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.232, 4.952,12.679, 13.125, SURF_ID = 'Plasterboard'/
+&OBST ID='LANDING', XB = 5.25, 8.078, 5.957, 7.472,16.05, 16.25, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.957, 7.472,15.804, 16.25, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 6.392, 7.112,16.25, 16.696, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 6.032, 6.752,16.696, 17.143, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.672, 6.392,17.143, 17.589, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.312, 6.032,17.589, 18.036, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.952, 5.672,18.036, 18.482, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.592, 5.312,18.482, 18.929, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.232, 4.952,18.929, 19.375, SURF_ID = 'Plasterboard'/
+&OBST ID='LANDING', XB = 5.25, 8.078, 5.957, 7.472,22.3, 22.5, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.957, 7.472,22.054, 22.5, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 6.392, 7.112,22.5, 22.946, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 6.032, 6.752,22.946, 23.393, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.672, 6.392,23.393, 23.839, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 5.312, 6.032,23.839, 24.286, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.952, 5.672,24.286, 24.732, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.592, 5.312,24.732, 25.179, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP1', XB = 5.25, 6.664, 4.232, 4.952,25.179, 25.625, SURF_ID = 'Plasterboard'/
+&OBST ID='LANDING', XB = 5.25, 8.078, 5.957, 7.472,28.55, 28.75, SURF_ID = 'Plasterboard'/
+&OBST ID='HALFLANDING', XB = 5.25, 8.078, 2.12, 3.13,1.465, 1.665, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.12, 3.13,1.427, 1.665, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.48, 3.2,1.665, 1.903, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.84, 3.56,1.903, 2.141, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.2, 3.92,2.141, 2.379, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.56, 4.28,2.379, 2.616, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.92, 4.64,2.616, 2.854, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 4.28, 5.0,2.854, 3.092, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 4.64, 5.36,3.092, 3.33, SURF_ID = 'Plasterboard'/
+&OBST ID='HALFLANDING', XB = 5.25, 8.078, 2.12, 3.13,4.795, 4.995, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.12, 3.13,4.757, 4.995, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.48, 3.2,4.995, 5.233, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.84, 3.56,5.233, 5.471, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.2, 3.92,5.471, 5.709, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.56, 4.28,5.709, 5.946, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.92, 4.64,5.946, 6.184, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 4.28, 5.0,6.184, 6.422, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 4.64, 5.36,6.422, 6.66, SURF_ID = 'Plasterboard'/
+&OBST ID='HALFLANDING', XB = 5.25, 8.078, 2.12, 3.13,8.125, 8.325, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.12, 3.13,8.086, 8.325, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.48, 3.2,8.325, 8.564, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.84, 3.56,8.564, 8.804, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.2, 3.92,8.804, 9.043, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.56, 4.28,9.043, 9.282, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.92, 4.64,9.282, 9.521, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 4.28, 5.0,9.521, 9.761, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 4.64, 5.36,9.761, 10.0, SURF_ID = 'Plasterboard'/
+&OBST ID='HALFLANDING', XB = 5.25, 8.078, 2.12, 3.13,12.925, 13.125, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.12, 3.13,12.679, 13.125, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.48, 3.2,13.125, 13.571, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.84, 3.56,13.571, 14.018, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.2, 3.92,14.018, 14.464, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.56, 4.28,14.464, 14.911, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.92, 4.64,14.911, 15.357, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 4.28, 5.0,15.357, 15.804, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 4.64, 5.36,15.804, 16.25, SURF_ID = 'Plasterboard'/
+&OBST ID='HALFLANDING', XB = 5.25, 8.078, 2.12, 3.13,19.175, 19.375, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.12, 3.13,18.929, 19.375, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.48, 3.2,19.375, 19.821, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.84, 3.56,19.821, 20.268, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.2, 3.92,20.268, 20.714, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.56, 4.28,20.714, 21.161, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.92, 4.64,21.161, 21.607, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 4.28, 5.0,21.607, 22.054, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 4.64, 5.36,22.054, 22.5, SURF_ID = 'Plasterboard'/
+&OBST ID='HALFLANDING', XB = 5.25, 8.078, 2.12, 3.13,25.425, 25.625, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.12, 3.13,25.179, 25.625, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.48, 3.2,25.625, 26.071, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 2.84, 3.56,26.071, 26.518, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.2, 3.92,26.518, 26.964, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.56, 4.28,26.964, 27.411, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 3.92, 4.64,27.411, 27.857, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 4.28, 5.0,27.857, 28.304, SURF_ID = 'Plasterboard'/
+&OBST ID='STEP2', XB = 6.664, 8.078, 4.64, 5.36,28.304, 28.75, SURF_ID = 'Plasterboard'/
+&OBST ID='Stair Roof', XB=5.25,7.98,2.12,8.08,34.8,35, SURF_ID='Plasterboard', RGB=255,255,255, TRANSPARENCY=0.25/
+&OBST ID='AOV Shaft', XB=5.9,7.3,3.9,5.3,35,37.0, SURF_ID='Plasterboard'/
+&HOLE ID='AOV', XB=6.1,7.1,4.1,5.1,34.8,38.0/
+&SLCF QUANTITY='TEMPERATURE', PBX=10.68/
+&SLCF QUANTITY='VISIBILITY', PBX=10.68/
+&SLCF QUANTITY='VELOCITY', VECTOR=.TRUE., PBX=10.68/
+&SLCF QUANTITY='PRESSURE', PBX=10.68/
+&SLCF QUANTITY='TEMPERATURE', PBY=15.63/
+&SLCF QUANTITY='VISIBILITY', PBY=15.63/
+&SLCF QUANTITY='VELOCITY', VECTOR=.TRUE., PBY=15.63/
+&SLCF QUANTITY='PRESSURE', PBY=15.63/
+&SLCF QUANTITY='TEMPERATURE', PBZ=12.0/
+&SLCF QUANTITY='VISIBILITY', PBZ=12.0/
+&SLCF QUANTITY='VELOCITY', VECTOR=.TRUE., PBZ=12.0/
+&SLCF QUANTITY='PRESSURE', PBZ=12.0/
+&TAIL/
