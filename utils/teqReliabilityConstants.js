@@ -45,6 +45,31 @@ export const RELIABILITY_DEFAULTS = {
   growthRate: 'Medium',
 }
 
+export const UNPROTECTED_CRITICAL_TEMP_HELP =
+  'Enter the governing perimeter-beam critical temperature from a MACS+ run.'
+
+export const UNPROTECTED_CRITICAL_TEMP_REQUIRED =
+  'Unprotected mode requires a critical temperature from the MACS+ run.'
+
+export function hasCriticalTemp(value) {
+  if (value === '' || value == null) return false
+  const n = Number(value)
+  return Number.isFinite(n)
+}
+
+export function reliabilityResultLines(result) {
+  if (!result) return []
+  const lines = [
+    `Reliability: ${result.reliabilityPercent}%`,
+    `${result.nFailed} of ${result.nSim} simulations exceeded ${result.criticalTemp}°C`,
+  ]
+  if (!result.unprotected) {
+    lines.push(`FR period ${result.frPeriod} min · Protection ${result.protectionThickness_mm} mm`)
+  }
+  lines.push(`b-value ${Math.round(result.bValue)} · Section factor ${result.sectionFactor}`)
+  return lines
+}
+
 // Plan length (m) of each wall segment of the first obstruction. Uses finalPoints, which
 // the canvas stores in metres — the same segments the popup renders as "Wall N".
 export function wallLengths(convertedPoints = []) {

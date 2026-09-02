@@ -12,7 +12,7 @@ import FdsCodeView from '../Components/FdsCodeView'
 
 import ProjectDashboard from '../Components/ProjectDashboard'
 import useUserName from '../hooks/useUserName'
-import { isDbBacked } from '../store/persistenceModes'
+import { isDbBacked, autosaveSnapshot } from '../store/persistenceModes'
 import { savePdfToIndexedDB, loadPdfFromIndexedDB } from '../utils/pdfStorage'
 import { computeFramingScroll, elementPixelBox } from '../utils/viewportFraming'
 import {
@@ -158,7 +158,7 @@ export default function Home() {
 
   // Memoize the auto-save function
   const triggerAutoSave = useCallback(() => {
-    // Persistence is fdsGen-only; never auto-save edits made in other modes
+    // Only DB-backed modes with a project attached auto-save (see persistenceModes.js)
     if (!useStore.getState().shouldAutoSave()) return
     const currentProjectId = useStore.getState().projectId
 
@@ -199,31 +199,12 @@ export default function Home() {
   useEffect(() => {
     let prevSnapshot = null
     const unsub = useStore.subscribe((state) => {
-      // fdsGen-only: skip while no project loaded or in radiation/timeEq mode
+      // Skip while no project is attached or the mode is scratch (radiation/efs)
       if (!state.shouldAutoSave()) return
-      const snapshot = JSON.stringify({
-        elements: state.elements,
-        pixelsPerMesh: state.pixelsPerMesh,
-        canvasDimensions: state.canvasDimensions,
-        scenarioType: state.scenarioType,
-        simEndTime: state.simEndTime,
-        totalFloors: state.totalFloors,
-        wallHeight: state.wallHeight,
-        doorRoles: state.doorRoles,
-        doorOpenings: state.doorOpenings,
-        doorLeakagesEnabled: state.doorLeakagesEnabled,
-        doorLeakageConfig: state.doorLeakageConfig,
-        landingRoles: state.landingRoles,
-        landingUpSide: state.landingUpSide,
-        stairStyle: state.stairStyle,
-        aovMode: state.aovMode,
-        aovActivationTime: state.aovActivationTime,
-        extractConfig: state.extractConfig,
-        inletConfig: state.inletConfig,
-        zoneConfig: state.zoneConfig,
-        obstructionTransparency: state.obstructionTransparency,
-        sliceZHeight: state.sliceZHeight,
-      })
+      // The active mode's registry handler says which fields count as a change
+      const fields = autosaveSnapshot(state)
+      if (!fields) return
+      const snapshot = JSON.stringify(fields)
       if (snapshot !== prevSnapshot) {
         prevSnapshot = snapshot
         triggerAutoSave()
@@ -305,7 +286,7 @@ export default function Home() {
     await renderPdf(URL.createObjectURL(file), isContinuing)
 
     // Only persist/upload the PDF for DB-backed modes. Non-DB modes
-    // (radiation/timeEq) are scratch — the plan must not survive a reload, so
+    // (radiation/efs) are scratch — the plan must not survive a reload, so
     // it never reaches IndexedDB or S3. See persistenceModes.js.
     const mode = useStore.getState().currentMode
     if (isDbBacked(mode)) {
@@ -319,7 +300,7 @@ export default function Home() {
       if (!currentProjectId) {
         try {
           const name = useStore.getState().projectName || "Untitled Project"
-          const project = await createProject(name, userName)
+          const project = await createProject(name, userName, mode)
           currentProjectId = project.id
           // Do an initial save to create floor 0
           const saved = await saveProjectToServer(currentProjectId, {
@@ -391,10 +372,11 @@ export default function Home() {
 
 
   const handleModeSelected = (mode) => {
-    // Just navigate — never destroy project data when switching modes
+    // Just navigate — the store has already detached the project (setCurrentMode).
+    // DB-backed modes land on their own dashboard; scratch modes go to upload.
     setSelectedFile(undefined)
     setIsContinuing(false)
-    setShowUploadScreen(mode !== 'fdsGen')
+    setShowUploadScreen(!isDbBacked(mode))
   }
 
   const handleBackToDashboard = () => {

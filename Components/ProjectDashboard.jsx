@@ -3,6 +3,7 @@ import { listProjects, renameProject, deleteProject } from './ApiCalls'
 import { deleteConfirmationMatches } from '../utils/projectActions'
 import FDRobot from './FDRobot'
 import useStore from '../store/useStore'
+import { isDbBacked } from '../store/persistenceModes'
 
 function timeAgo(dateStr) {
   if (!dateStr) return ''
@@ -36,15 +37,20 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
   const [deleteError, setDeleteError] = useState(null)
   const [deleting, setDeleting] = useState(false)
 
+  const currentMode = useStore((state) => state.currentMode)
+  const setCurrentMode = useStore((state) => state.setCurrentMode)
+
+  // Each DB-backed mode has its own project list (projects.mode), so re-fetch
+  // whenever the mode bar switches between them.
   useEffect(() => {
     loadProjects()
-  }, [])
+  }, [currentMode])
 
   const loadProjects = async () => {
     setLoading(true)
     setError(null)
     try {
-      const data = await listProjects()
+      const data = await listProjects(currentMode)
       setProjects(data)
     } catch (err) {
       setError(err.message)
@@ -138,9 +144,6 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
     }
   }
 
-  const currentMode = useStore((state) => state.currentMode)
-  const setCurrentMode = useStore((state) => state.setCurrentMode)
-
   const modeOptions = [
     { key: 'fdsGen', label: 'FDS Generation' },
     { key: 'radiation', label: 'Radiation' },
@@ -148,9 +151,11 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
     { key: 'efs', label: 'External Fire Spread' },
   ]
 
+  // DB-backed modes stay on this dashboard (the effect above re-lists for the
+  // new mode); scratch modes hand off to the upload screen.
   const handleModeClick = (mode) => {
     setCurrentMode(mode)
-    if (mode !== 'fdsGen' && onModeSwitch) {
+    if (!isDbBacked(mode) && onModeSwitch) {
       onModeSwitch(mode)
     }
   }

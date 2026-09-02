@@ -84,6 +84,6 @@ describe('registry wiring', () => {
 
     it('non-DB modes have no handlers yet', () => {
         expect(MODE_PERSISTENCE.radiation.buildPayload).toBeUndefined()
-        expect(MODE_PERSISTENCE.timeEq.hydrate).toBeUndefined()
+        expect(MODE_PERSISTENCE.efs.hydrate).toBeUndefined()
     })
 })

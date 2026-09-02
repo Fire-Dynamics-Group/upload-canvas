@@ -17,7 +17,12 @@ export default function ViewTabs() {
     const fdsCode = useStore((s) => s.fdsCode)
     const fdsGenSig = useStore((s) => s.fdsGenSig)
     const elements = useStore((s) => s.elements)
+    const currentMode = useStore((s) => s.currentMode)
     const stale = Boolean(fdsCode) && fdsElementSignature(elements) !== fdsGenSig
+
+    // EFS is a pure 2D elevation workflow — no generated FDS model to view, so
+    // the 3D / FDS tabs (and the switcher itself) don't apply.
+    if (currentMode === 'efs') return null
 
     // Sits above the bottom toolbar (bottom-20) so it never covers undo / change-mode.
     return (

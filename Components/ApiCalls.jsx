@@ -13,18 +13,22 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || server_urls.localhost
 
 // --- Project persistence API ---
 
-export const createProject = async (name = "Untitled Project", createdBy = null) => {
+// `mode` is the canvas mode that owns the project (fdsGen / timeEq). Each
+// DB-backed mode has its own dashboard; see store/persistenceModes.js.
+export const createProject = async (name = "Untitled Project", createdBy = null, mode = "fdsGen") => {
     const resp = await fetch(`${API_BASE}/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, settings: {}, created_by: createdBy }),
+        body: JSON.stringify({ name, mode, settings: {}, created_by: createdBy }),
     })
     if (!resp.ok) throw new Error(`Failed to create project: ${resp.status}`)
     return resp.json()
 }
 
-export const listProjects = async () => {
-    const resp = await fetch(`${API_BASE}/projects`)
+// Omit `mode` to list every project regardless of owning mode.
+export const listProjects = async (mode = null) => {
+    const query = mode ? `?mode=${encodeURIComponent(mode)}` : ''
+    const resp = await fetch(`${API_BASE}/projects${query}`)
     if (!resp.ok) throw new Error(`Failed to list projects: ${resp.status}`)
     return resp.json()
 }
@@ -307,9 +311,9 @@ export const sendTimeEqData = async (
 
   }
 
-// Monte Carlo time-equivalence reliability. Unlike sendTimeEqData (which downloads a
-// chart jpeg), this returns the parsed JSON reliability result for inline display.
-export const sendTimeEqReliabilityData = async (
+// Shared body shape for the reliability endpoints (/timeEqReliability and
+// /timeEqReliabilityCharts take the identical request model).
+const reliabilityRequestBody = (
     convertedPoints,
     {
       occupancy,
@@ -325,13 +329,14 @@ export const sendTimeEqReliabilityData = async (
       tLimMinutes = null,      // fire growth rate (medium = 20)
       combustionFactor = 0.8,
       sprinklerFactor = 0.65,
+      unprotected = false,
+      seed = null,             // echo of a prior run's seed reproduces that run
     } = {}
   ) => {
-    const bodyContent = JSON.stringify({
+    const body = {
       convertedPoints,
       occupancy,
       compartmentHeight,
-      fireResistancePeriod,
       isSprinklered,
       nSim,
       openableWidths,
@@ -342,19 +347,46 @@ export const sendTimeEqReliabilityData = async (
       tLimMinutes,
       combustionFactor,
       sprinklerFactor,
-    })
-    const response = await fetch(`${API_BASE}/timeEqReliability`, {
+      unprotected,
+      seed,
+    }
+    if (!unprotected) {
+      body.fireResistancePeriod = fireResistancePeriod
+    }
+    return body
+  }
+
+const postReliabilityRequest = async (path, body, failLabel) => {
+    const response = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: bodyContent,
+      body: JSON.stringify(body),
     })
     if (!response.ok) {
-      let detail = `Reliability request failed: ${response.status}`
+      let detail = `${failLabel} request failed: ${response.status}`
       try { detail = (await response.json()).detail || detail } catch { /* non-JSON error */ }
       throw new Error(detail)
     }
     return response.json()
   }
+
+// Monte Carlo time-equivalence reliability. Unlike sendTimeEqData (which downloads a
+// chart jpeg), this returns the parsed JSON reliability result for inline display.
+// The result echoes the seed the run used, so the charts call can reproduce it.
+export const sendTimeEqReliabilityData = async (convertedPoints, options = {}) =>
+    postReliabilityRequest(
+      '/timeEqReliability',
+      reliabilityRequestBody(convertedPoints, options),
+      'Reliability')
+
+// Reliability report charts: the same run (pass the seed echoed by the
+// reliability result) plus base64 PNGs — steel time-temperature spaghetti with
+// the critical-temperature line, and the pass/fail scatter.
+export const sendTimeEqReliabilityChartsData = async (convertedPoints, options = {}) =>
+    postReliabilityRequest(
+      '/timeEqReliabilityCharts',
+      reliabilityRequestBody(convertedPoints, options),
+      'Reliability charts')
 
   // export const sendRadiationData = async (
   //   timeArray, 

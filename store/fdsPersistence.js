@@ -141,3 +141,30 @@ export function hydrateFdsState(project, floorDetail, state) {
         elementsByMode: { ...state.elementsByMode, [state.currentMode]: loadedElements },
     }
 }
+
+// The subset of state whose change should arm the debounced autosave.
+export function fdsAutosaveSnapshot(s) {
+    return {
+        elements: s.elements,
+        pixelsPerMesh: s.pixelsPerMesh,
+        canvasDimensions: s.canvasDimensions,
+        scenarioType: s.scenarioType,
+        simEndTime: s.simEndTime,
+        totalFloors: s.totalFloors,
+        wallHeight: s.wallHeight,
+        doorRoles: s.doorRoles,
+        doorOpenings: s.doorOpenings,
+        doorLeakagesEnabled: s.doorLeakagesEnabled,
+        doorLeakageConfig: s.doorLeakageConfig,
+        landingRoles: s.landingRoles,
+        landingUpSide: s.landingUpSide,
+        stairStyle: s.stairStyle,
+        aovMode: s.aovMode,
+        aovActivationTime: s.aovActivationTime,
+        extractConfig: s.extractConfig,
+        inletConfig: s.inletConfig,
+        zoneConfig: s.zoneConfig,
+        obstructionTransparency: s.obstructionTransparency,
+        sliceZHeight: s.sliceZHeight,
+    }
+}

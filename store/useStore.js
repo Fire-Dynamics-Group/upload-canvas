@@ -38,6 +38,12 @@ const useStore = create(persist((set, get) => {
         projectName: null,
         saveStatus: null, // null | "saving" | "saved" | "error"
 
+        // Time-equivalence popup inputs + last Monte Carlo result. Lifted out
+        // of the popup's local state so they save with the project
+        // (settings.timeEqInputs / settings.timeEqResult, see timeEqPersistence).
+        timeEqInputs: {},
+        timeEqResult: null,
+
         elements: [],
         // Undo/redo stacks of committed-element snapshots (see commitElements).
         elementsHistory: [],
@@ -268,38 +274,43 @@ const useStore = create(persist((set, get) => {
         // live `elements` array. The outgoing mode's bucket is already current
         // (writeElements keeps it in sync), so no stash step is needed.
         //
+        // A project belongs to exactly one mode (projects.mode), so the open
+        // project is DETACHED on every switch: otherwise shouldAutoSave() would
+        // stay true in the new mode and its first edit would POST that mode's
+        // payload onto the old mode's project. DB-backed modes land on their
+        // own dashboard and re-attach by selecting a project.
+        //
         // The PDF + scale (pdfData, pixelsPerMesh, canvasDimensions,
-        // convertedPoints, originPixels) are global, not bucketed. A non-DB mode
-        // (radiation/timeEq) is ephemeral scratch and must NOT inherit them from
-        // the mode you came from — it starts from a fresh upload + scale step.
-        // We only reset for non-DB targets: fdsGen re-hydrates from its project,
-        // and blanking its scale here would let auto-save clobber the project
-        // with defaults. See persistenceModes.js.
+        // convertedPoints, originPixels) are global, not bucketed, and are
+        // cleared too: a scratch mode (radiation/efs) starts from a fresh
+        // upload + scale step, and a DB-backed mode re-hydrates them from the
+        // project it opens. See persistenceModes.js.
         setCurrentMode: (newMode) => set((state) => {
             if (newMode === state.currentMode) return {}
-            const next = {
+            return {
                 currentMode: newMode,
                 elements: state.elementsByMode?.[newMode] ?? [],
                 // Undo history is per editing context; don't let an undo reach
                 // back across a mode switch into another mode's geometry.
                 elementsHistory: [],
                 elementsFuture: [],
+                // EFS has no view switcher (ViewTabs hides itself there), so
+                // land on the 2D canvas rather than a stranded 3D/FDS overlay.
+                ...(newMode === 'efs' ? { viewMode: '2d' } : {}),
+                projectId: null,
+                floorId: null,
+                projectName: null,
+                saveStatus: null,
+                pdfData: null,
+                pdfIsGreyscale: false,
+                pixelsPerMesh: 1,
+                canvasDimensions: {},
+                convertedPoints: [],
+                originPixels: null,
+                hasDoor: false,
+                tool: 'scale',
+                selectedElement: null,
             }
-            if (!isDbBacked(newMode)) {
-                return {
-                    ...next,
-                    pdfData: null,
-                    pdfIsGreyscale: false,
-                    pixelsPerMesh: 1,
-                    canvasDimensions: {},
-                    convertedPoints: [],
-                    originPixels: null,
-                    hasDoor: false,
-                    tool: 'scale',
-                    selectedElement: null,
-                }
-            }
-            return next
         }),
         setComment: (newComment) => set(() => ({
             comment: newComment
@@ -371,6 +382,10 @@ const useStore = create(persist((set, get) => {
         setThumbnail: (dataUrl) => set(() => ({
             thumbnail: dataUrl
         })),
+        // Replace (not merge): the popup owns the full inputs object, and the
+        // per-wall arrays must never be left half-updated from a previous draw.
+        setTimeEqInputs: (inputs) => set(() => ({ timeEqInputs: inputs || {} })),
+        setTimeEqResult: (result) => set(() => ({ timeEqResult: result ?? null })),
         setTotalHeatFlux: (newVal) => set(() => ({
             totalHeatFlux: newVal
         })),
@@ -565,6 +580,8 @@ const useStore = create(persist((set, get) => {
                 floorId: null,
                 projectName: null,
                 saveStatus: null,
+                timeEqInputs: {},
+                timeEqResult: null,
                 elements: [],
                 elementsByMode: { fdsGen: [], radiation: [], timeEq: [], efs: [] },
                 viewMode: '2d',

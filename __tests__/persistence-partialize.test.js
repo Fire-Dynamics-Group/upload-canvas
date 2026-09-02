@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { partializeState, mergePersistedState } from '../store/persistenceModes'
 
-// What localStorage is allowed to keep. Non-DB modes (radiation/timeEq) are
+// What localStorage is allowed to keep. Non-DB modes (radiation/efs) are
 // scratch: nothing they produce — geometry, scale calibration, active tool —
-// may survive a reload. Only DB-backed work (fdsGen) is cached. See
+// may survive a reload. Only DB-backed work (fdsGen/timeEq) is cached. See
 // persistenceModes.js and [[autosave-mode-guard]].
 const baseState = (overrides = {}) => ({
     projectId: 'p1',
@@ -54,9 +54,21 @@ describe('partializeState — non-DB modes are ephemeral', () => {
     it('never caches non-DB-backed geometry buckets, in any mode', () => {
         for (const mode of ['fdsGen', 'radiation', 'timeEq']) {
             const p = partializeState(baseState({ currentMode: mode }))
-            expect(Object.keys(p.elementsByMode)).toEqual(['fdsGen'])
+            expect(Object.keys(p.elementsByMode).sort()).toEqual(['fdsGen', 'timeEq'])
             expect(p.elementsByMode.fdsGen).toEqual([{ id: 1, comments: 'mesh' }])
+            expect(p.elementsByMode.timeEq).toEqual([{ id: 5, comments: 'wall' }])
         }
+    })
+
+    it('caches the timeEq inputs/result and records which mode the project belongs to', () => {
+        const p = partializeState(baseState({
+            currentMode: 'timeEq',
+            timeEqInputs: { use: 'Hotel' },
+            timeEqResult: { reliability: 0.9 },
+        }))
+        expect(p.projectMode).toBe('timeEq')
+        expect(p.timeEqInputs).toEqual({ use: 'Hotel' })
+        expect(p.timeEqResult).toEqual({ reliability: 0.9 })
     })
 
     it('still caches project meta and global settings in any mode', () => {
@@ -65,6 +77,38 @@ describe('partializeState — non-DB modes are ephemeral', () => {
         expect(p.floorId).toBe('f1')
         expect(p.projectName).toBe('Tower')
         expect(p.fireHRR).toBe(1000)
+    })
+})
+
+describe('mergePersistedState — a cached project only re-attaches to its own mode', () => {
+    // currentMode is not persisted, so a reload always boots into fdsGen. If
+    // the cached projectId belongs to a timeEq project, re-attaching it to
+    // fdsGen would let the first autosave write fdsGen geometry onto it.
+    it('drops the cached project when it belongs to a different mode', () => {
+        const merged = mergePersistedState(
+            { projectId: 'teq-1', floorId: 'f1', projectName: 'TEQ', projectMode: 'timeEq' },
+            { currentMode: 'fdsGen', projectId: null, floorId: null, projectName: null, elements: [] }
+        )
+        expect(merged.projectId).toBe(null)
+        expect(merged.floorId).toBe(null)
+        expect(merged.projectName).toBe(null)
+    })
+
+    it('keeps the cached project when the mode matches', () => {
+        const merged = mergePersistedState(
+            { projectId: 'fds-1', floorId: 'f1', projectName: 'Tower', projectMode: 'fdsGen' },
+            { currentMode: 'fdsGen', projectId: null, elements: [] }
+        )
+        expect(merged.projectId).toBe('fds-1')
+        expect(merged.projectName).toBe('Tower')
+    })
+
+    it('keeps a legacy blob with no projectMode (pre-dates per-mode projects)', () => {
+        const merged = mergePersistedState(
+            { projectId: 'fds-1', floorId: 'f1', projectName: 'Tower' },
+            { currentMode: 'fdsGen', projectId: null, elements: [] }
+        )
+        expect(merged.projectId).toBe('fds-1')
     })
 })
 

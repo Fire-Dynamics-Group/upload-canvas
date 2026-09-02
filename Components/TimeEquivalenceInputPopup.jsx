@@ -1,11 +1,16 @@
 import useStore from '@/store/useStore';
 import { useState, useEffect } from 'react';
-import { sendTimeEqData, sendTimeEqReliabilityData } from './ApiCalls'
+import { sendTimeEqData, sendTimeEqReliabilityData, sendTimeEqReliabilityChartsData } from './ApiCalls'
+import { resolveTimeEqInputs } from '@/store/timeEqPersistence'
 import {
     OCCUPANCY_DISTRIBUTIONS,
     GROWTH_RATES,
     MATERIAL_B_VALUES,
     RELIABILITY_DEFAULTS,
+    UNPROTECTED_CRITICAL_TEMP_HELP,
+    UNPROTECTED_CRITICAL_TEMP_REQUIRED,
+    hasCriticalTemp,
+    reliabilityResultLines,
     wallLengths,
 } from '@/utils/teqReliabilityConstants'
 
@@ -18,6 +23,13 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
     let walls = [0, 1, 2, 3]
     const convertedPoints = useStore((state) => state.convertedPoints)
     const setShowTimeEqPopup = useStore((state) => state.setShowTimeEqPopup)
+    // Inputs + last result live in the store so they save with the project
+    // (see store/timeEqPersistence.js). The popup seeds its local state from
+    // them on open and writes back on every change.
+    const savedInputs = useStore((state) => state.timeEqInputs)
+    const setTimeEqInputs = useStore((state) => state.setTimeEqInputs)
+    const savedResult = useStore((state) => state.timeEqResult)
+    const setTimeEqResult = useStore((state) => state.setTimeEqResult)
 
     // Close without running the calc (Escape / backdrop / close button)
     const handleClose = onClose || (() => setShowTimeEqPopup(false))
@@ -50,41 +62,70 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
         return array
 
     }
-    const [wallProperties, setWallProperties] = useState(returnZeroArray(obstructions[0]["finalPoints"].length - 1, "concrete")) // need floor and ceiling too
-    const [openingHeights, setOpeningHeights] = useState(returnZeroArray(openings.length, 1))
-    const [floorAndCeilingMaterials, setFloorAndCeilingMaterials] = useState(returnZeroArray(2, "concrete"))
+    // Saved inputs merged over defaults sized to the current drawing. Computed
+    // once on open (useState initialiser) so later store writes from the sync
+    // effect below don't re-seed the local state.
+    const [initial] = useState(() => resolveTimeEqInputs(savedInputs, {
+        wallCount: obstructions[0]["finalPoints"].length - 1,
+        openingCount: openings.length,
+        wallLengths: wallLengths(mockData || convertedPoints),
+    }))
+    const [wallProperties, setWallProperties] = useState(initial.wallProperties) // need floor and ceiling too
+    const [openingHeights, setOpeningHeights] = useState(initial.openingHeights)
+    const [floorAndCeilingMaterials, setFloorAndCeilingMaterials] = useState(initial.floorAndCeilingMaterials)
     // needs dropdown
     // needs option to have all same material
     // if box ticked, show only one dropdown
     // const [ fireLoadDensity, setFireLoadDensity ] = useState(511)
     // const [ tLim, setTLim ] = useState(20)
-    const [ fireResistancePeriod, setFireResistancePeriod] = useState(90)
-    const [ compartmentHeight, setCompartmentHeight] = useState(3.15)
-    const [ isSprinklered, setIsSprinklered ] = useState(false)
+    const [ fireResistancePeriod, setFireResistancePeriod] = useState(initial.fireResistancePeriod)
+    const [ compartmentHeight, setCompartmentHeight] = useState(initial.compartmentHeight)
+    const [ isSprinklered, setIsSprinklered ] = useState(initial.isSprinklered)
     const useObject = [
         {'occupancy':'Office', 'tLim': 20, "fractile": 511},
         {'occupancy':'Hotel', 'tLim': 20, "fractile": 377}, 
         {'occupancy':'Classroom', 'tLim': 20, "fractile": 347}, 
         {'occupancy':'Library', 'tLim': 20, "fractile": 1824}, 
     ]
-    const [ use, setUse] = useState(useObject[0]['occupancy'])
+    const [ use, setUse] = useState(initial.use)
 
     // --- Monte Carlo reliability mode (added alongside the deterministic calc) ---
-    const [ calcType, setCalcType ] = useState('deterministic')  // 'deterministic' | 'reliability'
-    const [ mcOccupancy, setMcOccupancy ] = useState('Office')
-    const [ nSim, setNSim ] = useState(RELIABILITY_DEFAULTS.nSim)
-    const [ growthRate, setGrowthRate ] = useState(RELIABILITY_DEFAULTS.growthRate)
-    const [ combustionFactor, setCombustionFactor ] = useState(RELIABILITY_DEFAULTS.combustionFactor)
-    const [ sprinklerFactor, setSprinklerFactor ] = useState(RELIABILITY_DEFAULTS.sprinklerFactor)
-    const [ sectionFactor, setSectionFactor ] = useState(RELIABILITY_DEFAULTS.sectionFactor)
-    const [ criticalTemp, setCriticalTemp ] = useState(RELIABILITY_DEFAULTS.criticalTemp)
-    const [ customBValue, setCustomBValue ] = useState('')  // blank => derive from materials
-    const [ openableWidths, setOpenableWidths ] = useState(
-        () => wallLengths(mockData || convertedPoints).map((l) => Number(l.toFixed(2)))
-    )
-    const [ reliabilityResult, setReliabilityResult ] = useState(null)
+    const [ calcType, setCalcType ] = useState(initial.calcType)  // 'deterministic' | 'reliability'
+    const [ mcOccupancy, setMcOccupancy ] = useState(initial.mcOccupancy)
+    const [ nSim, setNSim ] = useState(initial.nSim)
+    const [ growthRate, setGrowthRate ] = useState(initial.growthRate)
+    const [ combustionFactor, setCombustionFactor ] = useState(initial.combustionFactor)
+    const [ sprinklerFactor, setSprinklerFactor ] = useState(initial.sprinklerFactor)
+    const [ sectionFactor, setSectionFactor ] = useState(initial.sectionFactor)
+    const [ criticalTemp, setCriticalTemp ] = useState(initial.criticalTemp)
+    const [ customBValue, setCustomBValue ] = useState(initial.customBValue)  // blank => derive from materials
+    const [ openableWidths, setOpenableWidths ] = useState(initial.openableWidths)
+    // Last run shown again on reopen / project reload; charts are not persisted.
+    const [ reliabilityResult, setReliabilityResult ] = useState(savedResult ?? null)
     const [ reliabilityError, setReliabilityError ] = useState(null)
     const [ isRunning, setIsRunning ] = useState(false)
+    const [ reliabilityCharts, setReliabilityCharts ] = useState(null)  // { steelTempSpaghetti, passFailScatter } base64 PNGs
+    const [ isChartsRunning, setIsChartsRunning ] = useState(false)
+    const [ memberProtection, setMemberProtection ] = useState(initial.memberProtection)  // 'protected' | 'unprotected'
+    const isUnprotected = calcType === 'reliability' && memberProtection === 'unprotected'
+
+    // Write every input change back to the store so the debounced project
+    // autosave (index.jsx) picks it up. Replaces the whole object: the store
+    // slice is exactly what the popup shows.
+    useEffect(() => {
+        setTimeEqInputs({
+            calcType, fireResistancePeriod, compartmentHeight, isSprinklered, use,
+            wallProperties, openingHeights, floorAndCeilingMaterials,
+            mcOccupancy, nSim, growthRate, combustionFactor, sprinklerFactor,
+            sectionFactor, criticalTemp, customBValue, openableWidths, memberProtection,
+        })
+    }, [
+        calcType, fireResistancePeriod, compartmentHeight, isSprinklered, use,
+        wallProperties, openingHeights, floorAndCeilingMaterials,
+        mcOccupancy, nSim, growthRate, combustionFactor, sprinklerFactor,
+        sectionFactor, criticalTemp, customBValue, openableWidths, memberProtection,
+        setTimeEqInputs,
+    ])
 
 
     const materialList = [
@@ -95,10 +136,9 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
 
     //  has door when one placed
     function handleClick(e) {
-        // bring floor, wall and ceiling properties together
-        let roomComposition = wallProperties
-        roomComposition.unshift(floorAndCeilingMaterials[0])
-        roomComposition.push(floorAndCeilingMaterials[1])
+        // bring floor, wall and ceiling properties together (copy: never
+        // mutate the wallProperties state array)
+        const roomComposition = [floorAndCeilingMaterials[0], ...wallProperties, floorAndCeilingMaterials[1]]
         let tempData
         if (mockData) {
             tempData = mockData
@@ -126,34 +166,66 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
 
     }
 
+    // One options object for both reliability endpoints, so the charts request
+    // cannot drift from the run it is meant to reproduce.
+    function reliabilityRequestOptions(unprotected) {
+        const roomComposition = [floorAndCeilingMaterials[0], ...wallProperties, floorAndCeilingMaterials[1]]
+        const growth = GROWTH_RATES.find((g) => g.label === growthRate)
+        return {
+            occupancy: mcOccupancy,
+            compartmentHeight: Number(compartmentHeight),
+            fireResistancePeriod: unprotected ? undefined : Number(fireResistancePeriod),
+            isSprinklered,
+            nSim: Number(nSim),
+            openableWidths: openableWidths.map(Number),
+            roomComposition,
+            bValue: customBValue === '' ? null : Number(customBValue),
+            sectionFactor: Number(sectionFactor),
+            criticalTemp: Number(criticalTemp),
+            tLimMinutes: growth ? growth.tLimMinutes : undefined,
+            combustionFactor: Number(combustionFactor),
+            sprinklerFactor: Number(sprinklerFactor),
+            unprotected,
+        }
+    }
+
     async function handleReliabilityClick() {
         setReliabilityError(null)
         setReliabilityResult(null)
+        setReliabilityCharts(null)
+        const unprotected = memberProtection === 'unprotected'
+        if (unprotected && !hasCriticalTemp(criticalTemp)) {
+            setReliabilityError(UNPROTECTED_CRITICAL_TEMP_REQUIRED)
+            return
+        }
         setIsRunning(true)
         try {
-            const roomComposition = [floorAndCeilingMaterials[0], ...wallProperties, floorAndCeilingMaterials[1]]
             const tempData = mockData || convertedPoints
-            const growth = GROWTH_RATES.find((g) => g.label === growthRate)
-            const result = await sendTimeEqReliabilityData(tempData, {
-                occupancy: mcOccupancy,
-                compartmentHeight: Number(compartmentHeight),
-                fireResistancePeriod: Number(fireResistancePeriod),
-                isSprinklered,
-                nSim: Number(nSim),
-                openableWidths: openableWidths.map(Number),
-                roomComposition,
-                bValue: customBValue === '' ? null : Number(customBValue),
-                sectionFactor: Number(sectionFactor),
-                criticalTemp: Number(criticalTemp),
-                tLimMinutes: growth ? growth.tLimMinutes : undefined,
-                combustionFactor: Number(combustionFactor),
-                sprinklerFactor: Number(sprinklerFactor),
-            })
+            const result = await sendTimeEqReliabilityData(tempData, reliabilityRequestOptions(unprotected))
             setReliabilityResult(result)
+            setTimeEqResult(result)
         } catch (err) {
             setReliabilityError(err.message || 'Reliability calculation failed')
         } finally {
             setIsRunning(false)
+        }
+    }
+
+    async function handleGenerateChartsClick() {
+        setReliabilityError(null)
+        setIsChartsRunning(true)
+        try {
+            const tempData = mockData || convertedPoints
+            // The echoed seed reproduces the exact run the user was shown.
+            const body = await sendTimeEqReliabilityChartsData(tempData, {
+                ...reliabilityRequestOptions(reliabilityResult.unprotected === true),
+                seed: reliabilityResult.seed,
+            })
+            setReliabilityCharts(body.charts)
+        } catch (err) {
+            setReliabilityError(err.message || 'Chart generation failed')
+        } finally {
+            setIsChartsRunning(false)
         }
     }
 
@@ -207,10 +279,14 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
                     {/* <h2 className="text-lg font-bold mb-2">is sprinklered?</h2>
                     <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={isSprinklered} onChange={(e) => setIsSprinklered(e.target.value)}/> */}
                 </li>
-                    <h2 className="text-lg font-bold mb-2">Enter Fire Resistance Period (mins):</h2>
-                    <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={fireResistancePeriod} onChange={(e) => {
-                        setFireResistancePeriod(e.target.value)
-                    }}/>
+                    {!isUnprotected && (
+                      <>
+                        <h2 className="text-lg font-bold mb-2">Enter Fire Resistance Period (mins):</h2>
+                        <input type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" value={fireResistancePeriod} onChange={(e) => {
+                            setFireResistancePeriod(e.target.value)
+                        }}/>
+                      </>
+                    )}
                 <li>
 
                 </li>
@@ -349,6 +425,26 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
             <div className="mt-2 border-t border-gray-300 pt-3">
               <h2 className="text-lg font-bold mb-2">Monte Carlo Reliability Options</h2>
 
+              <p className="font-semibold mb-1">Member protection:</p>
+              <div className="flex gap-6 mb-3">
+                <label className="flex items-center gap-1">
+                    <input type="radio" name="memberProtection" checked={memberProtection === 'protected'} onChange={() => setMemberProtection('protected')} />
+                    Protected
+                </label>
+                <label className="flex items-center gap-1">
+                    <input type="radio" name="memberProtection" checked={memberProtection === 'unprotected'} onChange={() => setMemberProtection('unprotected')} />
+                    Unprotected
+                </label>
+              </div>
+
+              {memberProtection === 'unprotected' && (
+                <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                  <label className="font-semibold">Critical steel temperature (°C) — required:</label>
+                  <p className="text-sm text-gray-700 mb-1">{UNPROTECTED_CRITICAL_TEMP_HELP}</p>
+                  <input type="number" className="w-full border border-gray-300 px-3 py-2 rounded-md" value={criticalTemp} onChange={(e) => setCriticalTemp(e.target.value)} />
+                </div>
+              )}
+
               <label className="font-semibold">Occupancy (fire-load distribution):</label>
               <select className="w-full border border-gray-300 px-3 py-2 rounded-md mb-3" value={mcOccupancy} onChange={(e) => setMcOccupancy(e.target.value)}>
                 {OCCUPANCY_DISTRIBUTIONS.map((o) => (
@@ -377,8 +473,12 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
               <label className="font-semibold">Section factor Ap/V (1/m):</label>
               <input type="number" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-3" value={sectionFactor} onChange={(e) => setSectionFactor(e.target.value)} />
 
-              <label className="font-semibold">Critical steel temperature (°C):</label>
-              <input type="number" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-3" value={criticalTemp} onChange={(e) => setCriticalTemp(e.target.value)} />
+              {memberProtection === 'protected' && (
+                <>
+                  <label className="font-semibold">Critical steel temperature (°C):</label>
+                  <input type="number" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-3" value={criticalTemp} onChange={(e) => setCriticalTemp(e.target.value)} />
+                </>
+              )}
 
               <p className="text-sm text-gray-600">{`Material b-values (W/m²s^0.5K): concrete ${Math.round(MATERIAL_B_VALUES.concrete)}, brick ${Math.round(MATERIAL_B_VALUES.brick)}, plasterboard ${Math.round(MATERIAL_B_VALUES.plasterboard)}`}</p>
               <label className="font-semibold">Custom b-value (blank = derive from materials):</label>
@@ -400,15 +500,35 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
           {reliabilityError && <p className="text-red-600 mt-2">{reliabilityError}</p>}
           {reliabilityResult && (
             <div className="mt-3 p-3 bg-gray-100 rounded-md">
-              <p className="text-xl font-bold">{`Reliability: ${reliabilityResult.reliabilityPercent}%`}</p>
-              <p>{`${reliabilityResult.nFailed} of ${reliabilityResult.nSim} simulations exceeded ${reliabilityResult.criticalTemp}°C`}</p>
-              <p>{`FR period ${reliabilityResult.frPeriod} min · Protection ${reliabilityResult.protectionThickness_mm} mm`}</p>
-              <p>{`b-value ${Math.round(reliabilityResult.bValue)} · Section factor ${reliabilityResult.sectionFactor}`}</p>
+              {reliabilityResultLines(reliabilityResult).map((line, i) => (
+                <p key={i} className={i === 0 ? 'text-xl font-bold' : undefined}>{line}</p>
+              ))}
+              <button
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg mt-2 disabled:opacity-50"
+                onClick={handleGenerateChartsClick}
+                disabled={isChartsRunning}
+              >
+                {isChartsRunning ? 'Generating…' : 'Generate Charts'}
+              </button>
+              {reliabilityCharts && (
+                <div className="mt-3 flex flex-col gap-3">
+                  <img
+                    src={`data:image/png;base64,${reliabilityCharts.steelTempSpaghetti}`}
+                    alt="Steel time-temperature curves with critical temperature line"
+                    className="w-full rounded-md bg-white"
+                  />
+                  <img
+                    src={`data:image/png;base64,${reliabilityCharts.passFailScatter}`}
+                    alt="Pass/fail scatter: glazing breakage vs fireload"
+                    className="w-full rounded-md bg-white"
+                  />
+                </div>
+              )}
             </div>
           )}
 
           {calcType === 'reliability' ? (
-            <button className="px-4 py-2 bg-blue-500 text-white rounded-lg mt-2 disabled:opacity-50" onClick={handleReliabilityClick} disabled={isRunning}>
+            <button className="px-4 py-2 bg-blue-500 text-white rounded-lg mt-2 disabled:opacity-50" onClick={handleReliabilityClick} disabled={isRunning || (memberProtection === 'unprotected' && !hasCriticalTemp(criticalTemp))}>
               {isRunning ? 'Running…' : 'Run Reliability'}
             </button>
           ) : (
