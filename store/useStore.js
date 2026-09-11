@@ -68,6 +68,7 @@ const useStore = create(persist((set, get) => {
         // popup state) so they survive closing and reopening the popup.
         efsHeight: 18,
         efsFireTempC: 1040,
+        efsSprinklered: false,
         // Whether the EFS popup is open, and whether a calc has been run — either
         // shows the gridline number labels on the canvas.
         efsPopupOpen: false,
@@ -315,6 +316,17 @@ const useStore = create(persist((set, get) => {
         setEfsColumnSpacing: (v) => set(() => ({ efsColumnSpacing: v, efsProtectedByElev: {}, efsRequiredByElev: {} })),
         setEfsHeight: (v) => set(() => ({ efsHeight: v })),
         setEfsFireTempC: (v) => set(() => ({ efsFireTempC: v })),
+        setEfsSprinklered: (enabled) => set((state) => {
+            const next = Boolean(enabled)
+            const temperature = Number(state.efsFireTempC)
+            if (next === state.efsSprinklered || String(state.efsFireTempC).trim() === '' || !Number.isFinite(temperature) || temperature <= -273) return {}
+            // Equivalent to ((T + 273)^4 / 2)^0.25 - 273; invert when off.
+            // Keep full precision so repeated toggles do not accumulate rounding.
+            return {
+                efsSprinklered: next,
+                efsFireTempC: (temperature + 273) * (next ? 2 ** -0.25 : 2 ** 0.25) - 273,
+            }
+        }),
         // (efsRegionConfig is keyed by element id, so it survives a spacing change;
         // regions re-snap to the new bays on the next assessment.)
         setEfsPopupOpen: (v) => set(() => ({ efsPopupOpen: v })),

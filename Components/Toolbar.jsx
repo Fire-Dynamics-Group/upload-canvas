@@ -5,6 +5,7 @@ import FireInputsPopup from './FireInputsPopup'
 import FDSInputsPopup from './FDSInputsPopup.tsx'
 import TimeEquivalenceInputPopup from './TimeEquivalenceInputPopup'
 import EfsPopup from './EfsPopup'
+import EfsWorkspaceTools from './EfsWorkspaceTools'
 import {sendFdsData} from './ApiCalls'
 import { generateFdsCode } from '@/utils/generateFds'
 import { computeAutoSprinklerPositions } from '@/utils/autoSprinklers'
@@ -377,6 +378,8 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                 setComment("efsWall")
                 }} />
                 <label htmlFor="efsWall">Wall</label>
+                <input type="radio" id="efsBay" checked={tool === 'efsBay'} onChange={() => setTool('efsBay')} />
+                <label htmlFor="efsBay" title="Click a wall segment to toggle full-height protection and recalculate boundary distance">Toggle bay (P/U)</label>
                 {/* relevant-boundary polyline */}
                 <input type="radio"
                 id="efsBoundary"
@@ -406,6 +409,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                 <label htmlFor="efsUnprotected">Unprotected</label>
         </>
     )
+    if (currentMode === 'efs') return <EfsWorkspaceTools onChangeMode={handleModeButtonClick} />
     return (
     <>
       {/* perhaps popup can't be located in menu bar? */}

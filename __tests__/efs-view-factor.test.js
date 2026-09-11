@@ -192,12 +192,36 @@ describe('boundaryDistanceOutward — perpendicular to the elevation', () => {
         expect(r.distance).toBeCloseTo(20, 6)
     })
 
-    it('falls back (outward:false) when no perpendicular meets the boundary', () => {
+    it('reports no distance when no perpendicular meets the boundary', () => {
         // boundary is off to the side of the right end — the perpendicular at
         // (40,0) runs straight down x=40 and never meets the x=0 line.
         const boundary = [{ x: 0, y: -10 }, { x: 0, y: -50 }]
         const r = boundaryDistanceOutward(wall, 40, boundary)
         expect(r.outward).toBe(false)
+        expect(r.distance).toBeNull()
+        expect(r.point).toBeNull()
+        expect(outwardNormalAt(wall, 40, boundary)).toBeNull()
+    })
+
+    it('keeps every distance perpendicular on rotated walls with fractional coordinates', () => {
+        for (const angle of [0.003, 0.07, 0.31, 1.2, 2.4]) {
+            const rotate = (x, y) => ({ x: 1364.444363 + x * Math.cos(angle) - y * Math.sin(angle), y: 754.754278 + x * Math.sin(angle) + y * Math.cos(angle) })
+            const tiltedWall = [rotate(0, 0), rotate(400, 0)]
+            const tiltedBoundary = [rotate(-50, -20), rotate(450, -20)]
+            for (let d = 0; d <= 400; d += 7.3) {
+                const r = boundaryDistanceOutward(tiltedWall, d, tiltedBoundary)
+                expect(r.outward).toBe(true)
+                expect(r.distance).toBeCloseTo(20, 7)
+                const dx = r.point.x - r.from.x, dy = r.point.y - r.from.y
+                expect(dx * Math.cos(angle) + dy * Math.sin(angle)).toBeCloseTo(0, 7)
+            }
+        }
+    })
+
+    it('does not mark a bay compliant when the perpendicular misses the boundary', () => {
+        const result = assessElevationBays({ wallPoints: wall, boundaryPoints: [{ x: -10, y: -10 }, { x: -10, y: -50 }], height: 10, T: 1000, spacing: 8 })
+        expect(result.allPass).toBe(false)
+        expect(result.rows.every((r) => r.actualBoundaryDistance == null && r.pass == null)).toBe(true)
     })
 })
 
@@ -449,11 +473,11 @@ describe('outwardNormalAt — perpendicular unit normal toward the boundary', ()
         expect(Math.hypot(n.x, n.y)).toBeCloseTo(1, 6)
     })
 
-    it('falls back to the nearest boundary direction when no perpendicular meets it', () => {
+    it('returns no normal when no perpendicular meets the boundary', () => {
         // boundary off to the side of the right end (the perpendicular misses it)
         const boundary = [{ x: 0, y: -10 }, { x: 0, y: -50 }]
         const n = outwardNormalAt(wall, 40, boundary)
-        expect(Math.hypot(n.x, n.y)).toBeCloseTo(1, 6)
+        expect(n).toBeNull()
     })
 })
 

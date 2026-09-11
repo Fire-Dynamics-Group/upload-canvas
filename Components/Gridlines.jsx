@@ -3,7 +3,7 @@ import useStore from '../store/useStore'
 
 // TODO: send in 
 // eslint-disable-next-line react/prop-types
-function Gridlines({pixelsPerMesh, dimensions, hasScale}) {
+function Gridlines({pixelsPerMesh, dimensions, hasScale, zoom = 1}) {
     let showGrid = true // later control via toggle
     const canvasRef = useRef(null)
     const currentMode = useStore((state) => state.currentMode)
@@ -37,7 +37,7 @@ function Gridlines({pixelsPerMesh, dimensions, hasScale}) {
             context.lineWidth = 0.2
             for (let i=0; i<cols; i++) {
                 // later make 1 long svg -> may have issue removing particular points
-                let path_text = `M ${(i+1)*pixelsPerMesh}, 0, v ${canvas.width}`
+                let path_text = `M ${(i+1)*pixelsPerMesh}, 0, v ${canvas.height}`
                 let path = new Path2D(path_text);
                 context.stroke(path);
     
@@ -52,7 +52,8 @@ function Gridlines({pixelsPerMesh, dimensions, hasScale}) {
       ref={canvasRef}
       width={canvasWidth}
       height={canvasHeight}
-      className='border border-black rounded-md bg-transparent inset-0 absolute z-5'
+      style={{ width: canvasWidth * zoom, height: canvasHeight * zoom }}
+      className='bg-transparent top-0 left-0 absolute z-5'
       />
   </>
   )

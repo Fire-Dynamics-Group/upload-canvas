@@ -1,4 +1,5 @@
 import Image from 'next/image';
+import { flushSync } from 'react-dom'
 import Canvas from '../Components/Canvas'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import FDRobot from '../Components/FDRobot'
@@ -12,6 +13,7 @@ import FdsCodeView from '../Components/FdsCodeView'
 
 import ProjectDashboard from '../Components/ProjectDashboard'
 import useUserName from '../hooks/useUserName'
+import useCanvasPan from '../hooks/useCanvasPan'
 import { isDbBacked } from '../store/persistenceModes'
 import { savePdfToIndexedDB, loadPdfFromIndexedDB } from '../utils/pdfStorage'
 import { computeFramingScroll, elementPixelBox } from '../utils/viewportFraming'
@@ -89,6 +91,11 @@ const loadPdfDocument = async (pdfjs, source, maxAttempts = 3) => {
 export default function Home() {
   let dev_mode = true
   const [hasMounted, setHasMounted] = useState(false)
+  const stageRef = useRef(null)
+  const [canvasZoom, setCanvasZoom] = useState(1)
+  const zoomRef = useRef(1)
+  const toolbarRef = useRef(null)
+  const [bottomClearance, setBottomClearance] = useState(144)
   useEffect(() => { setHasMounted(true) }, [])
   const { userName, setUserName, needsName, clearName } = useUserName()
   const [nameInput, setNameInput] = useState('')
@@ -105,6 +112,7 @@ export default function Home() {
   const [showModePopup, setShowModePopup] = useState(false)
   const currentMode = useStore((state) => state.currentMode)
   const viewMode = useStore((state) => state.viewMode)
+  useCanvasPan(stageRef, Boolean(selectedFile) && viewMode === '2d')
   const setPdfCanvasRef = useStore((state) => state.setPdfCanvasRef)
   const pdfCanvasRefLocal = useRef()
   useEffect(() => { setPdfCanvasRef(pdfCanvasRefLocal) }, [setPdfCanvasRef])
@@ -112,6 +120,40 @@ export default function Home() {
   const pdfCanvasRef = useStore((state) => state.pdfCanvasRef)
 
   const tool = useStore((state) => state.tool)
+  useEffect(() => {
+    zoomRef.current = 1
+    setCanvasZoom(1)
+  }, [selectedFile, canvasDimensions.width, canvasDimensions.height])
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage || !selectedFile || viewMode !== '2d') return
+    const handleWheel = (event) => {
+      if (!event.ctrlKey || event.target.tagName !== 'CANVAS') return
+      event.preventDefault()
+      const previous = zoomRef.current
+      const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? window.innerHeight : 1)
+      const next = Math.min(4, Math.max(0.25, previous * Math.exp(-delta * 0.002)))
+      const rect = stage.getBoundingClientRect()
+      const x = (event.clientX - rect.left) / previous
+      const y = (event.clientY - rect.top) / previous
+      const left = window.scrollX + x * (next - previous)
+      const top = window.scrollY + y * (next - previous)
+      zoomRef.current = next
+      flushSync(() => setCanvasZoom(next))
+      window.scrollTo({ left, top, behavior: 'instant' })
+    }
+    stage.addEventListener('wheel', handleWheel, { passive: false })
+    return () => stage.removeEventListener('wheel', handleWheel)
+  }, [selectedFile, viewMode])
+  useEffect(() => {
+    const toolbar = toolbarRef.current
+    if (!toolbar) return
+    const observer = new ResizeObserver(() => {
+      setBottomClearance(Math.max(144, toolbar.getBoundingClientRect().height + 32))
+    })
+    observer.observe(toolbar)
+    return () => observer.disconnect()
+  }, [selectedFile, tool, viewMode])
   const setTool = useStore((state) => state.setTool)
 
   const elements = useStore((state) => state.elements)
@@ -243,7 +285,7 @@ export default function Home() {
     if (!box) return
     const panelWidth = Math.min(384, window.innerWidth * 0.9) // SidePanel w-96 / max-w-90vw
     const { left, top } = computeFramingScroll(
-      box,
+      { x: box.x * zoomRef.current, y: box.y * zoomRef.current, width: box.width * zoomRef.current, height: box.height * zoomRef.current },
       { width: window.innerWidth, height: window.innerHeight },
       { side: 'right', width: panelWidth },
     )
@@ -359,7 +401,7 @@ export default function Home() {
   };
 
 
-  const menuOverlay = (<>
+  const menuOverlay = currentMode === 'efs' ? <Toolbar setShowModePopup={setShowModePopup} /> : (<>
 
 <div className="fixed bottom-0 left-0 right-0 bg-gray-800 text-white z-30 h-5vh" onClick={handleButtonClick}>
   <svg
@@ -381,7 +423,7 @@ export default function Home() {
       so it can't drift off-screen (the old `relative absolute` with no anchors
       did). It carries its own solid background so the tools always sit on a bar.
       flex-wrap lets it reflow rather than overflow on small/zoomed views. */}
-  <div className="fixed bottom-0 left-0 right-0 flex flex-wrap justify-center items-center gap-1 py-2 z-[100] bg-gray-800 text-white">
+  <div ref={toolbarRef} className="fixed bottom-0 left-0 right-0 flex flex-wrap justify-center items-center gap-1 py-2 z-[100] bg-gray-800 text-white">
     <Toolbar setShowModePopup={setShowModePopup}/>
   </div>
 </div>
@@ -531,7 +573,11 @@ export default function Home() {
         {viewMode === 'fds' && <FdsCodeView />}
       </>)}
       {showModePopup && <ModePopup setToggleShowPopup={setShowModePopup} onModeSelected={handleModeSelected}/>}
-      <div>
+      <div
+        ref={stageRef}
+        className={selectedFile ? `relative ${currentMode === 'efs' && tool !== 'scale' && viewMode === '2d' ? 'efs-canvas-stage' : ''}` : undefined}
+        style={selectedFile ? { width: canvasDimensions.width * canvasZoom, height: canvasDimensions.height * canvasZoom } : undefined}
+      >
         { isLoadingFromServer ? (
           <div className="flex flex-col items-center justify-center min-h-screen gap-4">
             <FDRobot hintText={'Loading project...'} />
@@ -549,6 +595,7 @@ export default function Home() {
           />
         ) : selectedFile ? (<>
           <Canvas
+            zoom={canvasZoom}
             dimensions={canvasDimensions}
             isDevMode={dev_mode}
             />
@@ -576,9 +623,11 @@ export default function Home() {
             behind the dashboard and the user has to scroll past it. */}
         <canvas
         ref={pdfCanvasRef}
-        className={selectedFile ? 'z-1' : 'hidden'}
+        style={selectedFile ? { width: canvasDimensions.width * canvasZoom, height: canvasDimensions.height * canvasZoom } : undefined}
+        className={selectedFile ? 'absolute top-0 left-0 block pointer-events-none' : 'hidden'}
         />
       </div>
+      {selectedFile && <div aria-hidden="true" style={{ height: bottomClearance }} />}
     </>
 )
 }

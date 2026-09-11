@@ -188,6 +188,7 @@ export function segmentDirAt(points, dist) {
         const ex = points[i].x - points[i - 1].x
         const ey = points[i].y - points[i - 1].y
         const seg = Math.hypot(ex, ey)
+        if (seg === 0) continue
         if (acc + seg >= dist || i === points.length - 1) {
             const m = Math.hypot(ex, ey) || 1
             return { x: ex / m, y: ey / m }
@@ -211,7 +212,7 @@ export function rayPolylineIntersection(O, D, points) {
         if (Math.abs(denom) < 1e-12) continue // parallel
         const t = (v2.x * v1.y - v2.y * v1.x) / denom // cross(v2, v1) / denom
         const s = (v1.x * v3.x + v1.y * v3.y) / denom
-        if (t >= 0 && s >= 0 && s <= 1) {
+        if (t >= -1e-9 && s >= -1e-9 && s <= 1 + 1e-9) {
             if (!best || t < best.distance) {
                 best = { point: { x: O.x + D.x * t, y: O.y + D.y * t }, distance: t }
             }
@@ -241,6 +242,11 @@ function segmentsCross(p1, p2, p3, p4) {
 // does not properly cross the wall polyline (the building outline).
 export function lineOfSightClear(P, C, wallPoints) {
     for (let i = 1; i < wallPoints.length; i++) {
+        // Interpolation on angled walls can put P a few floating-point units
+        // off its own segment. That is not a crossing through the building.
+        const a = wallPoints[i - 1], b = wallPoints[i]
+        const tolerance = 1e-9 * Math.max(1, Math.hypot(b.x - a.x, b.y - a.y))
+        if (pointToSegmentDistance(P, a, b) <= tolerance) continue
         if (segmentsCross(P, C, wallPoints[i - 1], wallPoints[i])) return false
     }
     return true
@@ -254,9 +260,8 @@ export function lineOfSightClear(P, C, wallPoints) {
 // normal wins and a normal that would cut back through the building is rejected).
 // `losPoints` is the polyline used for the line-of-sight test — for a single face
 // of a multi-elevation building pass the FULL outline so a face's normal can't
-// measure through the rest of the building; defaults to the wall itself. Falls
-// back to the unconstrained nearest point (flagged `outward: false`) only if no
-// perpendicular hits the boundary.
+// measure through the rest of the building; defaults to the wall itself.
+// No valid perpendicular intersection means an unavailable distance.
 export function boundaryDistanceOutward(wallPoints, dist, boundaryPoints, losPoints = wallPoints) {
     const from = pointAtDistanceAlong(wallPoints, dist)
     const dir = segmentDirAt(wallPoints, dist)
@@ -278,15 +283,13 @@ export function boundaryDistanceOutward(wallPoints, dist, boundaryPoints, losPoi
         if (best) return { from, point: best.point, distance: best.distance, outward: true }
     }
 
-    const c = closestPointOnPolyline(from, boundaryPoints)
-    return { from, point: c.point, distance: c.distance, outward: false }
+    return { from, point: null, distance: null, outward: false }
 }
 
 // Outward perpendicular UNIT normal at arc-length `dist` along the wall — the
 // direction in which the boundary distance is measured. Same selection rule as
 // boundaryDistanceOutward (the perpendicular whose ray reaches the boundary
-// line-of-sight clear, nearest hit wins); falls back to the direction of the
-// nearest boundary point. Returns null if it cannot be determined. Used to lay
+// line-of-sight clear, nearest hit wins). Returns null if it cannot be determined. Used to lay
 // the "needed boundary" locus out from the wall.
 export function outwardNormalAt(wallPoints, dist, boundaryPoints, losPoints = wallPoints) {
     if (!boundaryPoints || boundaryPoints.length < 2) return null
@@ -306,11 +309,7 @@ export function outwardNormalAt(wallPoints, dist, boundaryPoints, losPoints = wa
         }
         if (best) return best.n
     }
-    const c = closestPointOnPolyline(from, boundaryPoints)
-    const dx = c.point.x - from.x
-    const dy = c.point.y - from.y
-    const m = Math.hypot(dx, dy)
-    return m > 0 ? { x: dx / m, y: dy / m } : null
+    return null
 }
 
 // --- partial emitter (protected bays) -----------------------------------------
@@ -469,18 +468,48 @@ export function totalViewFactorPieces(xR, pieces, S, m) {
     return f
 }
 
-// Goal-seek S for a banded (piecewise) emitter — same monotone bisection as the
-// others; no emitter (everything protected) -> required collapses to 0.
+// Find the outermost threshold crossing. Off-axis emitters can have low flux
+// near S=0 and a peak farther away, so a low initial flux is not a safe exit.
 export function solveSForTargetPieces(
     xR, pieces, m, T, targetIs = DEFAULT_TARGET_IS,
     { sLo = 1e-4, sHi = 5000, tol = 1e-4, maxIter = 300 } = {},
 ) {
     if (!pieces.length) return 0
     const f = (S) => emissivePower(T) * totalViewFactorPieces(xR, pieces, S, m) - targetIs
-    let hi = sHi
+    // Beyond the most distant emitter corner every differential contribution
+    // decreases with S. Start the search in that decreasing tail.
+    const radius = Math.max(...pieces.flatMap(p => [
+        Math.hypot(p.a - xR, p.vb - m), Math.hypot(p.a - xR, p.vt - m),
+        Math.hypot(p.b - xR, p.vb - m), Math.hypot(p.b - xR, p.vt - m),
+    ]))
+    let hi = Math.max(sHi, radius)
     while (f(hi) > 0 && hi < 1e7) hi *= 2
-    if (f(sLo) < 0) return sLo
-    let lo = sLo
+    // Search from far to near, refining local peaks as well as sampling them
+    // so a narrow exceedance near a peak is not mistaken for zero distance.
+    const samples = []
+    const count = Math.max(64, Math.ceil(Math.log(hi / sLo) / Math.log(1.25)))
+    for (let i = 0; i <= count; i++) {
+        const s = Math.exp(Math.log(hi) + (Math.log(sLo) - Math.log(hi)) * i / count)
+        samples.push({ s, value: f(s) })
+    }
+    let lo = null
+    for (let i = 1; i < samples.length; i++) {
+        if (samples[i].value > 0) {
+            lo = samples[i].s
+            hi = samples[i - 1].s
+            break
+        }
+        if (i + 1 < samples.length && samples[i].value >= samples[i - 1].value && samples[i].value >= samples[i + 1].value) {
+            const peak = goldenSectionMax(t => f(Math.exp(t)), Math.log(samples[i + 1].s), Math.log(samples[i - 1].s))
+            const peakS = Math.exp(peak.x)
+            if (f(peakS) > 0) {
+                lo = peakS
+                hi = samples[i - 1].s
+                break
+            }
+        }
+    }
+    if (lo == null) return 0
     for (let i = 0; i < maxIter && (hi - lo) > tol; i++) {
         const mid = (lo + hi) / 2
         if (f(mid) > 0) lo = mid
@@ -644,14 +673,14 @@ export function assessElevationBays({
         const marginAt = (xR) => {
             const required = requiredAt(xR)
             const actual = actualAt(xR)
-            return actual == null ? required : required - actual
+            return actual == null ? (hasBoundary ? Infinity : required) : required - actual
         }
         let worst = null
         const consider = (xR) => {
             if (xR < x0 || xR > x1) return
             const required = requiredAt(xR)
             const actual = actualAt(xR)
-            const margin = actual == null ? required : required - actual
+            const margin = actual == null ? (hasBoundary ? Infinity : required) : required - actual
             if (!worst || margin > worst.margin) worst = { xR, required, actual, margin }
         }
         consider(x0)
@@ -690,6 +719,23 @@ export function assessElevationBays({
         })
     }
 
+    const columnRows = xs.map((x, index) => {
+        const required = requiredAt(x)
+        const actual = actualAt(x)
+        const S = required * 2
+        const vf = totalViewFactorPieces(x, pieces, S, hh)
+        return {
+            column: index + 1,
+            station: x,
+            point: pointAtDistanceAlong(wallPoints, x),
+            viewFactorTotal: vf,
+            incident: emissivePower(T) * vf,
+            S,
+            requiredBoundaryDistance: required,
+            actualBoundaryDistance: actual,
+            pass: actual == null ? null : actual >= required,
+        }
+    })
     const governingRequiredBoundaryDistance = rows.reduce(
         (m, r) => Math.max(m, r.requiredBoundaryDistance), 0,
     )
@@ -699,17 +745,21 @@ export function assessElevationBays({
         width,
         nBays,
         rows,
+        columnRows,
+        governingColumnRequiredBoundaryDistance: Math.max(...columnRows.map(r => r.requiredBoundaryDistance)),
+        columnsAllPass: hasBoundary ? columnRows.every(r => r.pass === true) : null,
+        failingColumnCount: columnRows.filter(r => r.pass === false).length,
         governingRequiredBoundaryDistance,
         hasBoundary,
         failingCount,
-        allPass: hasBoundary ? failingCount === 0 : null,
+        allPass: hasBoundary ? rows.every((r) => r.pass === true) : null,
         protectedBays: [...new Set(protectedBays)].sort((a, b) => a - b),
         conflictBays,
         lockedBays,
         hasConflict: conflictBays.length > 0,
         // Required boundary distance at each column station (S/2 with the current
         // emitter), for drawing the "needed boundary" locus on the canvas.
-        requiredByStation: xs.map((x) => solveSForTargetPieces(x, pieces, hh, T, targetIs) / 2),
+        requiredByStation: columnRows.map(r => r.requiredBoundaryDistance),
     }
 }
 
@@ -762,7 +812,7 @@ export function suggestProtection({
         assessment = run([...protectedSet])
     }
 
-    const achievable = assessment.failingCount === 0
+    const achievable = assessment.allPass === true
     return {
         protectedBays: [...protectedSet].sort((a, b) => a - b),
         steps,
@@ -900,10 +950,12 @@ export function buildBoundaryArrows(wallPoints, boundaryPoints, spacing, sampleS
         let worst = null
         const consider = (d) => {
             const r = boundaryDistanceOutward(wallPoints, d, boundaryPoints, losPoints)
+            if (r.distance == null) return
             if (!worst || r.distance < worst.distance) worst = r
         }
         for (let d = d0; d < d1; d += step) consider(d)
         consider(d1) // always include the far column
+        if (!worst) continue
         arrows.push({
             segment: i,
             from: worst.from,
@@ -999,6 +1051,6 @@ export function assessElevation({
         governingRequiredBoundaryDistance,
         hasBoundary,
         failingCount,
-        allPass: hasBoundary ? failingCount === 0 : null,
+        allPass: hasBoundary ? rows.every((r) => r.pass === true) : null,
     }
 }

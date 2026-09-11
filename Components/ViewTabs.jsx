@@ -12,6 +12,7 @@ const TABS = [
 ]
 
 export default function ViewTabs() {
+    const currentMode = useStore((s) => s.currentMode)
     const viewMode = useStore((s) => s.viewMode)
     const setViewMode = useStore((s) => s.setViewMode)
     const fdsCode = useStore((s) => s.fdsCode)
@@ -21,7 +22,7 @@ export default function ViewTabs() {
 
     // Sits above the bottom toolbar (bottom-20) so it never covers undo / change-mode.
     return (
-        <div className="fixed bottom-20 left-2 z-[110] flex rounded-lg overflow-hidden shadow-lg border border-gray-700">
+        <div className={`fixed ${currentMode === 'efs' ? 'top-2 left-3' : 'bottom-20 left-2'} z-[110] flex rounded-lg overflow-hidden shadow-lg border border-gray-700`}>
             {TABS.map((t) => (
                 <button
                     key={t.id}

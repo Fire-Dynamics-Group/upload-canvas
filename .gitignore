@@ -10,6 +10,8 @@
 
 # next.js
 /.next/
+/.next-e2e/
+/.next-backup-*/
 /out/
 
 # production

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Gridlines from './Gridlines'
+import { canvasPoint, canvasClientPoint } from '../utils/canvasCoordinates'
+import { canvasBays, hitCanvasBay, assessCanvasElevation } from '../utils/efsCanvasBays'
 import ScalePopup from './ScalePopup'
 import FDRobot from './FDRobot'
 import { CSVLink } from 'react-csv'
@@ -8,7 +10,7 @@ import { calcDistance } from '@/utils/helperFunctions'
 import { computeShaftRect } from '@/utils/shaftGeometry'
 import { computeAutoSprinklerPositions, shouldShowAutoSprinklers } from '@/utils/autoSprinklers'
 import { computeTimeEqLabels } from '@/utils/timeEqLabels'
-import { buildBoundaryArrows, gridlineStations, buildRequiredBoundaryLine, projectSpanOntoWall, baysCoveredBySpan, polylineLength, splitIntoElevations, pointToPolylineDistance } from '@/utils/efsViewFactor'
+import { boundaryDistanceOutward, gridlineStations, buildRequiredBoundaryLine, projectSpanOntoWall, baysCoveredBySpan, polylineLength, splitIntoElevations, pointToPolylineDistance } from '@/utils/efsViewFactor'
 import { get } from 'http'
 
 /**
@@ -38,8 +40,8 @@ const elementConfig = {
     "fsaSensor": "#ff9900",
     "efsWall": "#eab308",
     "efsBoundary": "#ef4444",
-    "efsProtected": "#374151",
-    "efsUnprotected": "#2563eb"
+    "efsProtected": "#2563eb",
+    "efsUnprotected": "#ef4444"
 }
 
 // --- module-level pure helpers for point-alignment snap (testable from tests) ---
@@ -250,7 +252,7 @@ export function snapToPointAlignment(vertex, coordsResult, threshold) {
 }
 
 // eslint-disable-next-line react/prop-types
-function Canvas({dimensions, isDevMode}) {
+function Canvas({dimensions, isDevMode, zoom = 1}) {
     // TODO: have currentElement array with {} including type etc like elements
     const [currentPoly, setCurrentPoly] = useState([])
     const [currentRect, setCurrentRect] = useState([])
@@ -410,6 +412,15 @@ function Canvas({dimensions, isDevMode}) {
                 setIsShiftPressed(true)
             }
             if (key == 'Escape') {
+                if (tool === 'scale') {
+                    if (!showPopup) {
+                        e.preventDefault()
+                        setScalePoints([])
+                        setIsDrawing(false)
+                        setSnapGuides([])
+                    }
+                    return
+                }
                 setIsEscapePressed(true)
                 
                 if (selectedElement && selectedElement["element"]) {
@@ -465,12 +476,18 @@ function Canvas({dimensions, isDevMode}) {
 
         window.addEventListener("keydown", handleKeyPress)
         window.addEventListener("keyup", handleCtrlRelease)
+        const clearModifiers = () => {
+            setIsCtrlPressed(false)
+            setIsShiftPressed(false)
+        }
+        window.addEventListener('blur', clearModifiers)
 
         return () => {
             window.removeEventListener("keydown", handleKeyPress)
             window.removeEventListener("keyup", handleCtrlRelease)
+            window.removeEventListener('blur', clearModifiers)
         }
-    }, [elements, currentPoly, tool, setTool, comment, addElement, selectedElement, currentId, removeElement, returnElementObject, setSelectedElement, undo, redo])
+    }, [elements, currentPoly, tool, setTool, comment, addElement, selectedElement, currentId, removeElement, returnElementObject, setSelectedElement, undo, redo, showPopup])
 
     // LATER: move to own component -> sends back null or position object
     useEffect(() => {
@@ -533,7 +550,19 @@ function Canvas({dimensions, isDevMode}) {
         })
 
         const handleMouseMove = (event) => {
-            const raw = { x: event.pageX, y: event.pageY }
+            // Calibration is complete after two clicks. Keep the segment fixed
+            // while the user enters its real-world length.
+            if (tool === 'scale' && scalePoints.length >= 2) return
+            const raw = canvasPoint(event, canvasRef.current)
+            setIsCtrlPressed(event.ctrlKey)
+            if (tool === 'polyline' && ['obstruction', 'efsWall', 'efsBoundary'].includes(comment)) {
+                setGuideLine(event.shiftKey ? {
+                    x: Math.round(raw.x / pixelsPerMesh) * pixelsPerMesh,
+                    y: Math.round(raw.y / pixelsPerMesh) * pixelsPerMesh,
+                } : raw)
+                setSnapGuides([])
+                return
+            }
             const isPolylineHover = tool === 'polyline' && isDrawing && currentPoly.length > 0
             const isPointHover = tool === 'point' && hasScale
             const isMeshRect = tool === 'rect' && comment && comment.toLowerCase().includes('mesh')
@@ -1207,6 +1236,9 @@ function Canvas({dimensions, isDevMode}) {
         // Draw the in-progress shape AFTER committed elements so the line
         // being drawn (e.g. an opening over a wall) is never hidden behind a
         // committed obstruction line.
+        if (tool === 'scale' && scalePoints.length === 2) {
+            drawPolyline(scalePoints, context, 'scale')
+        }
         if (isDrawing) {
             if (tool === 'polyline') {
                 drawPolyAndGuide(currentPoly, comment, context)
@@ -1271,6 +1303,20 @@ function Canvas({dimensions, isDevMode}) {
                 }
                 const activeOpts = optsForElev(activeIdx)
                 const stations = gridlineStations(facePts, spacingPx, activeOpts)
+                canvasBays(wall.points, spacingM, pxPerM, efsEndSpacingByElev).forEach((segment) => {
+                    const protectedBay = (efsProtectedByElev[segment.elevation] || []).includes(segment.bay)
+                    context.save()
+                    context.strokeStyle = protectedBay ? '#2563eb' : '#ef4444'
+                    context.lineWidth = 6
+                    context.beginPath()
+                    context.moveTo(segment.a.x, segment.a.y)
+                    context.lineTo(segment.b.x, segment.b.y)
+                    context.stroke()
+                    context.fillStyle = context.strokeStyle
+                    context.font = 'bold 11px sans-serif'
+                    context.fillText(`${protectedBay ? 'P' : 'U'}${segment.bay} · ${segment.length.toFixed(2)} m`, (segment.a.x + segment.b.x) / 2 + 6, (segment.a.y + segment.b.y) / 2 - 18)
+                    context.restore()
+                })
 
                 // Faint column markers on every (non-active) elevation so the whole
                 // building's grid is visible; the active face is drawn richly below.
@@ -1316,10 +1362,6 @@ function Canvas({dimensions, isDevMode}) {
                     context.restore()
                 }
 
-                // Protected (fire-rated) bays for the active elevation (issue #8).
-                const activeProtected = efsProtectedByElev[activeIdx] || []
-                activeProtected.forEach((bay) => shadeBay(bay, 'rgba(120,120,120,0.35)', '#374151', `P${bay}`))
-
                 // Drawn protected/unprotected region polylines bound to the active
                 // elevation (issue #11): shade the bays they snap to, by kind. The
                 // vertical band is an elevation property, not shown on this plan.
@@ -1343,8 +1385,8 @@ function Canvas({dimensions, isDevMode}) {
                         baysCoveredBySpan(faceWidthPx, spacingPx, start, end, activeOpts).forEach((bay) => {
                             shadeBay(
                                 bay,
-                                protectedKind ? 'rgba(55,65,81,0.30)' : 'rgba(37,99,235,0.22)',
-                                protectedKind ? '#1f2937' : '#1d4ed8',
+                                protectedKind ? 'rgba(37,99,235,0.22)' : 'rgba(239,68,68,0.22)',
+                                protectedKind ? '#2563eb' : '#ef4444',
                                 protectedKind ? `Pr${bay}` : `Un${bay}`,
                             )
                         })
@@ -1402,10 +1444,22 @@ function Canvas({dimensions, isDevMode}) {
                     context.fillText(label, mx + 4, my - 4)
                     context.restore()
                 }
-                // 0.1 m sampling along each segment to find the worst case (active
-                // face; full outline for line-of-sight).
-                const arrows = buildBoundaryArrows(facePts, boundary?.points, spacingPx, 0.1 * pxPerM, losPts, activeOpts)
-                arrows.forEach((a) => drawBoundaryArrow(a.from, a.to, a.distance / pxPerM))
+                // Display the distance at every numbered station. The bay
+                // assessment still samples for its worst case independently.
+                if (boundary?.points?.length >= 2) {
+                    stations.forEach((station) => {
+                        const arrow = boundaryDistanceOutward(facePts, station.dist, boundary.points, losPts)
+                        if (arrow.point) {
+                            drawBoundaryArrow(arrow.from, arrow.point, arrow.distance / pxPerM)
+                        } else {
+                            context.save()
+                            context.font = '12px sans-serif'
+                            context.fillStyle = '#b45309'
+                            context.fillText('No perpendicular intersection', station.point.x + 8, station.point.y + 20)
+                            context.restore()
+                        }
+                    })
+                }
 
                 // "Needed boundary" locus (after the calc): offset each gridline
                 // outward by its required distance. The actual boundary must lie
@@ -1426,14 +1480,6 @@ function Canvas({dimensions, isDevMode}) {
                         for (let i = 1; i < pts.length; i++) context.lineTo(pts[i].x, pts[i].y)
                         context.stroke()
                         context.setLineDash([])
-                        // label near the first point
-                        const label = 'needed boundary'
-                        context.font = 'bold 12px sans-serif'
-                        context.lineWidth = 3
-                        context.strokeStyle = 'white'
-                        context.strokeText(label, pts[0].x + 4, pts[0].y - 4)
-                        context.fillStyle = '#166534'
-                        context.fillText(label, pts[0].x + 4, pts[0].y - 4)
                         context.restore()
                     }
                 }
@@ -1526,7 +1572,7 @@ function Canvas({dimensions, isDevMode}) {
         // Scale-tool crosshair: full-canvas horizontal + vertical lines through
         // the cursor + live px distance from the first click. Bluebeam/AutoCAD
         // convention for precise calibration pointing.
-        if (tool === 'scale' && guideLine) {
+        if (tool === 'scale' && scalePoints.length < 2 && guideLine) {
             context.save()
             context.setLineDash([6, 4])
             context.strokeStyle = 'rgba(0, 150, 200, 0.6)'
@@ -1653,6 +1699,9 @@ function Canvas({dimensions, isDevMode}) {
     }
 
     function snapVertexOrtho(vertex, prevVertex) {
+        // Rendering must not mutate the raw cursor: releasing Ctrl should
+        // immediately restore the unconstrained preview.
+        vertex = { ...vertex }
         // check if diff is greater in x or y between vertices
         const deltaX = Math.abs(prevVertex.x - vertex.x)
         const deltaY = Math.abs(prevVertex.y - vertex.y)
@@ -1768,6 +1817,23 @@ function Canvas({dimensions, isDevMode}) {
 
     //   TODO: polyline and mark point tools
     function handlePointerDown(event) { // should this be handle mouse down?
+        if (event.button !== 0) return
+        if (currentMode === 'efs' && tool === 'efsBay') {
+            const wall = elements.find(el => el.comments === 'efsWall')
+            const bay = hitCanvasBay(canvasBays(wall?.points || [], Number(efsColumnSpacing), pixelsPerMesh * 10, efsEndSpacingByElev), canvasPoint(event, canvasRef.current), 10 / zoom)
+            if (bay) {
+                const state = useStore.getState()
+                state.setEfsActiveElevation(bay.elevation)
+                state.toggleEfsProtectedForElev(bay.elevation, bay.bay)
+                state.setConvertedPoints()
+                const result = assessCanvasElevation(useStore.getState(), bay.elevation)
+                if (result) {
+                    state.setEfsRequiredForElev(bay.elevation, result.requiredByStation)
+                    state.setEfsCalcDone(true)
+                }
+            }
+            return
+        }
         // event.preventDefault(); 
         const canvas = canvasRef.current
         const context = canvas.getContext('2d')
@@ -1776,7 +1842,7 @@ function Canvas({dimensions, isDevMode}) {
 
             let dimension = 5
 
-            let newP = {x: event.pageX, y: event.pageY}
+            let newP = canvasPoint(event, canvasRef.current)
             newP = snapVertexWithPointPriority(newP, null, [], isShiftPressed)
             let currentEl = returnElementObject(tool, [newP], comment) // comment from props
             // setElements(prev => [...prev, currentEl])
@@ -1791,7 +1857,7 @@ function Canvas({dimensions, isDevMode}) {
                     let dimension = 10
                     context.fillStyle = elementConfig[comment] || elementConfig["door"]
                     // // draw vertex
-                    let newP = {x: event.pageX, y: event.pageY}
+                    let newP = canvasPoint(event, canvasRef.current)
                     // if ctrl pressed -> next point ortho
                     if (isCtrlPressed && currentPoly.length > 0) { // and not first point
                         newP = snapVertexOrtho(newP, currentPoly[currentPoly.length-1])
@@ -1815,12 +1881,17 @@ function Canvas({dimensions, isDevMode}) {
                 // draw vertex
                 let dimension = 10
                 context.fillStyle = 'green'
-                let newP = {x: event.pageX, y: event.pageY}
-                // if ctrl pressed -> next point ortho
-                if (isCtrlPressed && currentPoly.length > 0) { // and not first point
-                    newP = snapVertexOrtho(newP, currentPoly[currentPoly.length-1])
+                let newP = canvasPoint(event, canvasRef.current)
+                const freePolyline = ['obstruction', 'efsWall', 'efsBoundary'].includes(comment)
+                if (freePolyline) {
+                    if (event.shiftKey) newP = snapVertexToGrid(newP)
+                    setSnapGuides([])
+                } else {
+                    newP = snapVertexWithPointPriority(newP, null, currentPoly, isShiftPressed)
                 }
-                newP = snapVertexWithPointPriority(newP, null, currentPoly, isShiftPressed)
+                if (event.ctrlKey && currentPoly.length > 0) {
+                    newP = snapVertexOrtho(newP, currentPoly[currentPoly.length - 1])
+                }
 
                 // Snap-to-close: if clicking near the first point with >= 3 points,
                 // close the polygon and finalize (like Figma/Bluebeam)
@@ -1845,7 +1916,7 @@ function Canvas({dimensions, isDevMode}) {
 
             let dimension = 5
 
-            let newP = {x: event.pageX, y: event.pageY}
+            let newP = canvasPoint(event, canvasRef.current)
             const isMeshRect = comment && comment.toLowerCase().includes('mesh')
             if (currentRect.length == 0) {
                 // Mesh rects keep their mesh-only edge priority (byte-identical).
@@ -1881,7 +1952,7 @@ function Canvas({dimensions, isDevMode}) {
 
             context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)        
         } else if (tool === 'selection') {
-            const pointer = {x: event.pageX, y: event.pageY}
+            const pointer = canvasPoint(event, canvasRef.current)
 
             // Alt+click near the previous selection anchor cycles through
             // stacked candidates without rebuilding the list. Matches
@@ -1940,7 +2011,7 @@ function Canvas({dimensions, isDevMode}) {
                 setIsDrawing(true) // drawing set to false on press of enter or return to origin
                 let dimension = 10
                 context.fillStyle = 'red'
-                let newP = {x: event.pageX, y: event.pageY}
+                let newP = canvasPoint(event, canvasRef.current)
                 // if ctrl pressed -> next point ortho
                 if (isCtrlPressed && currentPoly.length > 0) { // and not first point
                     newP = snapVertexOrtho(newP, currentPoly[currentPoly.length-1])
@@ -1951,7 +2022,9 @@ function Canvas({dimensions, isDevMode}) {
                 setScalePoints((prev) => [...prev, newP]) 
                 // hopefully second point has registered
                 if (prevIndex == 1) {
-                    // action pop up
+                    setIsDrawing(false)
+                    setGuideLine(null)
+                    setSnapGuides([])
                     setShowPopup(true)
                 }
 
@@ -1985,8 +2058,10 @@ function Canvas({dimensions, isDevMode}) {
         return [rectPoints[0], rectPoints[2]]
     }
     function handlePointerUp(event){
+        if (currentMode === 'efs' && tool === 'efsBay') return
+        if (event.button !== 0) return
         // event.preventDefault(); 
-        let pointer = {x: event.pageX, y: event.pageY}
+        let pointer = canvasPoint(event, canvasRef.current)
         if (selectedElement) {
             let el = selectedElement["element"] // needs id added to state
             let elementId = el["id"]
@@ -2051,7 +2126,7 @@ function Canvas({dimensions, isDevMode}) {
     {showPopup && (
         <ScalePopup handleScaleInput={handleScaleInput} />
       )}   
-    <Gridlines pixelsPerMesh={pixelsPerMesh} dimensions={dimensions} hasScale={hasScale}/>
+    <Gridlines zoom={zoom} pixelsPerMesh={pixelsPerMesh} dimensions={dimensions} hasScale={hasScale}/>
     {/* fdrobot should be on top of everything else */}
     {/* {menuOverlay} */}
     {tool == 'scale' ? <FDRobot hintText={'Set scale: Draw two points where the distance between is known. Hold ctrl to activate ortho mode.'}/> : <>
@@ -2062,23 +2137,47 @@ function Canvas({dimensions, isDevMode}) {
       ref={canvasRef}
       width={canvasWidth} // pass in width and height as props
       height={canvasHeight}
-      className={`border border-black rounded-md bg-transparent inset-0 absolute z-10 ${selectedElement ? 'select-none' : ''}`}
-    //   className='border border-black rounded-md bg-transparent inset-0 absolute z-10'
+      style={{ width: canvasWidth * zoom, height: canvasHeight * zoom }}
+      className={`bg-transparent top-0 left-0 absolute z-10 ${selectedElement ? 'select-none' : ''}`}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
+      onContextMenu={event => { if (tool === 'scale') event.preventDefault() }}
       />
+      {tool === 'scale' && !showPopup && scalePoints.length < 2 && guideLine && (
+        <div
+          role="status"
+          style={{
+            position: 'absolute',
+            left: Math.max(0, Math.min(guideLine.x * zoom + 18, canvasWidth * zoom - 250)),
+            top: Math.max(0, guideLine.y * zoom - 88),
+            zIndex: 20,
+            pointerEvents: 'none',
+            background: 'rgba(255, 255, 255, 0.97)',
+            color: '#0f172a',
+            border: '1px solid #0891b2',
+            borderRadius: 8,
+            padding: '8px 12px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+            fontSize: 13,
+          }}
+        >
+          <div style={{ color: '#0e7490', fontSize: 11 }}>Set drawing scale</div>
+          <strong>{scalePoints.length === 0 ? 'Select the first point' : 'Select the second point'}</strong>
+          <div style={{ fontSize: 11, marginTop: 3 }}>
+            {scalePoints.length === 1 ? 'Esc to restart · ' : ''}Middle-drag to pan
+          </div>
+        </div>
+      )}
       {candidateCycleState && candidateCycleState.candidates.length > 1 && (
         <div
           data-testid="selection-chip-list"
           style={{
             position: 'fixed',
             left:
-              candidateCycleState.anchor.x -
-              (typeof window !== 'undefined' ? window.scrollX : 0) +
+              canvasClientPoint(candidateCycleState.anchor, canvasRef.current).x +
               20,
             top:
-              candidateCycleState.anchor.y -
-              (typeof window !== 'undefined' ? window.scrollY : 0) +
+              canvasClientPoint(candidateCycleState.anchor, canvasRef.current).y +
               20,
             zIndex: 20,
             display: 'flex',

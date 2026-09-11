@@ -23,7 +23,34 @@ describe('EfsPopup — whole-elevation required boundary distance', () => {
             efsCalcDone: false,
             efsHeight: 18,
             efsFireTempC: 1040,
+            efsSprinklered: false,
         })
+    })
+
+    it('converts sprinklered temperature in both directions, including edited values', () => {
+        render(<EfsPopup docked />)
+        const toggle = screen.getByRole('switch', { name: 'Sprinklered' })
+        expect(toggle.getAttribute('aria-checked')).toBe('false')
+        fireEvent.click(toggle)
+        const expected = (((1040 + 273) ** 4 / 2) ** 0.25) - 273
+        expect(useStore.getState().efsFireTempC).toBeCloseTo(expected, 10)
+        expect(toggle.getAttribute('aria-checked')).toBe('true')
+        fireEvent.click(toggle)
+        expect(useStore.getState().efsFireTempC).toBeCloseTo(1040, 10)
+        fireEvent.click(toggle)
+        fireEvent.change(screen.getByLabelText('Fire temperature (°C)'), { target: { value: '800' } })
+        fireEvent.click(toggle)
+        expect(useStore.getState().efsFireTempC).toBeCloseTo(((800 + 273) ** 4 * 2) ** 0.25 - 273, 10)
+    })
+
+    it('does not convert an empty temperature', () => {
+        render(<EfsPopup docked />)
+        fireEvent.change(screen.getByLabelText('Fire temperature (°C)'), { target: { value: '' } })
+        const toggle = screen.getByRole('switch', { name: 'Sprinklered' })
+        expect(toggle.disabled).toBe(true)
+        fireEvent.click(toggle)
+        expect(useStore.getState().efsSprinklered).toBe(false)
+        expect(useStore.getState().efsFireTempC).toBe('')
     })
 
     it('computes the governing required boundary distance from the drawn wall', () => {
@@ -49,28 +76,19 @@ describe('EfsPopup — whole-elevation required boundary distance', () => {
         expect(screen.getByText(/Governing required boundary distance/)).toBeTruthy()
     })
 
-    it('blanks the view factor / Is columns on a protected bay row', () => {
-        // A protected bay no longer emits, so its own view factor / incident are
-        // meaningless and shown as '—' (the required distance, driven by adjacent
-        // unprotected bays, may still be non-zero).
-        useStore.setState({
-            convertedPoints: [
-                { id: 1, comments: 'efsWall', finalPoints: [{ x: 0, y: 0 }, { x: 96, y: 0 }] },
-                { id: 2, comments: 'efsBoundary', finalPoints: [{ x: 0, y: 30 }, { x: 96, y: 30 }] },
-            ],
-        })
+    it('shows column distances and keeps segment protection separate', () => {
+        useStore.setState({ efsColumnSpacing: 8, efsProtectedByElev: {}, efsEndSpacingByElev: {} })
         render(<EfsPopup onClose={() => {}} />)
         fireEvent.click(screen.getByText('Run Calc'))
-
-        // Before protecting: bay 1's view-factor cell is numeric.
-        const cellsBefore = within(screen.getByLabelText('Protect bay 1').closest('tr')).getAllByRole('cell')
-        expect(cellsBefore[2].textContent).not.toBe('—')
-
-        // Protect bay 1, then its view factor (col 3) and Is (col 4) read '—'.
+        const table = screen.getByRole('table')
+        expect(within(table).getByText('Column')).toBeTruthy()
+        expect(within(table).getAllByRole('row')).toHaveLength(14)
+        const before = within(table).getAllByRole('row')[1]
+        const required = Number(within(before).getAllByRole('cell')[5].textContent)
         fireEvent.click(screen.getByLabelText('Protect bay 1'))
-        const cellsAfter = within(screen.getByLabelText('Protect bay 1').closest('tr')).getAllByRole('cell')
-        expect(cellsAfter[2].textContent).toBe('—')
-        expect(cellsAfter[3].textContent).toBe('—')
+        const after = within(table).getAllByRole('row')[1]
+        expect(Number(within(after).getAllByRole('cell')[5].textContent)).toBeLessThan(required)
+        expect(within(table).queryByRole('checkbox')).toBeNull()
     })
 
     it('errors when no wall has been drawn', () => {
