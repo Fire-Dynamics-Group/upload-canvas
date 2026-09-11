@@ -7,6 +7,7 @@ import ModePopup from '../Components/ModePopup'
 import Toolbar from '../Components/Toolbar'
 import ErrorPopup from '../Components/ErrorPopup'
 import ViewTabs from '../Components/ViewTabs'
+import ReliabilityResultsView from '../Components/ReliabilityResultsView'
 import ThreeView from '../Components/ThreeView'
 import FdsCodeView from '../Components/FdsCodeView'
 
@@ -511,6 +512,7 @@ export default function Home() {
         <ViewTabs />
         {viewMode === '3d' && <ThreeView />}
         {viewMode === 'fds' && <FdsCodeView />}
+        {viewMode === 'results' && <ReliabilityResultsView />}
       </>)}
       {showModePopup && <ModePopup setToggleShowPopup={setShowModePopup} onModeSelected={handleModeSelected}/>}
       <div>

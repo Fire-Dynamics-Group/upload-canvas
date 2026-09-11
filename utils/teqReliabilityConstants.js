@@ -70,6 +70,36 @@ export function reliabilityResultLines(result) {
   return lines
 }
 
+// Stored reliability inputs (store.timeEqInputs — the exact object the popup
+// syncs) -> the request options both reliability endpoints take. One mapping,
+// used by the popup's Run button and the Results tab, so the QA view can never
+// silently rerun with different inputs than the run it reproduces.
+export function reliabilityRequestOptionsFromInputs(inputs) {
+  const unprotected = inputs.memberProtection === 'unprotected'
+  const growth = GROWTH_RATES.find((g) => g.label === inputs.growthRate)
+  const roomComposition = [
+    inputs.floorAndCeilingMaterials[0],
+    ...inputs.wallProperties,
+    inputs.floorAndCeilingMaterials[1],
+  ]
+  return {
+    occupancy: inputs.mcOccupancy,
+    compartmentHeight: Number(inputs.compartmentHeight),
+    fireResistancePeriod: unprotected ? undefined : Number(inputs.fireResistancePeriod),
+    isSprinklered: inputs.isSprinklered,
+    nSim: Number(inputs.nSim),
+    openableWidths: inputs.openableWidths.map(Number),
+    roomComposition,
+    bValue: inputs.customBValue === '' ? null : Number(inputs.customBValue),
+    sectionFactor: Number(inputs.sectionFactor),
+    criticalTemp: Number(inputs.criticalTemp),
+    tLimMinutes: growth ? growth.tLimMinutes : undefined,
+    combustionFactor: Number(inputs.combustionFactor),
+    sprinklerFactor: Number(inputs.sprinklerFactor),
+    unprotected,
+  }
+}
+
 // Plan length (m) of each wall segment of the first obstruction. Uses finalPoints, which
 // the canvas stores in metres — the same segments the popup renders as "Wall N".
 export function wallLengths(convertedPoints = []) {

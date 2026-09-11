@@ -331,6 +331,7 @@ const reliabilityRequestBody = (
       sprinklerFactor = 0.65,
       unprotected = false,
       seed = null,             // echo of a prior run's seed reproduces that run
+      includeSamples = false,  // charts endpoint: per-sample QA table
     } = {}
   ) => {
     const body = {
@@ -349,6 +350,7 @@ const reliabilityRequestBody = (
       sprinklerFactor,
       unprotected,
       seed,
+      includeSamples,
     }
     if (!unprotected) {
       body.fireResistancePeriod = fireResistancePeriod

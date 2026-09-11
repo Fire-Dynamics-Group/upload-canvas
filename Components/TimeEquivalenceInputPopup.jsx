@@ -1,6 +1,6 @@
 import useStore from '@/store/useStore';
 import { useState, useEffect } from 'react';
-import { sendTimeEqData, sendTimeEqReliabilityData, sendTimeEqReliabilityChartsData, downloadReliabilityCharts } from './ApiCalls'
+import { sendTimeEqData, sendTimeEqReliabilityData } from './ApiCalls'
 import { resolveTimeEqInputs } from '@/store/timeEqPersistence'
 import {
     OCCUPANCY_DISTRIBUTIONS,
@@ -10,6 +10,7 @@ import {
     UNPROTECTED_CRITICAL_TEMP_HELP,
     UNPROTECTED_CRITICAL_TEMP_REQUIRED,
     hasCriticalTemp,
+    reliabilityRequestOptionsFromInputs,
     reliabilityResultLines,
     wallLengths,
 } from '@/utils/teqReliabilityConstants'
@@ -30,6 +31,7 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
     const setTimeEqInputs = useStore((state) => state.setTimeEqInputs)
     const savedResult = useStore((state) => state.timeEqResult)
     const setTimeEqResult = useStore((state) => state.setTimeEqResult)
+    const setViewMode = useStore((state) => state.setViewMode)
 
     // Close without running the calc (Escape / backdrop / close button)
     const handleClose = onClose || (() => setShowTimeEqPopup(false))
@@ -104,8 +106,6 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
     const [ reliabilityResult, setReliabilityResult ] = useState(savedResult ?? null)
     const [ reliabilityError, setReliabilityError ] = useState(null)
     const [ isRunning, setIsRunning ] = useState(false)
-    const [ reliabilityCharts, setReliabilityCharts ] = useState(null)  // { steelTempSpaghetti, passFailScatter } base64 PNGs
-    const [ isChartsRunning, setIsChartsRunning ] = useState(false)
     const [ memberProtection, setMemberProtection ] = useState(initial.memberProtection)  // 'protected' | 'unprotected'
     const isUnprotected = calcType === 'reliability' && memberProtection === 'unprotected'
 
@@ -166,33 +166,9 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
 
     }
 
-    // One options object for both reliability endpoints, so the charts request
-    // cannot drift from the run it is meant to reproduce.
-    function reliabilityRequestOptions(unprotected) {
-        const roomComposition = [floorAndCeilingMaterials[0], ...wallProperties, floorAndCeilingMaterials[1]]
-        const growth = GROWTH_RATES.find((g) => g.label === growthRate)
-        return {
-            occupancy: mcOccupancy,
-            compartmentHeight: Number(compartmentHeight),
-            fireResistancePeriod: unprotected ? undefined : Number(fireResistancePeriod),
-            isSprinklered,
-            nSim: Number(nSim),
-            openableWidths: openableWidths.map(Number),
-            roomComposition,
-            bValue: customBValue === '' ? null : Number(customBValue),
-            sectionFactor: Number(sectionFactor),
-            criticalTemp: Number(criticalTemp),
-            tLimMinutes: growth ? growth.tLimMinutes : undefined,
-            combustionFactor: Number(combustionFactor),
-            sprinklerFactor: Number(sprinklerFactor),
-            unprotected,
-        }
-    }
-
     async function handleReliabilityClick() {
         setReliabilityError(null)
         setReliabilityResult(null)
-        setReliabilityCharts(null)
         const unprotected = memberProtection === 'unprotected'
         if (unprotected && !hasCriticalTemp(criticalTemp)) {
             setReliabilityError(UNPROTECTED_CRITICAL_TEMP_REQUIRED)
@@ -201,31 +177,20 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
         setIsRunning(true)
         try {
             const tempData = mockData || convertedPoints
-            const result = await sendTimeEqReliabilityData(tempData, reliabilityRequestOptions(unprotected))
+            // Shared mapping with the Results tab, so its full-results rerun
+            // can never drift from the run shown here.
+            const result = await sendTimeEqReliabilityData(tempData, reliabilityRequestOptionsFromInputs({
+                fireResistancePeriod, compartmentHeight, isSprinklered,
+                wallProperties, floorAndCeilingMaterials, mcOccupancy, nSim,
+                growthRate, combustionFactor, sprinklerFactor, sectionFactor,
+                criticalTemp, customBValue, openableWidths, memberProtection,
+            }))
             setReliabilityResult(result)
             setTimeEqResult(result)
         } catch (err) {
             setReliabilityError(err.message || 'Reliability calculation failed')
         } finally {
             setIsRunning(false)
-        }
-    }
-
-    async function handleGenerateChartsClick() {
-        setReliabilityError(null)
-        setIsChartsRunning(true)
-        try {
-            const tempData = mockData || convertedPoints
-            // The echoed seed reproduces the exact run the user was shown.
-            const body = await sendTimeEqReliabilityChartsData(tempData, {
-                ...reliabilityRequestOptions(reliabilityResult.unprotected === true),
-                seed: reliabilityResult.seed,
-            })
-            setReliabilityCharts(body.charts)
-        } catch (err) {
-            setReliabilityError(err.message || 'Chart generation failed')
-        } finally {
-            setIsChartsRunning(false)
         }
     }
 
@@ -503,35 +468,14 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
               {reliabilityResultLines(reliabilityResult).map((line, i) => (
                 <p key={i} className={i === 0 ? 'text-xl font-bold' : undefined}>{line}</p>
               ))}
+              {/* Charts + the per-sample QA table live in the Results tab —
+                  a full-screen view, too big for this popup. */}
               <button
-                className="px-4 py-2 bg-blue-500 text-white rounded-lg mt-2 disabled:opacity-50"
-                onClick={handleGenerateChartsClick}
-                disabled={isChartsRunning}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg mt-2"
+                onClick={() => { setViewMode('results'); handleClose() }}
               >
-                {isChartsRunning ? 'Generating…' : 'Generate Charts'}
+                Open Results (charts + QA table)
               </button>
-              {reliabilityCharts && (
-                <button
-                  className="px-4 py-2 bg-blue-500 text-white rounded-lg mt-2 ml-2"
-                  onClick={() => downloadReliabilityCharts(reliabilityCharts, reliabilityResult?.seed)}
-                >
-                  Download Charts
-                </button>
-              )}
-              {reliabilityCharts && (
-                <div className="mt-3 flex flex-col gap-3">
-                  <img
-                    src={`data:image/png;base64,${reliabilityCharts.steelTempSpaghetti}`}
-                    alt="Steel time-temperature curves with critical temperature line"
-                    className="w-full rounded-md bg-white"
-                  />
-                  <img
-                    src={`data:image/png;base64,${reliabilityCharts.passFailScatter}`}
-                    alt="Pass/fail scatter: glazing breakage vs fireload"
-                    className="w-full rounded-md bg-white"
-                  />
-                </div>
-              )}
             </div>
           )}
 
