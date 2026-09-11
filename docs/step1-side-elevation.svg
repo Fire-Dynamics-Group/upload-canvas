@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" font-family="sans-serif">
+<rect width="900" height="520" fill="#fafafa"/>
+<text x="40" y="24" font-size="16" font-weight="bold">Ian Test 2 — STEP1 flight 0, side elevation (x horizontal, z up), metres</text>
+<rect x="40.0" y="425.0" width="344.5" height="44.0" fill="#4a90d9" fill-opacity="0.55" stroke="#4a90d9" stroke-width="1.2"/>
+<rect x="40.0" y="425.0" width="566.5" height="55.0" fill="#d98a3a" fill-opacity="0.55" stroke="#d98a3a" stroke-width="1.2"/>
+<rect x="413.1" y="370.0" width="229.6" height="55.0" fill="#d98a3a" fill-opacity="0.55" stroke="#d98a3a" stroke-width="1.2"/>
+<rect x="449.3" y="315.0" width="229.6" height="55.0" fill="#d98a3a" fill-opacity="0.55" stroke="#d98a3a" stroke-width="1.2"/>
+<rect x="485.5" y="260.0" width="229.6" height="55.0" fill="#d98a3a" fill-opacity="0.55" stroke="#d98a3a" stroke-width="1.2"/>
+<rect x="521.7" y="205.0" width="229.6" height="55.0" fill="#d98a3a" fill-opacity="0.55" stroke="#d98a3a" stroke-width="1.2"/>
+<rect x="557.9" y="150.0" width="229.6" height="55.0" fill="#d98a3a" fill-opacity="0.55" stroke="#d98a3a" stroke-width="1.2"/>
+<rect x="594.2" y="95.0" width="229.6" height="55.0" fill="#d98a3a" fill-opacity="0.55" stroke="#d98a3a" stroke-width="1.2"/>
+<rect x="630.4" y="40.0" width="229.6" height="55.0" fill="#d98a3a" fill-opacity="0.55" stroke="#d98a3a" stroke-width="1.2"/>
+<rect x="630.4" y="40.0" width="229.6" height="44.0" fill="#2e7d32" fill-opacity="0.55" stroke="#2e7d32" stroke-width="1.2"/>
+<line x1="36" y1="425.0" x2="860" y2="425.0" stroke="#ddd"/>
+<text x="4" y="429.0" font-size="10" fill="#888">0</text>
+<line x1="36" y1="205.0" x2="860" y2="205.0" stroke="#ddd"/>
+<text x="4" y="209.0" font-size="10" fill="#888">1</text>
+<rect x="40" y="496" width="14" height="10" fill="#4a90d9" fill-opacity="0.55" stroke="#4a90d9"/>
+<text x="60" y="506" font-size="12">floor landing</text>
+<rect x="210" y="496" width="14" height="10" fill="#d98a3a" fill-opacity="0.55" stroke="#d98a3a"/>
+<text x="230" y="506" font-size="12">STEP1</text>
+<rect x="380" y="496" width="14" height="10" fill="#2e7d32" fill-opacity="0.55" stroke="#2e7d32"/>
+<text x="400" y="506" font-size="12">half landing</text>
+</svg>

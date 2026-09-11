@@ -18,7 +18,6 @@ const TestButtons = () => {
     }
 
     const handleTimeEq = () => {
-        console.log("mockTimeEqElements: ", mockTimeEqElements)
         // convert for separate walls
         // and openings
         setConvertedPoints(mockTimeEqElements)

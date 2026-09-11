@@ -4,7 +4,12 @@ import WalkingSpeedPopup from './WalkingSpeedPopup'
 import FireInputsPopup from './FireInputsPopup'
 import FDSInputsPopup from './FDSInputsPopup.tsx'
 import TimeEquivalenceInputPopup from './TimeEquivalenceInputPopup'
+import EfsPopup from './EfsPopup'
 import {sendFdsData} from './ApiCalls'
+import { generateFdsCode } from '@/utils/generateFds'
+import { computeAutoSprinklerPositions } from '@/utils/autoSprinklers'
+import { computeCenterlinePoints, findCorridorObstruction, computeStairSensorPositions } from '@/utils/corridorCenterline'
+import { runFsaPathfinding } from '@/utils/fsaPathfinding'
 
 import { useState } from 'react';
 import ErrorPopup from './ErrorPopup';
@@ -19,6 +24,12 @@ const Toolbar = ({setShowModePopup}) => {
     const currentMode = useStore((state) => state.currentMode)
     const tool = useStore((state) => state.tool)
     const setTool = useStore((state) => state.setTool)
+    const undo = useStore((state) => state.undo)
+    const redo = useStore((state) => state.redo)
+    // Subscribe to the stack lengths (not the canUndo/canRedo selectors) so the
+    // buttons re-render and enable/disable as the history changes.
+    const canUndo = useStore((state) => state.elementsHistory.length > 0)
+    const canRedo = useStore((state) => state.elementsFuture.length > 0)
     const comment = useStore((state) => state.comment)
     const setComment = useStore((state) => state.setComment)
     const setConvertedPoints = useStore((state) => state.setConvertedPoints)
@@ -33,6 +44,37 @@ const Toolbar = ({setShowModePopup}) => {
     const topStoreyHeight = useStore((state) => state.topStoreyHeight)
     // add in above
     const stairRoofZ = useStore((state) => state.stairRoofZ)
+    const commonCorridorMode = useStore((state) => state.commonCorridorMode)
+    const scenarioType = useStore((state) => state.scenarioType)
+    const simEndTime = useStore((state) => state.simEndTime)
+    const includeSensors = useStore((state) => state.includeSensors)
+    const corridorSensorHeights = useStore((state) => state.corridorSensorHeights)
+    const stairSensorHeights = useStore((state) => state.stairSensorHeights)
+    const fsaSensorHeights = useStore((state) => state.fsaSensorHeights)
+    const isSprinklered = useStore((state) => state.isSprinklered)
+    const pixelsPerMesh = useStore((state) => state.pixelsPerMesh)
+    const doorLeakagesEnabled = useStore((state) => state.doorLeakagesEnabled)
+    const doorLeakageConfig = useStore((state) => state.doorLeakageConfig)
+    const doorOpenings = useStore((state) => state.doorOpenings)
+    const doorRoles = useStore((state) => state.doorRoles)
+    const landingRoles = useStore((state) => state.landingRoles)
+    const landingUpSide = useStore((state) => state.landingUpSide)
+    const stairStyle = useStore((state) => state.stairStyle)
+    const aovMode = useStore((state) => state.aovMode)
+    const aovActivationTime = useStore((state) => state.aovActivationTime)
+    const extractConfig = useStore((state) => state.extractConfig)
+    const inletConfig = useStore((state) => state.inletConfig)
+    const zoneConfig = useStore((state) => state.zoneConfig)
+    const setSensorTreeElements = useStore((state) => state.setSensorTreeElements)
+    const sliceZHeight = useStore((state) => state.sliceZHeight)
+    const obstructionTransparency = useStore((state) => state.obstructionTransparency)
+    const fireHRR = useStore((state) => state.fireHRR)
+    const fireDimension = useStore((state) => state.fireDimension)
+    const fireHeightAboveFloor = useStore((state) => state.fireHeightAboveFloor)
+    const fireBase = useStore((state) => state.fireBase)
+    const fireType = useStore((state) => state.fireType)
+    const fireGrowthRate = useStore((state) => state.fireGrowthRate)
+    const fireCustomAlpha = useStore((state) => state.fireCustomAlpha)
     // const handleWalkingInput = useStore((state) => state.handleWalkingInput)
     // const [walkingInput, setWalkingInput] = useState(null)
     const [showWalkingPopup, setShowWalkingPopup] = useState(false)
@@ -43,8 +85,10 @@ const Toolbar = ({setShowModePopup}) => {
     const pdfData = useStore((state) => state.pdfData)
     const toggleIsPdfGreyscale = useStore((state) => state.toggleIsPdfGreyscale)
 
-    const [showFireInputsPopup, setShowFireInputsPopup] = useState(false) 
-    const [showFDSInputsPopup, setShowFDSInputsPopup] = useState(false) 
+    const [showFireInputsPopup, setShowFireInputsPopup] = useState(false)
+    const [showFDSInputsPopup, setShowFDSInputsPopup] = useState(false)
+    const showEfsPopup = useStore((state) => state.efsPopupOpen)
+    const setShowEfsPopup = useStore((state) => state.setEfsPopupOpen)
 
     const totalHeatFlux = useStore((state) => state.totalHeatFlux)
     const heatEndPoint = useStore((state) => state.heatEndPoint)
@@ -75,9 +119,13 @@ const [errorList, setErrorList] = useState(defaultErrorList)
 
         if (elements) {
           if (elements.length === 0) {
-            // below for radiation mode
-            // should access error object dependant on mode
-            setErrorList([defaultErrorList[1], defaultErrorList[2]])
+            if (currentMode === 'efs') {
+              setErrorList(["please draw a wall line"])
+            } else {
+              // below for radiation mode
+              // should access error object dependant on mode
+              setErrorList([defaultErrorList[1], defaultErrorList[2]])
+            }
             setShowErrorPopup(true)
             return
           }
@@ -101,6 +149,15 @@ const [errorList, setErrorList] = useState(defaultErrorList)
             // assignment for opening heights
             // cycle through -> point at each one
             // mvp have all walls and opening form lines
+          } else if (currentMode === 'efs') {
+            const wall = elements.find(el => el.comments === 'efsWall')
+            if (!wall) {
+              setErrorList(["please draw a wall line"])
+              setShowErrorPopup(true)
+              return
+            }
+            setConvertedPoints()
+            setShowEfsPopup(true)
           }
         } else {
           setShowErrorPopup(true)
@@ -109,8 +166,6 @@ const [errorList, setErrorList] = useState(defaultErrorList)
       function handleWalkingInput(userInput) {
         // use user input
         let doorOpeningDuration = (userInput.length > 1 ) ? userInput[1] : 11 
-        console.log("handleWalkingInput", userInput[0], convertedPoints, doorOpeningDuration)
-
         prepForRadiationTable(userInput[0], convertedPoints, doorOpeningDuration, totalHeatFlux, heatEndPoint)
         setShowWalkingPopup(false)
         // 
@@ -128,18 +183,71 @@ const [errorList, setErrorList] = useState(defaultErrorList)
         
       }
 
+      function handleRegenSensors() {
+        const obstructions = elements.filter(el => el.comments === 'obstruction')
+        const doorElements = elements.filter(el => el.comments && el.comments.includes('door'))
+        const landingElements = elements.filter(el => el.comments === 'landing')
+        const stairObstructions = elements.filter(el => el.comments === 'stairObstruction')
+        const corridor = findCorridorObstruction(obstructions, doorElements, doorRoles)
+
+        if (corridor) {
+            let sensorPoints = []
+            const sensorsEnabledZones = Object.values(zoneConfig).filter(
+                (z) => z.sensors !== false && z.points && z.points.length >= 3
+            )
+            if (sensorsEnabledZones.length > 0) {
+                for (const zone of sensorsEnabledZones) {
+                    const zoneSensors = computeCenterlinePoints(zone.points, doorElements, doorRoles, pixelsPerMesh)
+                    sensorPoints.push(...zoneSensors.map(s => ({ ...s, zoneName: zone.name })))
+                }
+            } else {
+                sensorPoints = computeCenterlinePoints(corridor.points, doorElements, doorRoles, pixelsPerMesh)
+            }
+
+            // Stair sensors
+            const stairDoor = doorElements.find(d => doorRoles[d.id] === 'stair')
+            let stairPoints = []
+            if (stairDoor && stairObstructions.length > 0 && landingElements.length > 0) {
+                stairObstructions.forEach((stairObs, stairIdx) => {
+                    const floorLanding = landingElements.find(el => landingRoles[el.id] === 'floor')
+                    const landing = floorLanding || landingElements[stairIdx] || landingElements[0]
+                    const pts = computeStairSensorPositions(stairDoor, stairObs.points, landing, pixelsPerMesh)
+                    const stairName = stairObstructions.length > 1 ? `Stair ${stairIdx + 1}` : 'Stair'
+                    stairPoints.push(...pts.map(s => ({ ...s, zoneName: stairName })))
+                })
+            }
+
+            // FSA sensors
+            let fsaPoints = []
+            if ((scenarioType === "FSA" || scenarioType === "Both") && corridor) {
+                const aptDoor = doorElements.find(d => doorRoles[d.id] === 'apartment')
+                const strDoor = doorElements.find(d => doorRoles[d.id] === 'stair')
+                if (aptDoor && strDoor) {
+                    const pxPerM = pixelsPerMesh * 10
+                    const startM = { x: (aptDoor.points[0].x + aptDoor.points[1].x) / 2 / pxPerM, y: (aptDoor.points[0].y + aptDoor.points[1].y) / 2 / pxPerM }
+                    const endM = { x: (strDoor.points[0].x + strDoor.points[1].x) / 2 / pxPerM, y: (strDoor.points[0].y + strDoor.points[1].y) / 2 / pxPerM }
+                    const fsaPolyPx = sensorsEnabledZones.length > 0 ? sensorsEnabledZones[0].points : corridor.points
+                    const corridorVerticesM = fsaPolyPx.map(p => ({ x: p.x / pxPerM, y: p.y / pxPerM }))
+                    const fsaResult = runFsaPathfinding(startM, endM, corridorVerticesM)
+                    if (fsaResult) {
+                        for (const [dist, loc] of Object.entries(fsaResult.sensorLocations)) {
+                            fsaPoints.push({ x: Math.round(loc.x * pxPerM), y: Math.round(loc.y * pxPerM), fsaDistance: Number(dist) })
+                        }
+                    }
+                }
+            }
+
+            setSensorTreeElements([...sensorPoints, ...stairPoints], fsaPoints)
+            console.log(`[FDS] Recomputed sensors: ${sensorPoints.length} corridor/lobby, ${stairPoints.length} stair, ${fsaPoints.length} FSA`)
+        }
+      }
+
       function handleFDSClick() {
-        console.log("handleFDSClick elements: ", elements)
-        sendFdsData(
-                    elements, 
-                    fireFloorZ, 
-                    wallHeight,
-                    topStoreyHeight, // stairheight
-                    fireFloorNumber,
-                    totalFloors, 
-                    stairRoofZ
-                    )
-        // send api call -> with all elements
+        // Generate (downloads test.fds as before) and capture the returned text
+        // into the store so the 3D / FDS-code view tabs reflect it. All inputs
+        // are read off the store inside generateFdsCode — see utils/generateFds.js.
+        // (Sensors should already be computed via the Regen Sensors button.)
+        generateFdsCode({ download: true })
       }
 
       function handleFDSInput() {
@@ -212,7 +320,34 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                     setComment("landing")
                 }}
                 />
-                <label htmlFor="rectangle">Stair Landing</label> 
+                <label htmlFor="rectangle">Stair Landing</label>
+                {/* Inlet */}
+                <input type="radio"
+                id="inlet"
+                checked={tool === "polyline" && comment == 'inlet'}
+                onChange={() => {
+                setTool("polyline")
+                setComment("inlet")
+                }} />
+                <label htmlFor="inlet">Inlet</label>
+                {/* Extract */}
+                <input type="radio"
+                id="extract"
+                checked={tool === "polyline" && comment == 'extract'}
+                onChange={() => {
+                setTool("polyline")
+                setComment("extract")
+                }} />
+                <label htmlFor="extract">Extract</label>
+                {/* Sprinkler */}
+                <input type="radio"
+                id="sprinkler"
+                checked={tool === "point" && comment == 'sprinkler'}
+                onChange={() => {
+                setTool("point")
+                setComment("sprinkler")
+                }} />
+                <label htmlFor="sprinkler">Sprinkler</label>
 
         </>
     )
@@ -220,9 +355,9 @@ const [errorList, setErrorList] = useState(defaultErrorList)
     const radiationTools = (
         <>
                 {/*  escape path */}
-                <input type="radio" 
-                id="line" 
-                checked={tool === "polyline" && comment == 'escapeRoute'} 
+                <input type="radio"
+                id="line"
+                checked={tool === "polyline" && comment == 'escapeRoute'}
                 onChange={() => {
                 setTool("polyline")
                 setComment("escapeRoute")
@@ -230,21 +365,83 @@ const [errorList, setErrorList] = useState(defaultErrorList)
                 <label htmlFor="line">Escape Route</label>
         </>
     )
+
+    const efsTools = (
+        <>
+                {/* external wall / elevation line */}
+                <input type="radio"
+                id="efsWall"
+                checked={tool === "polyline" && comment == 'efsWall'}
+                onChange={() => {
+                setTool("polyline")
+                setComment("efsWall")
+                }} />
+                <label htmlFor="efsWall">Wall</label>
+                {/* relevant-boundary polyline */}
+                <input type="radio"
+                id="efsBoundary"
+                checked={tool === "polyline" && comment == 'efsBoundary'}
+                onChange={() => {
+                setTool("polyline")
+                setComment("efsBoundary")
+                }} />
+                <label htmlFor="efsBoundary">Boundary</label>
+                {/* protected (fire-rated) region polyline */}
+                <input type="radio"
+                id="efsProtected"
+                checked={tool === "polyline" && comment == 'efsProtected'}
+                onChange={() => {
+                setTool("polyline")
+                setComment("efsProtected")
+                }} />
+                <label htmlFor="efsProtected">Protected</label>
+                {/* must-stay-unprotected region polyline */}
+                <input type="radio"
+                id="efsUnprotected"
+                checked={tool === "polyline" && comment == 'efsUnprotected'}
+                onChange={() => {
+                setTool("polyline")
+                setComment("efsUnprotected")
+                }} />
+                <label htmlFor="efsUnprotected">Unprotected</label>
+        </>
+    )
     return (
     <>
       {/* perhaps popup can't be located in menu bar? */}
-      {showFDSInputsPopup && <FDSInputsPopup handleUserInput={handleFDSInput}/>}
+      {showFDSInputsPopup && <FDSInputsPopup handleUserInput={handleFDSInput} onClose={() => setShowFDSInputsPopup(false)}/>}
       {showErrorPopup && <ErrorPopup setShowPopup={setShowErrorPopup} errorList={errorList}/>}
       {showTimeEqPopup && <TimeEquivalenceInputPopup mockData={null}/>}
       {showFireInputsPopup && <FireInputsPopup handleUserInput={handleFireInput}/>}
-      {showWalkingPopup && <WalkingSpeedPopup handleUserInput={handleWalkingInput}/>}
+      {showWalkingPopup && <WalkingSpeedPopup handleUserInput={handleWalkingInput} onClose={() => setShowWalkingPopup(false)}/>}
+      {showEfsPopup && <EfsPopup onClose={() => setShowEfsPopup(false)}/>}
         <div className="text-center">
-          <button 
+          <button
             onClick={handleModeButtonClick}
-            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
+            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
             type="button"
             >
             Change Mode
+          </button>
+          <button
+            onClick={undo}
+            disabled={!canUndo}
+            title="Undo (Ctrl+Z)"
+            aria-label="Undo"
+            className="text-white bg-gray-600 hover:bg-gray-500 font-medium rounded-lg text-sm px-4 py-0.1 mr-2 mb-2 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none"
+            type="button"
+            >
+            ↩ Undo
+          </button>
+          <button
+            onClick={redo}
+            disabled={!canRedo}
+            title="Redo (Ctrl+Shift+Z)"
+            aria-label="Redo"
+            className="text-white bg-gray-600 hover:bg-gray-500 font-medium rounded-lg text-sm px-4 py-0.1 mr-2 mb-2 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none"
+            type="button"
+            >
+            ↪ Redo
           </button>
         </div>
 
@@ -268,40 +465,44 @@ const [errorList, setErrorList] = useState(defaultErrorList)
             }}
           />
           <label htmlFor="selection">Selection</label>
-          {/* non stair obstructions */}
-          <input type="radio" id="line" 
-          checked={tool === "polyline" && comment == 'obstruction'} 
+          {/* non stair obstructions — not an EFS concept (a wall is drawn with the Wall tool) */}
+          { currentMode !== 'efs' && <>
+          <input type="radio" id="line"
+          checked={tool === "polyline" && comment == 'obstruction'}
           onChange={() => {
             setTool("polyline")
             setComment("obstruction")
             }} />
           <label htmlFor="line">Obstruction</label>
+          </> }
 
           { currentMode === 'fdsGen' ?
             fdsGenTools
 
             : currentMode === 'radiation' ?
                 radiationTools
+                : currentMode === 'efs' ?
+                efsTools
                 : <>
-                <input type="radio" id="opening" 
-                checked={tool === "opening" && comment == 'opening'} 
+                <input type="radio" id="opening"
+                checked={tool === "opening" && comment == 'opening'}
                 onChange={() => {
                   setTool("polyline")
                   setComment("opening")
                   }} />
                 <label htmlFor="opening">Opening</label>
-                </> 
+                </>
           }
           {/* Point  
                 * if point & stair-> point for stair climb
                 * if point & not stair -> fire (can be centre of box), inlet (can be polyline with two points)
           */}
-          {/* fire not needed for timeEq */}
-          { currentMode !== 'timeEq' && <>
+          {/* fire not needed for timeEq or efs */}
+          { currentMode !== 'timeEq' && currentMode !== 'efs' && <>
             <input
               type="radio"
               id="fire"
-              checked={tool === "point"}
+              checked={tool === "point" && comment === "fire"}
               onChange={() => {
                 setTool("point")
                 setComment("fire")
@@ -351,9 +552,16 @@ const [errorList, setErrorList] = useState(defaultErrorList)
             >
             Inputs
           </button>
-          <button 
+          <button
+            onClick={handleRegenSensors}
+            className="text-white bg-yellow-600 hover:bg-yellow-700 focus:ring-4 focus:ring-yellow-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 focus:outline-none"
+            type="button"
+            >
+            Regen Sensors
+          </button>
+          <button
             onClick={handleFDSClick}
-            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
+            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
             type="button"
             >
             Generate FDS code

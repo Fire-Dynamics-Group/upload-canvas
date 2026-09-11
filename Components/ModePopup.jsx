@@ -1,59 +1,74 @@
-import { useRef } from "react";
 import useStore from '../store/useStore'
 
-const ModePopup = ({setToggleShowPopup}) => {
+const ModePopup = ({ setToggleShowPopup, onModeSelected }) => {
     const currentMode = useStore((state) => state.currentMode)
     const setCurrentMode = useStore((state) => state.setCurrentMode)
 
-    // TODO: currentMode => zustand
-    const scaleInput = useRef()
-    function handleClick() {
-       setToggleShowPopup(false)
-
+    function handleSelect(mode) {
+      setCurrentMode(mode)
+      setToggleShowPopup(false)
+      if (onModeSelected) onModeSelected(mode)
     }
+
+    function handleClose() {
+      setToggleShowPopup(false)
+    }
+
+    const modes = [
+      { key: 'fdsGen', label: 'FDS Generation' },
+      { key: 'radiation', label: 'Radiation' },
+      { key: 'timeEq', label: 'Time Equivalence' },
+      { key: 'efs', label: 'External Fire Spread' },
+    ]
+
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-        <div className="bg-white p-4 rounded-lg shadow-lg">
-          <h2 className="text-lg font-bold mb-2">Choose Mode</h2>
-          {/* <input ref={scaleInput} type="text" className="w-full border border-gray-300 px-3 py-2 rounded-md mb-4" placeholder="Enter scale line length (m)" /> */}
-          <input
-            type="radio"
-            id="fdsGen"
-            checked={currentMode === "fdsGen"}
-            onChange={() => {
-            setCurrentMode("fdsGen")
-            }}
-          />
-          <label htmlFor="fdsGen">FDS Generation</label>
-          <input
-            type="radio"
-            id="radiation"
-            checked={currentMode === "radiation"}
-            onChange={() => {
-            setCurrentMode("radiation")
-            }}
-          />
-          <label htmlFor="radiation">Radiation</label>
-          <br />
-          <input
-            type="radio"
-            id="timeEq"
-            checked={currentMode === "timeEq"}
-            onChange={() => {
-            setCurrentMode("timeEq")
-            }}
-          />
-          <label htmlFor="timeEq">Time Equivalence</label>
-          <br />
-          <button className="px-4 py-2 bg-blue-500 text-white rounded-lg" onClick={handleClick}>
-            Enter
-          </button>          
-          {/* <button className="px-4 py-2 bg-blue-500 text-white rounded-lg">
-            Close
-          </button> */}
+      <div
+        className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]"
+        onClick={handleClose}
+      >
+        <div
+          className="bg-gray-800 rounded-lg p-6 w-full max-w-sm mx-4 text-white"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h2 className="text-lg font-medium mb-4">Choose Mode</h2>
+          <div className="flex flex-col gap-2 mb-4">
+            {modes.map((m) => (
+              <label
+                key={m.key}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-colors ${
+                  currentMode === m.key
+                    ? 'bg-blue-700 border border-blue-500'
+                    : 'bg-gray-700 hover:bg-gray-600 border border-gray-600'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="modeSelect"
+                  checked={currentMode === m.key}
+                  onChange={() => setCurrentMode(m.key)}
+                  className="accent-blue-500"
+                />
+                {m.label}
+              </label>
+            ))}
+          </div>
+          <div className="flex justify-end gap-3">
+            <button
+              className="px-4 py-2 text-gray-400 hover:text-white"
+              onClick={handleClose}
+            >
+              Cancel
+            </button>
+            <button
+              className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg"
+              onClick={() => handleSelect(currentMode)}
+            >
+              Enter
+            </button>
+          </div>
         </div>
       </div>
     );
   };
-  
+
   export default ModePopup;
