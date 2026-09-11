@@ -1,6 +1,6 @@
 import useStore from '@/store/useStore';
 import { useState, useEffect } from 'react';
-import { sendTimeEqData, sendTimeEqReliabilityData, sendTimeEqReliabilityChartsData } from './ApiCalls'
+import { sendTimeEqData, sendTimeEqReliabilityData, sendTimeEqReliabilityChartsData, downloadReliabilityCharts } from './ApiCalls'
 import { resolveTimeEqInputs } from '@/store/timeEqPersistence'
 import {
     OCCUPANCY_DISTRIBUTIONS,
@@ -510,6 +510,14 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
               >
                 {isChartsRunning ? 'Generating…' : 'Generate Charts'}
               </button>
+              {reliabilityCharts && (
+                <button
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg mt-2 ml-2"
+                  onClick={() => downloadReliabilityCharts(reliabilityCharts, reliabilityResult?.seed)}
+                >
+                  Download Charts
+                </button>
+              )}
               {reliabilityCharts && (
                 <div className="mt-3 flex flex-col gap-3">
                   <img

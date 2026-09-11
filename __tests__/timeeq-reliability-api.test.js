@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { sendTimeEqReliabilityData, sendTimeEqReliabilityChartsData } from '../Components/ApiCalls'
+import { sendTimeEqReliabilityData, sendTimeEqReliabilityChartsData, downloadReliabilityCharts } from '../Components/ApiCalls'
+import { saveAs } from 'file-saver'
+
+vi.mock('file-saver', () => ({ saveAs: vi.fn() }))
 
 const POINTS = [
   { id: 0, comments: 'obstruction', finalPoints: [{ x: 0, y: 0 }, { x: 10, y: 0 }] },
@@ -138,5 +141,32 @@ describe('sendTimeEqReliabilityChartsData', () => {
         occupancy: 'Office', compartmentHeight: 3, fireResistancePeriod: 60,
       })
     ).rejects.toThrow(/boom/)
+  })
+})
+
+describe('downloadReliabilityCharts', () => {
+  beforeEach(() => {
+    saveAs.mockClear()
+  })
+
+  it('saves each chart as a named PNG blob, seed in the filename', () => {
+    downloadReliabilityCharts(
+      { steelTempSpaghetti: btoa('spag'), passFailScatter: btoa('scat') }, 42)
+    expect(saveAs).toHaveBeenCalledTimes(2)
+    const names = saveAs.mock.calls.map((c) => c[1]).sort()
+    expect(names).toEqual([
+      'reliability-pass-fail-scatter-seed42.png',
+      'reliability-steel-temperature-seed42.png',
+    ])
+    for (const [blob] of saveAs.mock.calls) {
+      expect(blob).toBeInstanceOf(Blob)
+      expect(blob.type).toBe('image/png')
+    }
+  })
+
+  it('omits the seed suffix when there is no seed, and skips missing charts', () => {
+    downloadReliabilityCharts({ steelTempSpaghetti: btoa('spag') })
+    expect(saveAs).toHaveBeenCalledTimes(1)
+    expect(saveAs.mock.calls[0][1]).toBe('reliability-steel-temperature.png')
   })
 })

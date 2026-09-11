@@ -388,6 +388,27 @@ export const sendTimeEqReliabilityChartsData = async (convertedPoints, options =
       reliabilityRequestBody(convertedPoints, options),
       'Reliability charts')
 
+const RELIABILITY_CHART_FILENAMES = {
+    steelTempSpaghetti: 'reliability-steel-temperature',
+    passFailScatter: 'reliability-pass-fail-scatter',
+  }
+
+const base64ToPngBlob = (b64) => {
+    const bytes = atob(b64)
+    const arr = new Uint8Array(bytes.length)
+    for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
+    return new Blob([arr], { type: 'image/png' })
+  }
+
+// Save the generated report charts as PNG files. The seed goes in the filename
+// so a downloaded chart can always be traced back to the exact run it shows.
+export const downloadReliabilityCharts = (charts, seed = null) => {
+    const suffix = seed == null ? '' : `-seed${seed}`
+    for (const [key, stem] of Object.entries(RELIABILITY_CHART_FILENAMES)) {
+      if (charts?.[key]) saveAs(base64ToPngBlob(charts[key]), `${stem}${suffix}.png`)
+    }
+  }
+
   // export const sendRadiationData = async (
   //   timeArray, 
   //   accumulatedDistanceList, 
