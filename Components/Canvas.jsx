@@ -2164,7 +2164,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
           <div style={{ color: '#0e7490', fontSize: 11 }}>Set drawing scale</div>
           <strong>{scalePoints.length === 0 ? 'Select the first point' : 'Select the second point'}</strong>
           <div style={{ fontSize: 11, marginTop: 3 }}>
-            {scalePoints.length === 1 ? 'Esc to restart · ' : ''}Middle mouse or two-finger scroll to pan · Ctrl + wheel to zoom
+            {scalePoints.length === 1 ? 'Esc to restart · ' : ''}Middle mouse or two-finger scroll to pan
           </div>
         </div>
       )}
