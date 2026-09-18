@@ -42,6 +42,8 @@ const EfsPopup = ({ onClose }) => {
     const height = useStore((state) => state.efsHeight)
     const setHeight = useStore((state) => state.setEfsHeight)
     const fireTempC = useStore((state) => state.efsFireTempC)
+    const sprinklered = useStore((state) => state.efsSprinklered)
+    const setSprinklered = useStore((state) => state.setEfsSprinklered)
     const setFireTempC = useStore((state) => state.setEfsFireTempC)
     const columnSpacing = useStore((state) => state.efsColumnSpacing)
     const setColumnSpacing = useStore((state) => state.setEfsColumnSpacing)
@@ -417,7 +419,25 @@ const EfsPopup = ({ onClose }) => {
                 {activeTab === 'viewFactor' && (
                 <>
                 {numberField('Elevation height (m)', height, setHeight)}
-                {numberField('Fire temperature (°C)', fireTempC, setFireTempC)}
+                {numberField('Fire temperature (°C)', typeof fireTempC === 'number' ? Number(fireTempC.toFixed(2)) : fireTempC, setFireTempC)}
+                <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <span id="efs-sprinkler-label" className="block text-sm font-medium">Sprinklered</span>
+                            <span className="text-xs text-slate-500">{sprinklered ? 'On · adjusted fire temperature' : 'Off · unsprinklered temperature'}</span>
+                        </div>
+                        <button type="button" role="switch" aria-checked={sprinklered}
+                            aria-labelledby="efs-sprinkler-label" aria-describedby="efs-sprinkler-help"
+                            disabled={String(fireTempC).trim() === '' || !Number.isFinite(Number(fireTempC)) || Number(fireTempC) <= -273}
+                            onClick={() => setSprinklered(!sprinklered)}
+                            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-40 ${sprinklered ? 'bg-blue-600' : 'bg-slate-400'}`}>
+                            <span aria-hidden="true" className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${sprinklered ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                    </div>
+                    <p id="efs-sprinkler-help" className="mt-2 text-xs text-slate-500">
+                        {sprinklered ? 'The temperature above is adjusted for sprinklers and used in the calculation. Switch off to convert it back.' : 'Switch on to convert the temperature above to its sprinklered equivalent.'}
+                    </p>
+                </div>
                 {numberField('Column spacing (m)', columnSpacing, setColumnSpacing)}
 
                 {/* Custom end-bay spacing for the active elevation (tick boxes). */}
@@ -555,7 +575,7 @@ const EfsPopup = ({ onClose }) => {
                         <p className="text-sm">Elevation width (from wall): <b>{result.width.toFixed(2)} m</b></p>
                         <p className="text-base mt-1">
                             Governing required boundary distance:{' '}
-                            <b>{result.governingRequiredBoundaryDistance.toFixed(2)} m</b>
+                            <b>{(result.governingColumnRequiredBoundaryDistance ?? result.governingRequiredBoundaryDistance).toFixed(2)} m</b>
                         </p>
                         {protectedBays.length > 0 && (
                             <p className="text-sm mt-1 text-gray-700">
@@ -569,10 +589,12 @@ const EfsPopup = ({ onClose }) => {
                             </p>
                         )}
                         {result.hasBoundary ? (
-                            <p className={`text-sm mt-1 ${result.allPass ? 'text-green-700' : 'text-red-700'}`}>
-                                {result.allPass
-                                    ? 'All bays compliant.'
-                                    : `${result.failingCount} bay(s) exceed the 12.6 kW/m² boundary criterion.`}
+                            <p className={`text-sm mt-1 ${result.columnsAllPass ? 'text-green-700' : 'text-red-700'}`}>
+                                {result.columnsAllPass
+                                    ? 'All columns compliant.'
+                                    : result.columnRows.some((r) => r.actualBoundaryDistance == null)
+                                    ? 'Some columns have no perpendicular intersection with the boundary. Extend or adjust the boundary to assess them.'
+                                    : `${result.failingColumnCount} column(s) exceed the 12.6 kW/m² boundary criterion.`}
                             </p>
                         ) : (
                             <p className="text-xs text-gray-500 mt-1">
@@ -583,47 +605,27 @@ const EfsPopup = ({ onClose }) => {
                             <table className="text-xs border-collapse whitespace-nowrap">
                                 <thead>
                                     <tr className="text-left border-b">
-                                        <th className="py-1 pr-2">Bay</th>
-                                        <th className="py-1 pr-2">Cols</th>
+                                        <th className="py-1 pr-2">Column</th>
+                                        <th className="py-1 pr-2">Position (m)</th>
                                         <th className="py-1 pr-2">View factor</th>
                                         <th className="py-1 pr-2">I<sub>s</sub> (kW/m²)</th>
                                         <th className="py-1 pr-2">S (m)</th>
                                         <th className="py-1 pr-2">Required (m)</th>
                                         <th className="py-1 pr-2">Actual (m)</th>
-                                        <th className="py-1 pr-2">Protect</th>
                                         <th className="py-1 pr-2">Status</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {result.rows.map((r) => (
-                                        <tr
-                                            key={r.bay}
-                                            className={`border-b ${
-                                                r.status === 'conflict' ? 'bg-red-100'
-                                                    : r.protected ? 'bg-gray-100'
-                                                        : r.status === 'unprotected' ? 'bg-blue-50'
-                                                            : (r.pass === false ? 'bg-red-50' : '')
-                                            }`}
-                                        >
-                                            <td className="py-1 pr-2">{r.bay}</td>
-                                            <td className="py-1 pr-2">{r.leftCol}–{r.rightCol}</td>
-                                            {/* A protected bay doesn't emit, so its own view factor / incident
-                                                are not meaningful — blank them. The S / Required columns stay:
-                                                a boundary may still be needed here from ADJACENT unprotected bays. */}
-                                            <td className="py-1 pr-2">{r.protected ? '—' : r.viewFactorTotal.toFixed(5)}</td>
-                                            <td className="py-1 pr-2">{r.protected ? '—' : r.incident.toFixed(2)}</td>
+                                    {result.columnRows.map((r) => (
+                                        <tr key={r.column} className={r.pass === false ? 'border-b bg-red-50' : 'border-b'}>
+                                            <td className="py-1 pr-2">{r.column}</td>
+                                            <td className="py-1 pr-2">{r.station.toFixed(2)}</td>
+                                            <td className="py-1 pr-2">{r.viewFactorTotal.toFixed(5)}</td>
+                                            <td className="py-1 pr-2">{r.incident.toFixed(2)}</td>
                                             <td className="py-1 pr-2">{r.S.toFixed(2)}</td>
                                             <td className="py-1 pr-2">{r.requiredBoundaryDistance.toFixed(2)}</td>
                                             <td className="py-1 pr-2">
                                                 {r.actualBoundaryDistance == null ? '—' : r.actualBoundaryDistance.toFixed(2)}
-                                            </td>
-                                            <td className="py-1 pr-2">
-                                                <input
-                                                    type="checkbox"
-                                                    aria-label={`Protect bay ${r.bay}`}
-                                                    checked={r.protected}
-                                                    onChange={() => handleToggleBay(r.bay)}
-                                                />
                                             </td>
                                             <td className="py-1 pr-2">{statusLabel(r)}</td>
                                         </tr>
@@ -631,14 +633,18 @@ const EfsPopup = ({ onClose }) => {
                                 </tbody>
                             </table>
                         </div>
-                        {result.rows.some((r) => r.protected) && (
-                            <p className="text-xs text-gray-500 mt-2">
-                                Protected bays don&apos;t emit (view factor / I<sub>s</sub> shown as —). A
-                                Required distance can still appear against a protected bay — that is the
-                                boundary needed there from radiation arriving off the adjacent
-                                <em> unprotected</em> bays, not from the protected bay itself.
-                            </p>
-                        )}
+                        <p className="text-xs text-gray-500 mt-2">
+                            Distances are calculated at each column position using all unprotected wall segments.
+                            Protecting a bay removes that span from the emitter; neighbouring columns still see radiation from what remains.
+                        </p>
+                        <div className="flex flex-wrap gap-3 mt-2">
+                            {result.rows.map(r => (
+                                <label key={r.bay} className="text-xs flex items-center gap-1">
+                                    <input type="checkbox" aria-label={`Protect bay ${r.bay}`} checked={r.protected} onChange={() => handleToggleBay(r.bay)} />
+                                    Protect bay {r.bay} (columns {r.leftCol}–{r.rightCol})
+                                </label>
+                            ))}
+                        </div>
                     </div>
                 )}
                 </>
