@@ -36,7 +36,7 @@ export default function EfsWorkspaceTools({ onChangeMode }) {
         <aside className={`efs-drawing-panel ${drawingOpen ? '' : 'is-collapsed'}`} aria-label="Drawing tools">
             <div className="efs-panel-heading">
                 {drawingOpen && <div><div className="efs-panel-eyebrow">EXTERNAL FIRE SPREAD</div><h2 className="text-lg font-semibold mt-1">Drawing tools</h2></div>}
-                {!drawingOpen && <span className="efs-panel-eyebrow" title="Drawing tools">EFS TOOLS</span>}
+                {!drawingOpen && <span className="efs-panel-eyebrow" title="Drawing tools">EFS</span>}
                 <button
                     type="button"
                     className="efs-secondary-button"
@@ -48,7 +48,7 @@ export default function EfsWorkspaceTools({ onChangeMode }) {
                     {drawingOpen ? 'Collapse' : 'Open tools'}
                 </button>
             </div>
-            {drawingOpen && <>
+            {drawingOpen ? <>
             <div className="space-y-2 mt-5">
                 {drawingTools.map(item => {
                     const active = tool === item.tool && (item.tool !== 'polyline' || comment === item.comment)
@@ -82,7 +82,24 @@ export default function EfsWorkspaceTools({ onChangeMode }) {
                 <button className="efs-secondary-button" disabled={!canRedo} onClick={() => useStore.getState().redo()} title="Ctrl+Shift+Z">↷ Redo</button>
             </div>
             <button className="efs-secondary-button mt-2 w-full" onClick={onChangeMode}>Change mode</button>
-            </>}
+            </> : (
+                <div className="efs-tool-rail" aria-label="Drawing tool shortcuts">
+                    {drawingTools.map(item => {
+                        const active = tool === item.tool && (item.tool !== 'polyline' || comment === item.comment)
+                        return <button
+                            key={item.label}
+                            type="button"
+                            aria-pressed={active}
+                            aria-label={item.label}
+                            title={item.label}
+                            className={`efs-tool-button efs-tool-rail-button ${active ? 'is-active' : ''}`}
+                            onClick={() => choose(item.tool, item.comment)}
+                        >
+                            <svg className="efs-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={item.icon} /></svg>
+                        </button>
+                    })}
+                </div>
+            )}
         </aside>
         <aside className={`efs-calculation-panel ${expanded ? 'is-expanded' : ''}`} aria-label="Calculation parameters and results">
             <div className="efs-calculation-heading">
