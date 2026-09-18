@@ -615,6 +615,15 @@ const EfsPopup = ({ onClose, docked = false }) => {
                                 Draw a Boundary polyline to check actual distances.
                             </p>
                         )}
+                        {result.hasBoundary && (
+                            <p className={`text-sm mt-1 ${result.allPass ? 'text-green-700' : 'text-red-700'}`}>
+                                {result.failingCount > 0
+                                    ? `${result.failingCount} bay(s) exceed the 12.6 kW/m² boundary criterion between columns.`
+                                    : result.allPass
+                                    ? 'All bays compliant.'
+                                    : 'Some bays cannot be fully assessed. Extend or adjust the boundary to assess them.'}
+                            </p>
+                        )}
                         <div className="overflow-x-auto mt-3">
                             <table className="text-xs border-collapse whitespace-nowrap">
                                 <thead>
@@ -631,7 +640,7 @@ const EfsPopup = ({ onClose, docked = false }) => {
                                 </thead>
                                 <tbody>
                                     {result.columnRows.map((r) => {
-                                        const bayBreaks = result.rows.filter((bay) => bay.rightCol === r.column)
+                                        const bayBreaks = result.rows.filter((bay) => bay.leftCol === r.column)
                                         return (
                                             <Fragment key={r.column}>
                                                 <tr className={r.pass === false ? 'border-b bg-red-50' : 'border-b'}>

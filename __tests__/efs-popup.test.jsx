@@ -24,6 +24,11 @@ describe('EfsPopup — whole-elevation required boundary distance', () => {
             efsHeight: 18,
             efsFireTempC: 1040,
             efsSprinklered: false,
+            efsColumnSpacing: 8,
+            efsProtectedByElev: {},
+            efsEndSpacingByElev: {},
+            efsRegionConfig: {},
+            efsActiveElevation: 0,
         })
     })
 
@@ -82,13 +87,33 @@ describe('EfsPopup — whole-elevation required boundary distance', () => {
         fireEvent.click(screen.getByText('Run Calc'))
         const table = screen.getByRole('table')
         expect(within(table).getByText('Column')).toBeTruthy()
-        expect(within(table).getAllByRole('row')).toHaveLength(14)
+        expect(within(table).getAllByRole('row')).toHaveLength(26)
+        const controls = within(table).getAllByRole('checkbox')
+        expect(controls).toHaveLength(12)
+        controls.forEach((control, index) => {
+            const row = control.closest('tr')
+            expect(within(row.previousElementSibling).getAllByRole('cell')[0].textContent).toBe(String(index + 1))
+            expect(within(row.nextElementSibling).getAllByRole('cell')[0].textContent).toBe(String(index + 2))
+        })
         const before = within(table).getAllByRole('row')[1]
         const required = Number(within(before).getAllByRole('cell')[5].textContent)
         fireEvent.click(screen.getByLabelText('Protect bay 1'))
         const after = within(table).getAllByRole('row')[1]
         expect(Number(within(after).getAllByRole('cell')[5].textContent)).toBeLessThan(required)
-        expect(within(table).queryByRole('checkbox')).toBeNull()
+        expect(screen.getByLabelText('Protect bay 1').checked).toBe(true)
+    })
+
+    it('reports interior bay failures even when all columns pass', () => {
+        useStore.setState({ convertedPoints: [
+            { id: 1, comments: 'efsWall', finalPoints: [{ x: 0, y: 0 }, { x: 16, y: 0 }] },
+            { id: 2, comments: 'efsBoundary', finalPoints: [{ x: 0, y: 40 }, { x: 4, y: 1 }, { x: 8, y: 40 }, { x: 16, y: 40 }] },
+        ] })
+        render(<EfsPopup />)
+        fireEvent.click(screen.getByText('Run Calc'))
+        expect(screen.getByText('All columns compliant.')).toBeTruthy()
+        const warning = screen.getByText('1 bay(s) exceed the 12.6 kW/m² boundary criterion between columns.')
+        expect(warning.className).toContain('text-red-700')
+        expect(screen.queryByText('All bays compliant.')).toBeNull()
     })
 
     it('errors when no wall has been drawn', () => {
@@ -139,6 +164,7 @@ describe('EfsPopup — BRE 135 enclosing-rectangle tab', () => {
 
         render(<EfsPopup onClose={() => {}} />)
         fireEvent.click(screen.getByText('Enclosing rectangle (BRE 135)'))
+        fireEvent.change(screen.getByPlaceholderText('enter'), { target: { value: '10' } })
         fireEvent.click(screen.getByText('Calc'))
 
         await waitFor(() => expect(calculateEfs).toHaveBeenCalled())
@@ -147,6 +173,7 @@ describe('EfsPopup — BRE 135 enclosing-rectangle tab', () => {
         expect(elevationsArg[0].width).toBeCloseTo(60)
         expect(elevationsArg[1].width).toBeCloseTo(40)
         expect(elevationsArg[0].boundary_distance).toBeCloseTo(10)
+        expect(elevationsArg[1].boundary_distance).toBeCloseTo(10)
         expect(isCommercialArg).toBe(true)
         expect(await screen.findByText('22.5%')).toBeTruthy()
     })
