@@ -36,15 +36,16 @@ export default function EfsWorkspaceTools({ onChangeMode }) {
         <aside className={`efs-drawing-panel ${drawingOpen ? '' : 'is-collapsed'}`} aria-label="Drawing tools">
             <div className="efs-panel-heading">
                 {drawingOpen && <div><div className="efs-panel-eyebrow">EXTERNAL FIRE SPREAD</div><h2 className="text-lg font-semibold mt-1">Drawing tools</h2></div>}
-                {!drawingOpen && <span className="efs-panel-eyebrow">EFS</span>}
+                {!drawingOpen && <span className="efs-panel-eyebrow" title="Drawing tools">EFS TOOLS</span>}
                 <button
                     type="button"
                     className="efs-secondary-button"
                     aria-expanded={drawingOpen}
                     aria-label={drawingOpen ? 'Collapse drawing tools' : 'Expand drawing tools'}
+                    title={drawingOpen ? 'Collapse drawing tools' : 'Open drawing tools'}
                     onClick={() => setDrawingOpen(!drawingOpen)}
                 >
-                    {drawingOpen ? 'Collapse' : 'Open'}
+                    {drawingOpen ? 'Collapse' : 'Open tools'}
                 </button>
             </div>
             {drawingOpen && <>
