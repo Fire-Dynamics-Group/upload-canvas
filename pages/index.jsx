@@ -91,8 +91,7 @@ export default function Home() {
   let dev_mode = true
   const [hasMounted, setHasMounted] = useState(false)
   useEffect(() => { setHasMounted(true) }, [])
-  const { userName, setUserName, needsName, clearName } = useUserName()
-  const [nameInput, setNameInput] = useState('')
+  const { userName, userId, needsName } = useUserName()
   const [uploading, setUploading] = useState(false)
   const [selectedImage, setSelectedImage] = useState("")
   const [selectedFile, setSelectedFile] = useState()
@@ -301,7 +300,7 @@ export default function Home() {
       if (!currentProjectId) {
         try {
           const name = useStore.getState().projectName || "Untitled Project"
-          const project = await createProject(name, userName, mode)
+          const project = await createProject(name, userId, mode)
           currentProjectId = project.id
           // Do an initial save to create floor 0
           const saved = await saveProjectToServer(currentProjectId, {
@@ -439,31 +438,6 @@ export default function Home() {
 
   return (
     <>
-      {/* Name prompt overlay */}
-      {needsName && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]">
-          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-sm mx-4 text-white">
-            <h2 className="text-lg font-medium mb-2">Welcome!</h2>
-            <p className="text-sm text-gray-400 mb-4">Enter your name so your team knows who created each project.</p>
-            <input
-              type="text"
-              value={nameInput}
-              onChange={(e) => setNameInput(e.target.value)}
-              placeholder="Your name"
-              className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              autoFocus
-              onKeyDown={(e) => { if (e.key === 'Enter' && nameInput.trim()) setUserName(nameInput.trim()) }}
-            />
-            <button
-              onClick={() => { if (nameInput.trim()) setUserName(nameInput.trim()) }}
-              disabled={!nameInput.trim()}
-              className="w-full px-4 py-2 bg-blue-700 hover:bg-blue-800 disabled:bg-gray-600 text-white rounded-lg"
-            >
-              Continue
-            </button>
-          </div>
-        </div>
-      )}
       {/* Save status indicator */}
       {describeSaveStatus(saveStatus) && (
         <div className={`fixed top-2 left-1/2 -translate-x-1/2 z-50 text-xs px-3 py-1 rounded-full text-white ${
@@ -523,12 +497,9 @@ export default function Home() {
         ) : showDashboard && !needsName ? (
           <ProjectDashboard
             userName={userName}
+            userId={userId}
             onSelectProject={handleSelectProject}
             onNewProject={handleNewProject}
-            onEditName={() => {
-              setNameInput(userName || '')
-              clearName()
-            }}
             onModeSwitch={handleModeSelected}
           />
         ) : selectedFile ? (<>
