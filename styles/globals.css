@@ -18,6 +18,8 @@
 .efs-drawing-panel { left: 12px; width: 216px; padding: 18px 14px; }
 .efs-calculation-panel { right: 12px; width: 384px; }
 .efs-calculation-panel.is-expanded { width: min(760px, calc(100vw - 260px)); }
+.efs-drawing-panel.is-collapsed { width: 86px; padding: 12px 10px; overflow: hidden; }
+.efs-panel-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 .efs-panel-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: .12em; color: #64748b; }
 .efs-tool-button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 10px; text-align: left; font-size: 13px; border: 1px solid transparent; border-radius: 10px; }
 .efs-tool-button:hover { background: #f1f5f9; }
@@ -47,6 +49,7 @@
   .efs-tool-button { padding: 6px; }
   .efs-tool-button span.text-xs { display: none; }
   .efs-calculation-panel, .efs-calculation-panel.is-expanded { top: auto; bottom: 8px; left: 8px; right: 8px; width: auto; max-height: 38vh; }
+  .efs-drawing-panel.is-collapsed { width: 86px; left: auto; right: 8px; }
   .efs-canvas-stage { margin: 240px 0 42vh; }
 }
 

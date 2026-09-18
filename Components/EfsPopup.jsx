@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { Fragment, useState, useEffect, useMemo } from 'react'
 import useStore from '../store/useStore'
 import {
     assessElevationBays,
@@ -630,35 +630,47 @@ const EfsPopup = ({ onClose, docked = false }) => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {result.columnRows.map((r) => (
-                                        <tr key={r.column} className={r.pass === false ? 'border-b bg-red-50' : 'border-b'}>
-                                            <td className="py-1 pr-2">{r.column}</td>
-                                            <td className="py-1 pr-2">{r.station.toFixed(2)}</td>
-                                            <td className="py-1 pr-2">{r.viewFactorTotal.toFixed(5)}</td>
-                                            <td className="py-1 pr-2">{r.incident.toFixed(2)}</td>
-                                            <td className="py-1 pr-2">{r.S.toFixed(2)}</td>
-                                            <td className="py-1 pr-2">{r.requiredBoundaryDistance.toFixed(2)}</td>
-                                            <td className="py-1 pr-2">
-                                                {r.actualBoundaryDistance == null ? '—' : r.actualBoundaryDistance.toFixed(2)}
-                                            </td>
-                                            <td className="py-1 pr-2">{statusLabel(r)}</td>
-                                        </tr>
-                                    ))}
+                                    {result.columnRows.map((r) => {
+                                        const bayBreaks = result.rows.filter((bay) => bay.rightCol === r.column)
+                                        return (
+                                            <Fragment key={r.column}>
+                                                <tr className={r.pass === false ? 'border-b bg-red-50' : 'border-b'}>
+                                                    <td className="py-1 pr-2">{r.column}</td>
+                                                    <td className="py-1 pr-2">{r.station.toFixed(2)}</td>
+                                                    <td className="py-1 pr-2">{r.viewFactorTotal.toFixed(5)}</td>
+                                                    <td className="py-1 pr-2">{r.incident.toFixed(2)}</td>
+                                                    <td className="py-1 pr-2">{r.S.toFixed(2)}</td>
+                                                    <td className="py-1 pr-2">{r.requiredBoundaryDistance.toFixed(2)}</td>
+                                                    <td className="py-1 pr-2">
+                                                        {r.actualBoundaryDistance == null ? '—' : r.actualBoundaryDistance.toFixed(2)}
+                                                    </td>
+                                                    <td className="py-1 pr-2">{statusLabel(r)}</td>
+                                                </tr>
+                                                {bayBreaks.map((bay) => (
+                                                    <tr key={`bay-control-${bay.bay}`} className="border-b bg-slate-50">
+                                                        <td colSpan={8} className="py-1.5 text-center">
+                                                            <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-600">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    aria-label={`Protect bay ${bay.bay}`}
+                                                                    checked={bay.protected}
+                                                                    onChange={() => handleToggleBay(bay.bay)}
+                                                                />
+                                                                Protect bay {bay.bay} <span className="font-normal">(columns {bay.leftCol}–{bay.rightCol})</span>
+                                                            </label>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </Fragment>
+                                        )
+                                    })}
                                 </tbody>
                             </table>
                         </div>
                         <p className="text-xs text-gray-500 mt-2">
                             Distances are calculated at each column position using all unprotected wall segments.
-                            Use Toggle bay (P/U) on the canvas to change segment protection.
+                            Use the bay controls between the column rows, or Toggle bay (P/U) on the canvas, to change protection.
                         </p>
-                        <div className="flex flex-wrap gap-3 mt-2">
-                            {result.rows.map(r => (
-                                <label key={r.bay} className="text-xs flex items-center gap-1">
-                                    <input type="checkbox" aria-label={`Protect bay ${r.bay}`} checked={r.protected} onChange={() => handleToggleBay(r.bay)} />
-                                    Protect bay {r.bay} (columns {r.leftCol}–{r.rightCol})
-                                </label>
-                            ))}
-                        </div>
                     </div>
                 )}
                 </>
