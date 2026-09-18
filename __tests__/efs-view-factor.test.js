@@ -192,12 +192,36 @@ describe('boundaryDistanceOutward — perpendicular to the elevation', () => {
         expect(r.distance).toBeCloseTo(20, 6)
     })
 
-    it('falls back (outward:false) when no perpendicular meets the boundary', () => {
+    it('reports no distance when no perpendicular meets the boundary', () => {
         // boundary is off to the side of the right end — the perpendicular at
         // (40,0) runs straight down x=40 and never meets the x=0 line.
         const boundary = [{ x: 0, y: -10 }, { x: 0, y: -50 }]
         const r = boundaryDistanceOutward(wall, 40, boundary)
         expect(r.outward).toBe(false)
+        expect(r.distance).toBeNull()
+        expect(r.point).toBeNull()
+        expect(outwardNormalAt(wall, 40, boundary)).toBeNull()
+    })
+
+    it('keeps every distance perpendicular on rotated walls with fractional coordinates', () => {
+        for (const angle of [0.003, 0.07, 0.31, 1.2, 2.4]) {
+            const rotate = (x, y) => ({ x: 1364.444363 + x * Math.cos(angle) - y * Math.sin(angle), y: 754.754278 + x * Math.sin(angle) + y * Math.cos(angle) })
+            const tiltedWall = [rotate(0, 0), rotate(400, 0)]
+            const tiltedBoundary = [rotate(-50, -20), rotate(450, -20)]
+            for (let d = 0; d <= 400; d += 7.3) {
+                const r = boundaryDistanceOutward(tiltedWall, d, tiltedBoundary)
+                expect(r.outward).toBe(true)
+                expect(r.distance).toBeCloseTo(20, 7)
+                const dx = r.point.x - r.from.x, dy = r.point.y - r.from.y
+                expect(dx * Math.cos(angle) + dy * Math.sin(angle)).toBeCloseTo(0, 7)
+            }
+        }
+    })
+
+    it('does not mark a bay compliant when the perpendicular misses the boundary', () => {
+        const result = assessElevationBays({ wallPoints: wall, boundaryPoints: [{ x: -10, y: -10 }, { x: -10, y: -50 }], height: 10, T: 1000, spacing: 8 })
+        expect(result.allPass).toBe(false)
+        expect(result.rows.every((r) => r.actualBoundaryDistance == null && r.pass == null)).toBe(true)
     })
 })
 
@@ -369,6 +393,52 @@ describe('assessElevationBays — per-bay assessment', () => {
         expect(someProtected.rows.find((r) => r.bay === 1).pass).toBe(true)
     })
 
+    it('still requires a boundary at a protected span from remaining unprotected emitters', () => {
+        // 24 m wall, 8 m bays. Protecting bay 3 (16–24 m) leaves columns 1–3
+        // emitting. At column 4 the flux near S=0 is below 12.6 kW/m² (the
+        // receiver sits beside a hole), but off-axis remaining bays still peak
+        // above the threshold farther out — the old solver returned ~0 here.
+        const result = assessElevationBays({
+            wallPoints: [{ x: 0, y: 0 }, { x: 24, y: 0 }],
+            boundaryPoints: [],
+            height: 18,
+            T,
+            spacing: 8,
+            protectedBays: [3],
+        })
+        const column = result.columnRows[3]
+        const { pieces } = buildEmitter({ width: 24, height: 18, spacing: 8, protectedBays: [3] })
+        const flux = (s) => emissivePower(T) * totalViewFactorPieces(24, pieces, s, 9)
+        expect(flux(0.0001)).toBeLessThan(12.6)
+        expect(column.requiredBoundaryDistance).toBeGreaterThan(1)
+        expect(flux(column.S)).toBeCloseTo(12.6, 3)
+        expect(flux(column.S * 0.99)).toBeGreaterThan(12.6)
+        expect(flux(column.S * 1.01)).toBeLessThan(12.6)
+        expect(result.requiredByStation[3]).toBe(column.requiredBoundaryDistance)
+    })
+
+    it('collapses required distance to zero when the whole elevation is protected', () => {
+        const open = assessElevationBays({
+            wallPoints: [{ x: 0, y: 0 }, { x: 8, y: 0 }],
+            boundaryPoints: [],
+            height: 18,
+            T,
+            spacing: 8,
+        })
+        const covered = assessElevationBays({
+            wallPoints: [{ x: 0, y: 0 }, { x: 8, y: 0 }],
+            boundaryPoints: [],
+            height: 18,
+            T,
+            spacing: 8,
+            protectedBays: [1],
+        })
+        expect(open.columnRows.map((r) => r.column)).toEqual([1, 2])
+        expect(open.requiredByStation.some((s) => s > 0)).toBe(true)
+        expect(covered.rows[0].protected).toBe(true)
+        expect(covered.requiredByStation.every((s) => s === 0)).toBe(true)
+    })
+
     it('flags failing bays when the boundary is too close', () => {
         const boundaryPoints = [{ x: 0, y: -30 }, { x: 96, y: -30 }]
         const r = assessElevationBays({ wallPoints, boundaryPoints, height: 18, T, spacing: 8 })
@@ -449,11 +519,11 @@ describe('outwardNormalAt — perpendicular unit normal toward the boundary', ()
         expect(Math.hypot(n.x, n.y)).toBeCloseTo(1, 6)
     })
 
-    it('falls back to the nearest boundary direction when no perpendicular meets it', () => {
+    it('returns no normal when no perpendicular meets the boundary', () => {
         // boundary off to the side of the right end (the perpendicular misses it)
         const boundary = [{ x: 0, y: -10 }, { x: 0, y: -50 }]
         const n = outwardNormalAt(wall, 40, boundary)
-        expect(Math.hypot(n.x, n.y)).toBeCloseTo(1, 6)
+        expect(n).toBeNull()
     })
 })
 
@@ -733,7 +803,7 @@ describe('gridlineStations — column positions along the wall', () => {
 describe('bre135ElevationsFromWall — derive BRE 135 elevations from the drawn outline', () => {
     // Reuses splitIntoElevations (one elevation per face) so the BR 187 and
     // BRE 135 methods agree on what an "elevation" is; each face carries its
-    // width and the worst-case (smallest) perpendicular boundary distance.
+    // width and the closest approach to the drawn boundary.
     it('returns one elevation per face with its width (L-shaped open wall)', () => {
         const wall = [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 40 }]
         const elevs = bre135ElevationsFromWall(wall, [])
@@ -749,7 +819,7 @@ describe('bre135ElevationsFromWall — derive BRE 135 elevations from the drawn 
         const boundary = [{ x: 0, y: 10 }, { x: 30, y: 7 }, { x: 60, y: 10 }]
         const elevs = bre135ElevationsFromWall(wall, boundary)
         expect(elevs).toHaveLength(1)
-        // worst case (smallest perpendicular distance anywhere along the face) ~ 7
+        // worst case (smallest distance anywhere along the face) ~ 7
         expect(elevs[0].boundaryDistance).toBeGreaterThan(6.9)
         expect(elevs[0].boundaryDistance).toBeLessThan(7.2)
     })
