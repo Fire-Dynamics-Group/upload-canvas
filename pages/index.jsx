@@ -8,13 +8,14 @@ import ModePopup from '../Components/ModePopup'
 import Toolbar from '../Components/Toolbar'
 import ErrorPopup from '../Components/ErrorPopup'
 import ViewTabs from '../Components/ViewTabs'
+import ReliabilityResultsView from '../Components/ReliabilityResultsView'
 import ThreeView from '../Components/ThreeView'
 import FdsCodeView from '../Components/FdsCodeView'
 
 import ProjectDashboard from '../Components/ProjectDashboard'
 import useUserName from '../hooks/useUserName'
 import useCanvasPan from '../hooks/useCanvasPan'
-import { isDbBacked } from '../store/persistenceModes'
+import { isDbBacked, autosaveSnapshot } from '../store/persistenceModes'
 import { savePdfToIndexedDB, loadPdfFromIndexedDB } from '../utils/pdfStorage'
 import { computeFramingScroll, elementPixelBox } from '../utils/viewportFraming'
 import {
@@ -97,8 +98,7 @@ export default function Home() {
   const toolbarRef = useRef(null)
   const [bottomClearance, setBottomClearance] = useState(144)
   useEffect(() => { setHasMounted(true) }, [])
-  const { userName, setUserName, needsName, clearName } = useUserName()
-  const [nameInput, setNameInput] = useState('')
+  const { userName, userId, needsName } = useUserName()
   const [uploading, setUploading] = useState(false)
   const [selectedImage, setSelectedImage] = useState("")
   const [selectedFile, setSelectedFile] = useState()
@@ -200,7 +200,7 @@ export default function Home() {
 
   // Memoize the auto-save function
   const triggerAutoSave = useCallback(() => {
-    // Persistence is fdsGen-only; never auto-save edits made in other modes
+    // Only DB-backed modes with a project attached auto-save (see persistenceModes.js)
     if (!useStore.getState().shouldAutoSave()) return
     const currentProjectId = useStore.getState().projectId
 
@@ -241,31 +241,12 @@ export default function Home() {
   useEffect(() => {
     let prevSnapshot = null
     const unsub = useStore.subscribe((state) => {
-      // fdsGen-only: skip while no project loaded or in radiation/timeEq mode
+      // Skip while no project is attached or the mode is scratch (radiation/efs)
       if (!state.shouldAutoSave()) return
-      const snapshot = JSON.stringify({
-        elements: state.elements,
-        pixelsPerMesh: state.pixelsPerMesh,
-        canvasDimensions: state.canvasDimensions,
-        scenarioType: state.scenarioType,
-        simEndTime: state.simEndTime,
-        totalFloors: state.totalFloors,
-        wallHeight: state.wallHeight,
-        doorRoles: state.doorRoles,
-        doorOpenings: state.doorOpenings,
-        doorLeakagesEnabled: state.doorLeakagesEnabled,
-        doorLeakageConfig: state.doorLeakageConfig,
-        landingRoles: state.landingRoles,
-        landingUpSide: state.landingUpSide,
-        stairStyle: state.stairStyle,
-        aovMode: state.aovMode,
-        aovActivationTime: state.aovActivationTime,
-        extractConfig: state.extractConfig,
-        inletConfig: state.inletConfig,
-        zoneConfig: state.zoneConfig,
-        obstructionTransparency: state.obstructionTransparency,
-        sliceZHeight: state.sliceZHeight,
-      })
+      // The active mode's registry handler says which fields count as a change
+      const fields = autosaveSnapshot(state)
+      if (!fields) return
+      const snapshot = JSON.stringify(fields)
       if (snapshot !== prevSnapshot) {
         prevSnapshot = snapshot
         triggerAutoSave()
@@ -347,7 +328,7 @@ export default function Home() {
     await renderPdf(URL.createObjectURL(file), isContinuing)
 
     // Only persist/upload the PDF for DB-backed modes. Non-DB modes
-    // (radiation/timeEq) are scratch — the plan must not survive a reload, so
+    // (radiation/efs) are scratch — the plan must not survive a reload, so
     // it never reaches IndexedDB or S3. See persistenceModes.js.
     const mode = useStore.getState().currentMode
     if (isDbBacked(mode)) {
@@ -361,7 +342,7 @@ export default function Home() {
       if (!currentProjectId) {
         try {
           const name = useStore.getState().projectName || "Untitled Project"
-          const project = await createProject(name, userName)
+          const project = await createProject(name, userId, mode)
           currentProjectId = project.id
           // Do an initial save to create floor 0
           const saved = await saveProjectToServer(currentProjectId, {
@@ -433,10 +414,11 @@ export default function Home() {
 
 
   const handleModeSelected = (mode) => {
-    // Just navigate — never destroy project data when switching modes
+    // Just navigate — the store has already detached the project (setCurrentMode).
+    // DB-backed modes land on their own dashboard; scratch modes go to upload.
     setSelectedFile(undefined)
     setIsContinuing(false)
-    setShowUploadScreen(mode !== 'fdsGen')
+    setShowUploadScreen(!isDbBacked(mode))
   }
 
   const handleBackToDashboard = () => {
@@ -498,31 +480,6 @@ export default function Home() {
 
   return (
     <>
-      {/* Name prompt overlay */}
-      {needsName && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]">
-          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-sm mx-4 text-white">
-            <h2 className="text-lg font-medium mb-2">Welcome!</h2>
-            <p className="text-sm text-gray-400 mb-4">Enter your name so your team knows who created each project.</p>
-            <input
-              type="text"
-              value={nameInput}
-              onChange={(e) => setNameInput(e.target.value)}
-              placeholder="Your name"
-              className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              autoFocus
-              onKeyDown={(e) => { if (e.key === 'Enter' && nameInput.trim()) setUserName(nameInput.trim()) }}
-            />
-            <button
-              onClick={() => { if (nameInput.trim()) setUserName(nameInput.trim()) }}
-              disabled={!nameInput.trim()}
-              className="w-full px-4 py-2 bg-blue-700 hover:bg-blue-800 disabled:bg-gray-600 text-white rounded-lg"
-            >
-              Continue
-            </button>
-          </div>
-        </div>
-      )}
       {/* Save status indicator */}
       {describeSaveStatus(saveStatus) && (
         <div className={`fixed top-2 left-1/2 -translate-x-1/2 z-50 text-xs px-3 py-1 rounded-full text-white ${
@@ -571,6 +528,7 @@ export default function Home() {
         <ViewTabs />
         {viewMode === '3d' && <ThreeView />}
         {viewMode === 'fds' && <FdsCodeView />}
+        {viewMode === 'results' && <ReliabilityResultsView />}
       </>)}
       {showModePopup && <ModePopup setToggleShowPopup={setShowModePopup} onModeSelected={handleModeSelected}/>}
       <div
@@ -585,12 +543,9 @@ export default function Home() {
         ) : showDashboard && !needsName ? (
           <ProjectDashboard
             userName={userName}
+            userId={userId}
             onSelectProject={handleSelectProject}
             onNewProject={handleNewProject}
-            onEditName={() => {
-              setNameInput(userName || '')
-              clearName()
-            }}
             onModeSwitch={handleModeSelected}
           />
         ) : selectedFile ? (<>

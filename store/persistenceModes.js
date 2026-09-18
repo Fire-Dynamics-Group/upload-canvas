@@ -1,28 +1,38 @@
-import { buildFdsPayload, hydrateFdsState } from './fdsPersistence'
+import { buildFdsPayload, hydrateFdsState, fdsAutosaveSnapshot } from './fdsPersistence'
+import { buildTimeEqPayload, hydrateTimeEqState, timeEqAutosaveSnapshot } from './timeEqPersistence'
 
 // Per-mode persistence registry.
 //
 // Single source of truth for "is this mode backed by the projects DB?", plus
 // the per-mode save/hydrate handlers. Modes are brought onto the DB
-// incrementally — today only fdsGen persists; radiation and timeEq compute
-// in-memory. Bringing a mode onto the DB later is an additive change here:
-// write its handlers, add an entry with `dbBacked: true`. No scattered edits of
-// hardcoded `currentMode === 'fdsGen'` checks across the app.
+// incrementally — fdsGen and timeEq persist (each with its own dashboard,
+// keyed by projects.mode); radiation and efs compute in-memory. Bringing a
+// mode onto the DB later is an additive change here: write its handlers, add
+// an entry with `dbBacked: true`. No scattered edits of hardcoded
+// `currentMode === 'fdsGen'` checks across the app.
 //
 // Handler contract:
 //   buildPayload(state) -> payload for saveProjectToServer
 //   hydrate(project, floorDetail, state) -> partial store state to `set`
+//   snapshot(state) -> the fields whose change should arm the autosave
 
 export const MODE_PERSISTENCE = {
-    fdsGen: { dbBacked: true, buildPayload: buildFdsPayload, hydrate: hydrateFdsState },
+    fdsGen: { dbBacked: true, buildPayload: buildFdsPayload, hydrate: hydrateFdsState, snapshot: fdsAutosaveSnapshot },
     radiation: { dbBacked: false },
-    timeEq: { dbBacked: false },
+    timeEq: { dbBacked: true, buildPayload: buildTimeEqPayload, hydrate: hydrateTimeEqState, snapshot: timeEqAutosaveSnapshot },
     efs: { dbBacked: false },
 }
 
 // True only when the given mode should read/write the projects DB (dashboard,
 // project creation, PDF upload, debounced auto-save).
 export const isDbBacked = (mode) => Boolean(MODE_PERSISTENCE[mode]?.dbBacked)
+
+// The active mode's autosave change-detection snapshot, or null when the mode
+// has no persistence handler.
+export const autosaveSnapshot = (state) => {
+    const handler = MODE_PERSISTENCE[state.currentMode]
+    return handler?.snapshot ? handler.snapshot(state) : null
+}
 
 // --- localStorage persistence versioning ---
 //
@@ -66,7 +76,7 @@ export function migratePersistedState(persisted, fromVersion) {
 
 // Fields that only mean something for a DB-backed session: the live geometry
 // checkout, the scale calibration, and the active tool. For a non-DB mode
-// (radiation/timeEq) these are scratch — caching them would resurrect a stale
+// (radiation/efs) these are scratch — caching them would resurrect a stale
 // drawing on reload and, because `tool` is among them, skip the scale step on
 // the next upload. They are written to localStorage only while the active mode
 // is DB-backed.
@@ -83,14 +93,20 @@ const DB_BACKED_ONLY_FIELDS = [
 // localStorage partializer (the `partialize` option of zustand/persist).
 // Project meta + global settings are always cached; per-mode geometry buckets
 // are filtered to DB-backed modes only; the live scratch fields above are
-// cached only when the active mode is DB-backed. Net effect: a radiation/timeEq
+// cached only when the active mode is DB-backed. Net effect: a radiation/efs
 // session leaves nothing behind to restore on reload.
 export function partializeState(state) {
     const persisted = {
         projectId: state.projectId,
         floorId: state.floorId,
         projectName: state.projectName,
-        // Only DB-backed buckets survive; radiation/timeEq never persist.
+        // Which mode the cached project belongs to. currentMode itself is not
+        // persisted (reload boots into fdsGen), so mergePersistedState uses
+        // this to avoid re-attaching e.g. a timeEq project to fdsGen.
+        projectMode: state.currentMode,
+        timeEqInputs: state.timeEqInputs,
+        timeEqResult: state.timeEqResult,
+        // Only DB-backed buckets survive; radiation/efs never persist.
         elementsByMode: Object.fromEntries(
             Object.entries(state.elementsByMode || {}).filter(([mode]) => isDbBacked(mode))
         ),
@@ -155,6 +171,11 @@ export function partializeState(state) {
 // partializeState drops the non-DB buckets, so re-seed any missing modes back
 // to empty arrays — the store invariant is that elementsByMode has a bucket per
 // known mode.
+//
+// A cached project is only re-attached when it belongs to the booted mode
+// (persisted.projectMode). A project from another mode is dropped, otherwise
+// the first autosave after reload would write this mode's payload onto it.
+// Blobs that pre-date projectMode are left alone (they were all fdsGen).
 export function mergePersistedState(persisted, current) {
     const merged = { ...current, ...(persisted || {}) }
     merged.elementsByMode = {
@@ -164,6 +185,11 @@ export function mergePersistedState(persisted, current) {
     const mode = merged.currentMode
     if (merged.elementsByMode[mode]) {
         merged.elements = merged.elementsByMode[mode]
+    }
+    if (persisted?.projectMode && persisted.projectMode !== mode) {
+        merged.projectId = null
+        merged.floorId = null
+        merged.projectName = null
     }
     return merged
 }

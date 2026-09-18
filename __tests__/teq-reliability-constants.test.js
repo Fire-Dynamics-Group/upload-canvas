@@ -4,6 +4,8 @@ import {
   OCCUPANCY_DISTRIBUTIONS,
   GROWTH_RATES,
   wallLengths,
+  hasCriticalTemp,
+  reliabilityResultLines,
 } from '../utils/teqReliabilityConstants'
 
 describe('MATERIAL_B_VALUES mirror the backend (time_eq.py material_b_values)', () => {
@@ -42,5 +44,38 @@ describe('wallLengths', () => {
   it('returns [] when there is no obstruction', () => {
     expect(wallLengths([])).toEqual([])
     expect(wallLengths([{ comments: 'opening', finalPoints: [{ x: 0, y: 0 }, { x: 1, y: 0 }] }])).toEqual([])
+  })
+})
+
+describe('hasCriticalTemp', () => {
+  it('rejects blank and non-numeric values', () => {
+    expect(hasCriticalTemp('')).toBe(false)
+    expect(hasCriticalTemp(null)).toBe(false)
+    expect(hasCriticalTemp('abc')).toBe(false)
+  })
+  it('accepts a MACS critical temperature', () => {
+    expect(hasCriticalTemp(548)).toBe(true)
+    expect(hasCriticalTemp('548')).toBe(true)
+  })
+})
+
+describe('reliabilityResultLines', () => {
+  it('includes FR period and protection thickness for protected results', () => {
+    const lines = reliabilityResultLines({
+      reliabilityPercent: 92.5, nFailed: 75, nSim: 1000, criticalTemp: 500,
+      frPeriod: 60, protectionThickness_mm: 16, bValue: 1200, sectionFactor: 135,
+    })
+    expect(lines[0]).toBe('Reliability: 92.5%')
+    expect(lines.some((l) => l.includes('Protection 16 mm'))).toBe(true)
+  })
+  it('omits protection thickness for unprotected results', () => {
+    const lines = reliabilityResultLines({
+      reliabilityPercent: 41, nFailed: 118, nSim: 200, criticalTemp: 550,
+      unprotected: true, bValue: 1200, sectionFactor: 135,
+    })
+    expect(lines.join(' ')).not.toMatch(/Protection/)
+    expect(lines.join(' ')).not.toMatch(/FR period/)
+    expect(lines[0]).toBe('Reliability: 41%')
+    expect(lines[1]).toContain('550°C')
   })
 })

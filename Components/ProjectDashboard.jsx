@@ -3,6 +3,7 @@ import { listProjects, renameProject, deleteProject } from './ApiCalls'
 import { deleteConfirmationMatches } from '../utils/projectActions'
 import FDRobot from './FDRobot'
 import useStore from '../store/useStore'
+import { isDbBacked } from '../store/persistenceModes'
 
 function timeAgo(dateStr) {
   if (!dateStr) return ''
@@ -20,7 +21,20 @@ function timeAgo(dateStr) {
   return `${months}mo ago`
 }
 
-export default function ProjectDashboard({ onSelectProject, onNewProject, userName, onEditName, onModeSwitch }) {
+// Before SSO, Upload Canvas stored the free-text first name entered at the
+// welcome prompt. New projects use the Entra object id. Keep legacy projects
+// visible to their original creator while the old rows are gradually replaced.
+export function isOwnedByCurrentUser(project, userId, userName) {
+  if (!project.created_by) return false
+  if (userId && project.created_by === userId) return true
+
+  const legacyFirstName = userName?.trim().split(/\s+/)[0]
+  return Boolean(
+    legacyFirstName && project.created_by.trim().toLowerCase() === legacyFirstName.toLowerCase()
+  )
+}
+
+export default function ProjectDashboard({ onSelectProject, onNewProject, userName, userId, onModeSwitch }) {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -36,15 +50,20 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
   const [deleteError, setDeleteError] = useState(null)
   const [deleting, setDeleting] = useState(false)
 
+  const currentMode = useStore((state) => state.currentMode)
+  const setCurrentMode = useStore((state) => state.setCurrentMode)
+
+  // Each DB-backed mode has its own project list (projects.mode), so re-fetch
+  // whenever the mode bar switches between them.
   useEffect(() => {
     loadProjects()
-  }, [])
+  }, [currentMode])
 
   const loadProjects = async () => {
     setLoading(true)
     setError(null)
     try {
-      const data = await listProjects()
+      const data = await listProjects(currentMode)
       setProjects(data)
     } catch (err) {
       setError(err.message)
@@ -54,7 +73,7 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
   }
 
   const filtered = (filter === 'mine'
-    ? projects.filter(p => p.created_by === userName)
+    ? projects.filter(p => isOwnedByCurrentUser(p, userId, userName))
     : projects
   ).slice().sort((a, b) => {
     const aTime = a.created_at ? new Date(a.created_at).getTime() : 0
@@ -138,9 +157,6 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
     }
   }
 
-  const currentMode = useStore((state) => state.currentMode)
-  const setCurrentMode = useStore((state) => state.setCurrentMode)
-
   const modeOptions = [
     { key: 'fdsGen', label: 'FDS Generation' },
     { key: 'radiation', label: 'Radiation' },
@@ -148,9 +164,11 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
     { key: 'efs', label: 'External Fire Spread' },
   ]
 
+  // DB-backed modes stay on this dashboard (the effect above re-lists for the
+  // new mode); scratch modes hand off to the upload screen.
   const handleModeClick = (mode) => {
     setCurrentMode(mode)
-    if (mode !== 'fdsGen' && onModeSwitch) {
+    if (!isDbBacked(mode) && onModeSwitch) {
       onModeSwitch(mode)
     }
   }
@@ -179,13 +197,6 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
         <div className="flex items-center gap-4">
           <FDRobot hintText={`Hi, ${userName}`} />
-          <button
-            onClick={onEditName}
-            className="text-gray-400 hover:text-white text-sm ml-2"
-            title="Change name"
-          >
-            ✏️
-          </button>
         </div>
         <button
           onClick={() => setShowNewModal(true)}

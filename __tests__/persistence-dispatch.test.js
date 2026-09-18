@@ -33,11 +33,33 @@ describe('store persistence dispatch', () => {
     })
 
     it('is a no-op when hydrating a mode with no handler', () => {
-        useStore.getState().setCurrentMode('timeEq')
+        useStore.getState().setCurrentMode('radiation')
         useStore.getState().hydrateFromServer(
             { id: 'p9', name: 'X', settings: {} },
             { id: 'f9', settings: {}, elements: [] }
         )
         expect(useStore.getState().projectId).toBe(null)
+    })
+
+    it('builds a timeEq payload and hydrates in timeEq mode', () => {
+        useStore.getState().setCurrentMode('timeEq')
+        useStore.getState().hydrateFromServer(
+            { id: 'p2', name: 'TEQ', mode: 'timeEq', settings: { timeEqInputs: { use: 'Hotel' }, timeEqResult: null } },
+            { id: 'f2', settings: {}, pixels_per_mesh: 5, elements: [
+                { element_index: 0, type: 'line', points: [{ x: 0, y: 0 }], comments: 'opening' },
+            ] }
+        )
+        const s = useStore.getState()
+        expect(s.projectId).toBe('p2')
+        expect(s.floorId).toBe('f2')
+        expect(s.timeEqInputs).toEqual({ use: 'Hotel' })
+        expect(s.elements).toEqual([{ id: 0, type: 'line', points: [{ x: 0, y: 0 }], comments: 'opening' }])
+        expect(s.elementsByMode.timeEq).toEqual(s.elements)
+
+        const payload = s.buildSavePayload()
+        expect(payload.name).toBe('TEQ')
+        expect(payload.settings.timeEqInputs).toEqual({ use: 'Hotel' })
+        expect(payload.floors[0].pixels_per_mesh).toBe(5)
+        expect(payload.floors[0].elements).toHaveLength(1)
     })
 })
