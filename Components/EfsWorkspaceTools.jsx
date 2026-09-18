@@ -65,7 +65,7 @@ export default function EfsWorkspaceTools({ onChangeMode }) {
                 <span><i style={{ background: '#ef4444' }} />Unprotected</span>
             </div>
             <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                {tool === 'efsBay' ? 'Set column spacing on the right, then click a wall segment. Column distances update after each click.' : tool === 'polyline' ? 'Click to add points. Press Enter to finish the line.' : 'Middle mouse or two-finger scroll to pan.'}
+                {tool === 'efsBay' ? 'Set column spacing on the right, then click a wall segment. Column distances update after each click.' : tool === 'polyline' ? 'Click to add points. Press Enter to finish the line.' : 'Select a drawing point to edit it. Use the middle mouse button or two-finger scroll to pan and Ctrl + wheel to zoom.'}
             </p>
             <details className="text-xs border-t border-slate-200 pt-3">
                 <summary className="cursor-pointer font-medium">Partial-height regions</summary>
