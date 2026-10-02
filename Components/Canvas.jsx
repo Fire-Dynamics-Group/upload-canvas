@@ -1473,7 +1473,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                     if (pts.length >= 2) {
                         context.save()
                         context.strokeStyle = '#16a34a' // green: the required line
-                        context.lineWidth = 2
+                        context.lineWidth = 4 // match the drawn boundary line
                         context.setLineDash([8, 5])
                         context.beginPath()
                         context.moveTo(pts[0].x, pts[0].y)
