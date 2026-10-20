@@ -579,7 +579,7 @@ export default function Home() {
         <canvas
         ref={pdfCanvasRef}
         style={selectedFile ? { width: canvasDimensions.width * canvasZoom, height: canvasDimensions.height * canvasZoom } : undefined}
-        className={selectedFile ? 'absolute top-0 left-0 block pointer-events-none' : 'hidden'}
+        className={selectedFile ? 'absolute top-0 left-0 z-0 block pointer-events-none' : 'hidden'}
         />
       </div>
       {selectedFile && <div aria-hidden="true" style={{ height: bottomClearance }} />}
