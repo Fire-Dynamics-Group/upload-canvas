@@ -11,6 +11,7 @@ import { computeShaftRect } from '@/utils/shaftGeometry'
 import { computeAutoSprinklerPositions, shouldShowAutoSprinklers } from '@/utils/autoSprinklers'
 import { computeTimeEqLabels } from '@/utils/timeEqLabels'
 import { boundaryDistanceOutward, gridlineStations, buildRequiredBoundaryLine, projectSpanOntoWall, baysCoveredBySpan, polylineLength, splitIntoElevations, pointToPolylineDistance } from '@/utils/efsViewFactor'
+import { getSyncedFloors, transformElementBetweenFloors, mapPointBetweenFloors } from '@/utils/multiFloorFds'
 import { get } from 'http'
 
 /**
@@ -26,6 +27,7 @@ const elementConfig = {
     "mesh": "green",
     "stairObstruction": "blue",
     "stairMesh": "blue",
+    "floorOpening": "#9333ea",
     "door": "red",
     "fire": "orange",
     "scale": "green",
@@ -285,6 +287,13 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
     const efsRequiredByElev = useStore((state) => state.efsRequiredByElev)
     const efsEndSpacingByElev = useStore((state) => state.efsEndSpacingByElev)
     const setPixelsPerMesh = useStore((state) => state.setPixelsPerMesh)
+    const originPixels = useStore((state) => state.originPixels)
+    const setOriginPixels = useStore((state) => state.setOriginPixels)
+    const floorsRaw = useStore((state) => state.floors)
+    const activeFloorIndex = useStore((state) => state.activeFloorIndex)
+    const showGhostFloorBelow = useStore((state) => state.showGhostFloorBelow)
+    const fireFloorZ = useStore((state) => state.fireFloorZ)
+    const wallHeight = useStore((state) => state.wallHeight)
 
 
     const [isDrawing, setIsDrawing] = useState(false)
@@ -489,6 +498,30 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
         }
     }, [elements, currentPoly, tool, setTool, comment, addElement, selectedElement, currentId, removeElement, returnElementObject, setSelectedElement, undo, redo, showPopup])
 
+    // Resolve the ghost floor (floor below if activeFloorIndex > 0, or floor above if on floor 0)
+    // and transform its elements into the active floor's pixel coordinate system.
+    const syncedFloors = getSyncedFloors({
+        floors: floorsRaw,
+        activeFloorIndex,
+        fireFloorZ,
+        wallHeight,
+        originPixels,
+        pixelsPerMesh,
+        canvasDimensions: dimensions,
+        elements,
+    })
+    const activeFloorObj = syncedFloors[activeFloorIndex ?? 0] || syncedFloors[0]
+    const ghostFloorIdx = (activeFloorIndex ?? 0) > 0 ? (activeFloorIndex ?? 0) - 1 : 1
+    const ghostFloorObj = currentMode === 'fdsGen' && showGhostFloorBelow && syncedFloors.length > 1
+        ? syncedFloors[ghostFloorIdx] || null
+        : null
+    const ghostElements = ghostFloorObj && activeFloorObj
+        ? (ghostFloorObj.elements || []).map((el) =>
+            transformElementBetweenFloors(el, ghostFloorObj, activeFloorObj)
+          )
+        : []
+    const elementsForSnap = ghostElements.length > 0 ? [...elements, ...ghostElements] : elements
+
     // LATER: move to own component -> sends back null or position object
     useEffect(() => {
         // Waterfall hover used by point / polyline / non-mesh rect. Matches
@@ -510,7 +543,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                     ],
                 }
             }
-            const coords = collectPointAlignmentCoordinates(elements, null, inProgress)
+            const coords = collectPointAlignmentCoordinates(elementsForSnap, null, inProgress)
             const { snapped, guides } = snapToPointAlignment(raw, coords, MESH_SNAP_THRESHOLD)
             return {
                 guideLine: applyGridFallback({ raw, snapped, guides, pixelsPerMesh }),
@@ -617,6 +650,11 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 const { guideLine, snapGuides } = computeScaleHoverFromCursor(raw)
                 setGuideLine(guideLine)
                 setSnapGuides(snapGuides)
+            } else if (tool === 'origin') {
+                event.preventDefault()
+                const { guideLine, snapGuides } = computeHoverFromCursor(raw, [])
+                setGuideLine(guideLine)
+                setSnapGuides(snapGuides)
             } else {
                 setGuideLine(null)
                 setSnapGuides([])
@@ -628,7 +666,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
         return () => {
             window.removeEventListener("mousemove", handleMouseMove)
         }
-    }, [isDrawing, currentPoly, scalePoints.length, tool, currentRect, selectedElement, comment, pixelsPerMesh, elements, isShiftPressed, currentMode, hasScale])
+    }, [isDrawing, currentPoly, scalePoints.length, tool, currentRect, selectedElement, comment, pixelsPerMesh, elements, elementsForSnap, isShiftPressed, currentMode, hasScale])
 
     function deltaGridlines(pxPerMesh, tool) { // actioned if debug mode and after scale set normally
         setPixelsPerMesh(pxPerMesh)
@@ -960,6 +998,33 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             }
     }
 
+        // Ghost floor underlay: render the adjacent floor's walls, doors, and
+        // meshes in dashed blue-grey so cross-floor alignment is visible on the canvas.
+        if (ghostElements.length > 0) {
+            context.save()
+            context.strokeStyle = 'rgba(59, 130, 246, 0.45)'
+            context.fillStyle = 'rgba(59, 130, 246, 0.06)'
+            context.lineWidth = 1.5
+            context.setLineDash([6, 4])
+            ghostElements.forEach((gel) => {
+                if (!gel.points || gel.points.length === 0) return
+                if (gel.type === 'polyline') {
+                    context.beginPath()
+                    context.moveTo(gel.points[0].x, gel.points[0].y)
+                    for (let i = 1; i < gel.points.length; i++) {
+                        context.lineTo(gel.points[i].x, gel.points[i].y)
+                    }
+                    context.stroke()
+                } else if (gel.type === 'rect' && gel.points.length >= 2) {
+                    const p1 = gel.points[0]
+                    const p2 = gel.points[1]
+                    context.strokeRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y)
+                }
+            })
+            context.setLineDash([])
+            context.restore()
+        }
+
         // Pre-compute indices for numbered labels
         const doorElements = elements.filter(el => el.comments === 'door')
         const extractElements = elements.filter(el => el.comments === 'extract')
@@ -974,7 +1039,36 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 if (element.type == 'polyline' || element.type == 'scale') {   
                     drawPolyline(element.points, context, element.comments)
                 } else if (element.type == 'rect') {
-                    drawRect(element.points, context, element.comments)
+                    if (element.comments === 'floorOpening' && element.points.length >= 2) {
+                        const p1 = element.points[0]
+                        const p2 = element.points[1]
+                        context.save()
+                        context.fillStyle = 'rgba(147, 51, 234, 0.12)'
+                        context.fillRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y)
+                        context.strokeStyle = '#9333ea'
+                        context.lineWidth = 2
+                        context.setLineDash([6, 4])
+                        context.strokeRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y)
+                        // Diagonal cross-hatch indicating a void/opening in the slab
+                        context.beginPath()
+                        context.moveTo(p1.x, p1.y)
+                        context.lineTo(p2.x, p2.y)
+                        context.moveTo(p2.x, p1.y)
+                        context.lineTo(p1.x, p2.y)
+                        context.stroke()
+                        context.setLineDash([])
+                        const cx = (p1.x + p2.x) / 2
+                        const cy = (p1.y + p2.y) / 2
+                        context.font = 'bold 11px sans-serif'
+                        context.fillStyle = '#9333ea'
+                        context.strokeStyle = 'white'
+                        context.lineWidth = 3
+                        context.strokeText('Floor Opening', cx - 36, cy + 4)
+                        context.fillText('Floor Opening', cx - 36, cy + 4)
+                        context.restore()
+                    } else {
+                        drawRect(element.points, context, element.comments)
+                    }
                 } else if (element.type == 'point') {
                     if (element.comments === 'sensorTree') {
                         // Draw bullseye icon (concentric circles)
@@ -1554,12 +1648,37 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             context.restore()
         }
 
+        // Draw reference (0,0) origin crosshair marker when placed on the active floor
+        if (currentMode === 'fdsGen' && originPixels && typeof originPixels.x === 'number' && typeof originPixels.y === 'number') {
+            const ox = originPixels.x
+            const oy = originPixels.y
+            context.save()
+            context.strokeStyle = '#f59e0b'
+            context.fillStyle = '#f59e0b'
+            context.lineWidth = 2
+            context.beginPath()
+            context.arc(ox, oy, 9, 0, Math.PI * 2)
+            context.stroke()
+            context.beginPath()
+            context.moveTo(ox - 16, oy)
+            context.lineTo(ox + 16, oy)
+            context.moveTo(ox, oy - 16)
+            context.lineTo(ox, oy + 16)
+            context.stroke()
+            context.font = 'bold 11px sans-serif'
+            context.strokeStyle = 'black'
+            context.lineWidth = 3
+            context.strokeText('⊕ (0,0)', ox + 12, oy - 10)
+            context.fillText('⊕ (0,0)', ox + 12, oy - 10)
+            context.restore()
+        }
+
         // First-click marker: magenta dot at the snapped cursor, showing
         // exactly where the next click will land. Fires for every drawing
-        // tool (point, polyline, rect, scale). Suppressed when an element is
+        // tool (point, polyline, rect, scale, origin). Suppressed when an element is
         // selected, since clicks in that state manipulate the selection
         // rather than placing a new element. Per docs/first-click-feedback.md.
-        const DRAWING_TOOLS_FOR_MARKER = ['point', 'polyline', 'rect', 'scale']
+        const DRAWING_TOOLS_FOR_MARKER = ['point', 'polyline', 'rect', 'scale', 'origin']
         if (DRAWING_TOOLS_FOR_MARKER.includes(tool) && guideLine && !selectedElement) {
             context.save()
             context.fillStyle = '#ff00ff'
@@ -1619,7 +1738,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             context.restore()
         }
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsActiveElevation, efsProtectedByElev, efsRequiredByElev, efsEndSpacingByElev, debugRects, snapGuides, candidateCycleState])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, ghostElements, originPixels, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsActiveElevation, efsProtectedByElev, efsRequiredByElev, efsEndSpacingByElev, debugRects, snapGuides, candidateCycleState])
 
     // Generate thumbnail by compositing PDF + drawing canvases
     const thumbnailTimerRef = useRef(null)
@@ -1805,7 +1924,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             setSnapGuides([])
             return vertex
         }
-        const coords = collectPointAlignmentCoordinates(elements, excludeId, inProgressPoints)
+        const coords = collectPointAlignmentCoordinates(elementsForSnap, excludeId, inProgressPoints)
         const { snapped, guides } = snapToPointAlignment(vertex, coords, MESH_SNAP_THRESHOLD)
         const hasXSnap = guides.some(g => g.type === 'vertical')
         const hasYSnap = guides.some(g => g.type === 'horizontal')
@@ -1818,6 +1937,15 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
     //   TODO: polyline and mark point tools
     function handlePointerDown(event) { // should this be handle mouse down?
         if (event.button !== 0) return
+        if (tool === 'origin') {
+            let newP = canvasPoint(event, canvasRef.current)
+            newP = snapVertexWithPointPriority(newP, null, [], isShiftPressed)
+            setOriginPixels({ x: newP.x, y: newP.y })
+            setSnapGuides([])
+            setGuideLine(null)
+            setTool('selection')
+            return
+        }
         if (currentMode === 'efs' && tool === 'efsBay') {
             const wall = elements.find(el => el.comments === 'efsWall')
             const bay = hitCanvasBay(canvasBays(wall?.points || [], Number(efsColumnSpacing), pixelsPerMesh * 10, efsEndSpacingByElev), canvasPoint(event, canvasRef.current), 10 / zoom)

@@ -1,5 +1,6 @@
 import useStore from '../store/useStore'
 import { fdsElementSignature } from '../utils/fdsSignature'
+import { getSyncedFloors } from '../utils/multiFloorFds'
 
 // PyroSim-style view switcher: 2D drawing / 3D model / FDS code. The 3D and FDS
 // tabs are always available — they render whatever FDS was last generated (and
@@ -17,8 +18,10 @@ export default function ViewTabs() {
     const fdsCode = useStore((s) => s.fdsCode)
     const fdsGenSig = useStore((s) => s.fdsGenSig)
     const elements = useStore((s) => s.elements)
+    const floors = useStore((s) => s.floors)
     const currentMode = useStore((s) => s.currentMode)
-    const stale = Boolean(fdsCode) && fdsElementSignature(elements) !== fdsGenSig
+    const syncedFloors = floors?.length > 1 ? getSyncedFloors(useStore.getState()) : null
+    const stale = Boolean(fdsCode) && fdsElementSignature(elements, syncedFloors) !== fdsGenSig
 
     // EFS is a pure 2D elevation workflow — no generated FDS model to view, so
     // the 3D / FDS tabs (and the switcher itself) don't apply.

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { saveAs } from 'file-saver'
 import useStore from '../store/useStore'
 import { fdsElementSignature } from '../utils/fdsSignature'
+import { getSyncedFloors } from '../utils/multiFloorFds'
 import { generateFdsCode } from '../utils/generateFds'
 
 // Full-screen overlay showing the raw FDS text the backend returned — the
@@ -12,10 +13,12 @@ export default function FdsCodeView() {
     const fdsCode = useStore((s) => s.fdsCode)
     const fdsGenSig = useStore((s) => s.fdsGenSig)
     const elements = useStore((s) => s.elements)
+    const floors = useStore((s) => s.floors)
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState(null)
 
-    const stale = Boolean(fdsCode) && fdsElementSignature(elements) !== fdsGenSig
+    const syncedFloors = floors?.length > 1 ? getSyncedFloors(useStore.getState()) : null
+    const stale = Boolean(fdsCode) && fdsElementSignature(elements, syncedFloors) !== fdsGenSig
 
     // Auto-refresh on tab-open when stale (Q4) — see ThreeView for rationale.
     const didAuto = useRef(false)

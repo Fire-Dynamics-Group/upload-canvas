@@ -235,20 +235,36 @@ export const sendFdsData = async (
       },
       body: bodyContent,
     });  
-    try{
-      const data = await response.json();
-      // Default behaviour downloads test.fds (the existing "Generate FDS code"
-      // button). The 3D / FDS-code views pass { download: false } so they can
-      // refresh the in-app preview without spamming file downloads.
-      if (options.download !== false) {
-        const blob = new Blob([data], { type: "text/plain;charset=utf-8" });
-        saveAs(blob, "test.fds");
+    if (!response.ok) {
+      let detail = `Server responded with status ${response.status}`
+      try {
+        const errJson = await response.json()
+        if (Array.isArray(errJson?.detail)) {
+          detail = errJson.detail.map((d) => {
+            const loc = Array.isArray(d.loc) ? d.loc.filter(x => x !== 'body').join('.') : ''
+            return loc ? `${loc}: ${d.msg}` : d.msg
+          }).join(', ')
+        } else if (typeof errJson?.detail === 'string') {
+          detail = errJson.detail
+        }
+      } catch {
+        try {
+          const txt = await response.text()
+          if (txt) detail = txt
+        } catch {}
       }
-      return data;
-
-    } catch (err) {
-      console.error("Error: ",err)
+      throw new Error(`Failed to generate FDS: ${detail}`)
     }
+
+    const data = await response.json();
+    if (typeof data !== 'string') {
+      throw new Error('Server returned invalid FDS format (expected text string)')
+    }
+    if (options.download !== false) {
+      const blob = new Blob([data], { type: "text/plain;charset=utf-8" });
+      saveAs(blob, "test.fds");
+    }
+    return data;
 
   }
 

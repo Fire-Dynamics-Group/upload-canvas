@@ -1,4 +1,5 @@
 import { defaultDoorTimings } from './defaultDoorTimings'
+import { getSyncedFloors, normalizeFloor } from '../utils/multiFloorFds'
 
 // Per-mode persistence handlers for fdsGen — pure functions registered on the
 // MODE_PERSISTENCE registry (see persistenceModes.js). Onboarding another mode
@@ -7,6 +8,41 @@ import { defaultDoorTimings } from './defaultDoorTimings'
 
 // Build the bulk-save payload for the projects API from store state.
 export function buildFdsPayload(s) {
+    const syncedFloors = getSyncedFloors(s)
+    const floorsPayload = syncedFloors.map((f, idx) => {
+        const floorNumber = f.floor_number ?? idx
+        const fs = f.settings || {}
+        return {
+            floor_number: floorNumber,
+            name: f.name || (floorNumber === 0 ? "Fire Floor" : `Floor ${floorNumber}`),
+            canvas_dimensions: f.canvas_dimensions || {},
+            pixels_per_mesh: f.pixels_per_mesh || 1,
+            origin_pixels: f.origin_pixels ?? null,
+            settings: {
+                z_level: f.z_level ?? fs.z_level ?? 0,
+                wall_height: f.wall_height ?? fs.wall_height ?? Number(s.wallHeight) ?? 3,
+                doorRoles: fs.doorRoles ?? {},
+                doorLeakagesEnabled: fs.doorLeakagesEnabled ?? true,
+                doorLeakageConfig: fs.doorLeakageConfig ?? {},
+                landingRoles: fs.landingRoles ?? {},
+                landingUpSide: fs.landingUpSide ?? null,
+                stairStyle: fs.stairStyle ?? "individual",
+                extractConfig: fs.extractConfig ?? {},
+                inletConfig: fs.inletConfig ?? {},
+                zoneConfig: fs.zoneConfig ?? {},
+                sliceZHeight: fs.sliceZHeight ?? 2.0,
+            },
+            elements: (f.elements || []).map((el, i) => ({
+                element_index: el.id ?? i,
+                type: el.type,
+                points: el.points,
+                comments: el.comments,
+                ...(el.zoneName ? { zoneName: el.zoneName } : {}),
+                ...(el.fsaDistance != null ? { fsaDistance: el.fsaDistance } : {}),
+            })),
+        }
+    })
+
     return {
         name: s.projectName || "Untitled Project",
         settings: {
@@ -42,63 +78,48 @@ export function buildFdsPayload(s) {
             stairObject: s.stairObject,
             thumbnail: s.thumbnail,
         },
-        floors: [
-            {
-                floor_number: 0,
-                name: "Fire Floor",
-                canvas_dimensions: s.canvasDimensions,
-                pixels_per_mesh: s.pixelsPerMesh,
-                origin_pixels: s.originPixels,
-                settings: {
-                    doorRoles: s.doorRoles,
-                    doorLeakagesEnabled: s.doorLeakagesEnabled,
-                    doorLeakageConfig: s.doorLeakageConfig,
-                    landingRoles: s.landingRoles,
-                    landingUpSide: s.landingUpSide,
-                    stairStyle: s.stairStyle,
-                    extractConfig: s.extractConfig,
-                    inletConfig: s.inletConfig,
-                    zoneConfig: s.zoneConfig,
-                    sliceZHeight: s.sliceZHeight,
-                },
-                elements: s.elements.map((el, i) => ({
-                    element_index: el.id ?? i,
-                    type: el.type,
-                    points: el.points,
-                    comments: el.comments,
-                    ...(el.zoneName ? { zoneName: el.zoneName } : {}),
-                    ...(el.fsaDistance != null ? { fsaDistance: el.fsaDistance } : {}),
-                })),
-            },
-        ],
+        floors: floorsPayload,
     }
 }
 
-// Reconstruct the partial store state from a loaded project + floor detail.
+// Reconstruct the partial store state from a loaded project + floor detail (or array of floor details).
 // `state` is the current store state (for the per-mode geometry bucket spread).
-export function hydrateFdsState(project, floorDetail, state) {
+export function hydrateFdsState(project, floorDetailOrList, state = {}) {
     const ps = project.settings || {}
-    const fs = floorDetail.settings || {}
-    const loadedElements = (floorDetail.elements || []).map(el => ({
-        id: el.element_index,
-        type: el.type,
-        points: el.points,
-        comments: el.comments,
-        ...(el.zoneName ? { zoneName: el.zoneName } : {}),
-        ...(el.fsaDistance != null ? { fsaDistance: el.fsaDistance } : {}),
-    }))
+    const rawFloorList = Array.isArray(floorDetailOrList)
+        ? floorDetailOrList
+        : floorDetailOrList
+        ? [floorDetailOrList]
+        : []
+
+    const sortedFloors = [...rawFloorList]
+        .sort((a, b) => (a.floor_number ?? 0) - (b.floor_number ?? 0))
+        .map((fd, idx) =>
+            normalizeFloor(fd, idx, {
+                fireFloorZ: ps.fireFloorZ ?? 0,
+                wallHeight: ps.wallHeight ?? 3,
+                pixelsPerMesh: fd.pixels_per_mesh || 1,
+            })
+        )
+
+    const primaryFloor = sortedFloors[0] || normalizeFloor(floorDetailOrList || {}, 0, ps)
+    const fs = primaryFloor.settings || {}
+    const loadedElements = primaryFloor.elements || []
+
     return {
         projectId: project.id,
         projectName: project.name,
-        floorId: floorDetail.id,
+        floorId: primaryFloor.id,
+        floors: sortedFloors,
+        activeFloorIndex: 0,
         // Project-level settings
         scenarioType: ps.scenarioType ?? "MOE",
         simEndTime: ps.simEndTime ?? 300,
         totalFloors: ps.totalFloors ?? 8,
-        wallHeight: ps.wallHeight ?? 3,
+        wallHeight: primaryFloor.wall_height ?? ps.wallHeight ?? 3,
         stairRoofZ: ps.stairRoofZ ?? 25,
         topStoreyHeight: ps.topStoreyHeight ?? 20,
-        fireFloorZ: ps.fireFloorZ ?? 0,
+        fireFloorZ: primaryFloor.z_level ?? ps.fireFloorZ ?? 0,
         fireFloorNumber: ps.fireFloorNumber ?? 0,
         commonCorridorMode: ps.commonCorridorMode ?? false,
         includeSensors: ps.includeSensors ?? true,
@@ -123,9 +144,9 @@ export function hydrateFdsState(project, floorDetail, state) {
         numberOfStairs: ps.numberOfStairs ?? 0,
         stairObject: ps.stairObject ?? [],
         // Floor-level settings
-        canvasDimensions: floorDetail.canvas_dimensions || {},
-        pixelsPerMesh: floorDetail.pixels_per_mesh || 1,
-        originPixels: floorDetail.origin_pixels || null,
+        canvasDimensions: primaryFloor.canvas_dimensions || {},
+        pixelsPerMesh: primaryFloor.pixels_per_mesh || 1,
+        originPixels: primaryFloor.origin_pixels || null,
         doorRoles: fs.doorRoles ?? {},
         doorLeakagesEnabled: fs.doorLeakagesEnabled ?? true,
         doorLeakageConfig: fs.doorLeakageConfig ?? {},
@@ -144,14 +165,27 @@ export function hydrateFdsState(project, floorDetail, state) {
 
 // The subset of state whose change should arm the debounced autosave.
 export function fdsAutosaveSnapshot(s) {
+    const syncedFloors = getSyncedFloors(s)
     return {
         elements: s.elements,
+        floors: syncedFloors.map((f) => ({
+            floor_number: f.floor_number,
+            name: f.name,
+            z_level: f.z_level,
+            wall_height: f.wall_height,
+            pixels_per_mesh: f.pixels_per_mesh,
+            origin_pixels: f.origin_pixels,
+            elements: f.elements,
+            settings: f.settings,
+        })),
         pixelsPerMesh: s.pixelsPerMesh,
         canvasDimensions: s.canvasDimensions,
+        originPixels: s.originPixels,
         scenarioType: s.scenarioType,
         simEndTime: s.simEndTime,
         totalFloors: s.totalFloors,
         wallHeight: s.wallHeight,
+        fireFloorZ: s.fireFloorZ,
         doorRoles: s.doorRoles,
         doorOpenings: s.doorOpenings,
         doorLeakagesEnabled: s.doorLeakagesEnabled,

@@ -11,6 +11,8 @@ import ViewTabs from '../Components/ViewTabs'
 import ReliabilityResultsView from '../Components/ReliabilityResultsView'
 import ThreeView from '../Components/ThreeView'
 import FdsCodeView from '../Components/FdsCodeView'
+import FloorBar from '../Components/FloorBar'
+import { getSyncedFloors } from '../utils/multiFloorFds'
 
 import ProjectDashboard from '../Components/ProjectDashboard'
 import useUserName from '../hooks/useUserName'
@@ -197,6 +199,7 @@ export default function Home() {
   // --- Debounced auto-save ---
   const saveTimerRef = useRef(null)
   const lastSavedRef = useRef(null)
+  const pdfCacheByFloorRef = useRef({})
 
   // Memoize the auto-save function
   const triggerAutoSave = useCallback(() => {
@@ -225,7 +228,10 @@ export default function Home() {
 
       useStore.getState().setSaveStatus("saving")
       try {
-        await saveProjectToServer(currentProjectId, payload)
+        const saved = await saveProjectToServer(currentProjectId, payload)
+        if (saved?.floors) {
+          useStore.getState().syncServerFloors(saved.floors)
+        }
         lastSavedRef.current = payloadStr
         useStore.getState().setSaveStatus("saved")
         // Clear "saved" indicator after 2s
@@ -275,8 +281,41 @@ export default function Home() {
 
   console.log("elements log: ", elements)
 
+  // Paint cached ImageData (or a clean white grid surface if no PDF uploaded for this floor yet)
+  const paintCachedFloorPdf = (floorNum, fallbackDims) => {
+    const canvas = pdfCanvasRef.current
+    if (!canvas) return false
+    const cached = pdfCacheByFloorRef.current[floorNum]
+    if (cached && cached.greyscaled) {
+      canvas.width = cached.width
+      canvas.height = cached.height
+      setCanvasDimensions({ width: cached.width, height: cached.height })
+      const ctx = canvas.getContext('2d')
+      const isGrey = useStore.getState().isPdfGreyscale
+      ctx.putImageData(isGrey ? cached.greyscaled : cached.coloured, 0, 0)
+      setPdfData({ coloured: cached.coloured, greyscaled: cached.greyscaled })
+      return true
+    }
+    // No PDF cached yet for this floor: keep the existing dimensions (or Floor 0's)
+    // and paint a clean light background so the user can either trace the ghost floor
+    // below or upload a separate floor plan PDF.
+    const floor0Cached = pdfCacheByFloorRef.current[0]
+    const w = fallbackDims?.width || floor0Cached?.width || canvas.width || 1200
+    const h = fallbackDims?.height || floor0Cached?.height || canvas.height || 850
+    canvas.width = w
+    canvas.height = h
+    setCanvasDimensions({ width: w, height: h })
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#f8fafc'
+    ctx.fillRect(0, 0, w, h)
+    const blankData = ctx.getImageData(0, 0, w, h)
+    blankData.isBlank = true
+    setPdfData({ coloured: blankData, greyscaled: blankData, isBlank: true })
+    return false
+  }
+
   // Shared function to render a PDF onto the canvas from any source
-  const renderPdf = async (pdfSource, skipScale = false) => {
+  const renderPdf = async (pdfSource, skipScale = false, floorNumOverride = null) => {
     if (!pdfCanvasRef.current) return
     const pdfjs = await import('pdfjs-dist/build/pdf')
 
@@ -312,9 +351,187 @@ export default function Home() {
     setShowUploadScreen(false)
     setPdfData({ coloured: colouredImageData, greyscaled: greyScaledImageData })
 
+    const st = useStore.getState()
+    const synced = getSyncedFloors(st)
+    const activeFloor = synced[st.activeFloorIndex] || synced[0]
+    const floorNum = floorNumOverride != null ? floorNumOverride : (activeFloor?.floor_number ?? 0)
+    pdfCacheByFloorRef.current[floorNum] = {
+      coloured: colouredImageData,
+      greyscaled: greyScaledImageData,
+      width: canvas.width,
+      height: canvas.height,
+    }
+    useStore.getState().updateFloorMeta(floorNumOverride != null ? floorNumOverride : (st.activeFloorIndex ?? 0), { hasCustomPdf: true, pdfSource: 'custom' })
+
     if (skipScale) {
       setTool("selection")
       setComment("obstruction")
+    }
+  }
+
+  // Switch the active floor in 2D and swap its PDF background (cached, S3, or IndexedDB)
+  const handleSwitchFloor = async (targetIndex, opts = {}) => {
+    const st = useStore.getState()
+    const prevIdx = opts?.prevIndex !== undefined ? opts.prevIndex : (st.activeFloorIndex ?? 0)
+    const synced = getSyncedFloors(st)
+    const prevFloor = synced[prevIdx] || synced[0]
+    const prevFloorNum = prevFloor?.floor_number ?? prevIdx
+
+    // Before switching away from the previous floor, if st.pdfData?.greyscaled exists
+    // and pdfCacheByFloorRef.current[prevFloorNum] is not yet populated, save into cache
+    if (st.pdfData?.greyscaled && !st.pdfData?.isBlank && !pdfCacheByFloorRef.current[prevFloorNum]) {
+      pdfCacheByFloorRef.current[prevFloorNum] = {
+        coloured: st.pdfData.coloured,
+        greyscaled: st.pdfData.greyscaled,
+        width: st.canvasDimensions.width,
+        height: st.canvasDimensions.height,
+      }
+    }
+    // Also protect Floor 0 if it was the initial PDF loaded
+    if (st.pdfData?.greyscaled && !st.pdfData?.isBlank && prevIdx === 0 && !pdfCacheByFloorRef.current[0]) {
+      pdfCacheByFloorRef.current[0] = {
+        coloured: st.pdfData.coloured,
+        greyscaled: st.pdfData.greyscaled,
+        width: st.canvasDimensions.width,
+        height: st.canvasDimensions.height,
+      }
+    }
+
+    // Ensure useStore.getState().setActiveFloor(targetIndex) is called if activeFloorIndex !== targetIndex
+    if (useStore.getState().activeFloorIndex !== targetIndex) {
+      useStore.getState().setActiveFloor(targetIndex)
+    }
+
+    const currentSt = useStore.getState()
+    const currentSynced = getSyncedFloors(currentSt)
+    const targetFloor = currentSynced[targetIndex]
+    if (!targetFloor) return
+    const floorNum = targetFloor.floor_number ?? targetIndex
+
+    if (pdfCacheByFloorRef.current[floorNum]) {
+      paintCachedFloorPdf(floorNum, {
+        width: targetFloor.canvas_width,
+        height: targetFloor.canvas_height,
+      })
+      return
+    }
+
+    // Try loading from S3 if the floor has a stored PDF key
+    if (currentSt.projectId && targetFloor.id && targetFloor.pdf_s3_key) {
+      try {
+        const { url } = await getFloorPdfUrl(currentSt.projectId, targetFloor.id)
+        await renderPdf(url, true, floorNum)
+        return
+      } catch (err) {
+        console.warn('Could not load floor PDF from S3, falling back to IndexedDB:', err)
+      }
+    }
+
+    // Try IndexedDB per-floor cache
+    try {
+      const buf = await loadPdfFromIndexedDB(floorNum)
+      if (buf) {
+        await renderPdf(buf, true, floorNum)
+        return
+      }
+    } catch (err) {
+      console.warn('Could not load floor PDF from IndexedDB:', err)
+    }
+
+    // No PDF uploaded for this floor yet — paint clean background with Floor 0 dimensions
+    paintCachedFloorPdf(floorNum, {
+      width: targetFloor.canvas_width,
+      height: targetFloor.canvas_height,
+    })
+  }
+
+  // Reuse the Ground Floor (Floor 0) PDF for an upper floor level
+  const handleReuseGroundFloorPdf = async (targetIndex) => {
+    const idx = targetIndex ?? useStore.getState().activeFloorIndex ?? 0
+    const st = useStore.getState()
+    const synced = getSyncedFloors(st)
+    const targetFloor = synced[idx]
+    if (!targetFloor) return
+    const floorNum = targetFloor.floor_number ?? idx
+
+    let floor0Cached = pdfCacheByFloorRef.current[0]
+    if (!floor0Cached && st.pdfData?.greyscaled && !st.pdfData?.isBlank) {
+      floor0Cached = {
+        coloured: st.pdfData.coloured,
+        greyscaled: st.pdfData.greyscaled,
+        width: st.canvasDimensions.width,
+        height: st.canvasDimensions.height,
+      }
+      pdfCacheByFloorRef.current[0] = floor0Cached
+    }
+
+    if (floor0Cached) {
+      pdfCacheByFloorRef.current[floorNum] = {
+        coloured: floor0Cached.coloured,
+        greyscaled: floor0Cached.greyscaled,
+        width: floor0Cached.width,
+        height: floor0Cached.height,
+        isReusedGround: true,
+      }
+      paintCachedFloorPdf(floorNum)
+      useStore.getState().updateFloorMeta(idx, { hasCustomPdf: true, pdfSource: 'ground' })
+      return
+    }
+
+    try {
+      const buf = await loadPdfFromIndexedDB(0)
+      if (buf) {
+        await renderPdf(buf, true, floorNum)
+        useStore.getState().updateFloorMeta(idx, { hasCustomPdf: true, pdfSource: 'ground' })
+      }
+    } catch (err) {
+      console.warn('Could not load Ground Floor PDF from IndexedDB:', err)
+    }
+  }
+
+  // Upload a dedicated PDF background for a specific floor index (from FloorBar)
+  const handleUploadFloorPdf = async (file, floorIndex) => {
+    if (!file) return
+    const arrayBuffer = await file.arrayBuffer()
+    const st = useStore.getState()
+    const synced = getSyncedFloors(st)
+    const targetFloor = synced[floorIndex] || synced[st.activeFloorIndex]
+    const floorNum = targetFloor?.floor_number ?? floorIndex ?? 0
+
+    // Render onto canvas; keep current tool if scale is already calibrated on this floor
+    const hasScale = Boolean(targetFloor?.pixels_per_mesh || st.pixelsPerMesh)
+    await renderPdf(URL.createObjectURL(file), hasScale, floorNum)
+    useStore.getState().updateFloorMeta(floorIndex, { hasCustomPdf: true, pdfSource: 'custom' })
+
+    if (isDbBacked(st.currentMode)) {
+      savePdfToIndexedDB(arrayBuffer, floorNum)
+      let currentProjectId = useStore.getState().projectId
+      let targetFloorId = targetFloor?.id
+
+      if (currentProjectId && !targetFloorId) {
+        try {
+          const payload = useStore.getState().buildSavePayload()
+          const saved = await saveProjectToServer(currentProjectId, payload)
+          if (saved?.floors) {
+            useStore.getState().syncServerFloors(saved.floors)
+            const matched = saved.floors.find((f) => f.floor_number === floorNum)
+            targetFloorId = matched?.id
+          }
+        } catch (err) {
+          console.error('Failed to sync new floor before PDF upload:', err)
+        }
+      }
+
+      if (currentProjectId && targetFloorId) {
+        try {
+          const pdfFile = new File([arrayBuffer], `floor_${floorNum}.pdf`, { type: 'application/pdf' })
+          await uploadFloorPdf(currentProjectId, targetFloorId, pdfFile)
+          useStore.getState().updateFloorMeta(floorIndex, { pdf_s3_key: `uploaded_${floorNum}` })
+        } catch (err) {
+          console.error('Failed to upload floor PDF to S3:', err)
+          setSaveStatus('pdf-failed')
+        }
+      }
     }
   }
 
@@ -325,7 +542,7 @@ export default function Home() {
     const arrayBuffer = await file.arrayBuffer()
 
     // Render using a URL (pdfjs prefers this for File objects)
-    await renderPdf(URL.createObjectURL(file), isContinuing)
+    await renderPdf(URL.createObjectURL(file), isContinuing, 0)
 
     // Only persist/upload the PDF for DB-backed modes. Non-DB modes
     // (radiation/efs) are scratch — the plan must not survive a reload, so
@@ -333,7 +550,7 @@ export default function Home() {
     const mode = useStore.getState().currentMode
     if (isDbBacked(mode)) {
       // Cache raw PDF bytes in IndexedDB for later restore
-      savePdfToIndexedDB(arrayBuffer)
+      savePdfToIndexedDB(arrayBuffer, 0)
 
       let currentProjectId = useStore.getState().projectId
       let currentFloorId = useStore.getState().floorId
@@ -348,12 +565,15 @@ export default function Home() {
           const saved = await saveProjectToServer(currentProjectId, {
             name,
             settings: {},
-            floors: [{ floor_number: 0, name: "Fire Floor", elements: [] }],
+            floors: [{ floor_number: 0, name: "Ground Floor", elements: [] }],
           })
           currentFloorId = saved.floors[0]?.id
           setProjectId(currentProjectId)
           setFloorId(currentFloorId)
           setProjectName(name)
+          if (saved?.floors) {
+            useStore.getState().syncServerFloors(saved.floors)
+          }
         } catch (err) {
           console.error('Failed to create project:', err)
           // Surface it: without a projectId autosave never arms, so the user
@@ -416,6 +636,7 @@ export default function Home() {
   const handleModeSelected = (mode) => {
     // Just navigate — the store has already detached the project (setCurrentMode).
     // DB-backed modes land on their own dashboard; scratch modes go to upload.
+    pdfCacheByFloorRef.current = {}
     setSelectedFile(undefined)
     setIsContinuing(false)
     setShowUploadScreen(!isDbBacked(mode))
@@ -423,6 +644,7 @@ export default function Home() {
 
   const handleBackToDashboard = () => {
     // Go back to dashboard without destroying project data
+    pdfCacheByFloorRef.current = {}
     setSelectedFile(undefined)
     setIsContinuing(false)
     setShowUploadScreen(false)
@@ -434,6 +656,7 @@ export default function Home() {
     if (selectedFile) {
       if (!window.confirm('Start a new project? All current progress will be cleared.')) return
     }
+    pdfCacheByFloorRef.current = {}
     resetProject()
     setSelectedFile(undefined)
     setIsContinuing(false)
@@ -443,13 +666,19 @@ export default function Home() {
 
   const handleSelectProject = async (projectId) => {
     setIsLoadingFromServer(true)
+    pdfCacheByFloorRef.current = {}
     try {
       const project = await loadProject(projectId)
-      const floor = project.floors?.[0]
+      const sortedFloors = [...(project.floors || [])].sort(
+        (a, b) => (a.floor_number ?? 0) - (b.floor_number ?? 0)
+      )
+      const floor = sortedFloors[0]
       if (!floor) throw new Error("No floors in project")
 
-      const floorDetail = await loadFloorDetail(projectId, floor.id)
-      hydrateFromServer(project, floorDetail)
+      const floorDetails = await Promise.all(
+        sortedFloors.map((f) => loadFloorDetail(projectId, f.id))
+      )
+      hydrateFromServer(project, floorDetails.length === 1 ? floorDetails[0] : floorDetails)
 
       // Seed the last-saved baseline with what we just loaded, so the empty-save
       // guard knows the DB already holds geometry. Without this, an empty-elements
@@ -459,7 +688,7 @@ export default function Home() {
 
       if (floor.pdf_s3_key) {
         const { url } = await getFloorPdfUrl(projectId, floor.id)
-        await renderPdf(url, true)
+        await renderPdf(url, true, floor.floor_number ?? 0)
       } else {
         // No PDF yet - go to upload screen
         setIsContinuing(true)
@@ -489,6 +718,14 @@ export default function Home() {
         }`}>
           {describeSaveStatus(saveStatus).label}
         </div>
+      )}
+      {/* Multi-floor level switcher (FDS mode in 2D view) */}
+      {selectedFile && viewMode === '2d' && (
+        <FloorBar
+          onSwitchFloor={handleSwitchFloor}
+          onUploadFloorPdf={handleUploadFloorPdf}
+          onReuseGroundFloorPdf={handleReuseGroundFloorPdf}
+        />
       )}
       {/* Top bar - visible when working on a project */}
       {selectedFile && (

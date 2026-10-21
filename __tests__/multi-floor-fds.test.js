@@ -1,0 +1,383 @@
+// @vitest-environment jsdom
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import React from 'react'
+import { render, fireEvent, screen, act } from '@testing-library/react'
+import FloorBar from '../Components/FloorBar'
+import useStore from '../store/useStore'
+import { buildFdsPayload, hydrateFdsState } from '../store/fdsPersistence'
+import {
+  mapPointBetweenFloors,
+  transformElementBetweenFloors,
+  generateInterFloorSlabLines,
+  combineMultiFloorFds,
+} from '../utils/multiFloorFds'
+import { parseFdsGeometry } from '../utils/fdsParse'
+import { buildFdsScene } from '../utils/fdsScene'
+import { generateFdsCode } from '../utils/generateFds'
+
+describe('Multi-floor FDS state, coordinate alignment, persistence, and FDS combination', () => {
+  beforeEach(() => {
+    useStore.getState().resetProject()
+    useStore.setState({
+      currentMode: 'fdsGen',
+      projectId: 'proj-multi',
+      projectName: 'Multi-Storey Tower',
+    })
+  })
+
+  it('adds floors with stacked Z levels and switches active floor cleanly', () => {
+    const store = useStore.getState()
+    store.setPixelsPerMesh(5)
+    store.setWallHeight(3.2)
+    store.setFireFloorZ(0)
+    store.setOriginPixels({ x: 100, y: 200 })
+    store.addElement({
+      id: 0,
+      type: 'line',
+      comments: 'obstruction',
+      points: [{ x: 100, y: 200 }, { x: 300, y: 200 }],
+    })
+
+    // Add Level 1 -> z_level should auto-stack at 0 + 3.2 = 3.2m
+    useStore.getState().addFloor({ name: 'Level 1' })
+    let s = useStore.getState()
+    expect(s.floors).toHaveLength(2)
+    expect(s.activeFloorIndex).toBe(1)
+    expect(s.fireFloorZ).toBeCloseTo(3.2, 5)
+    expect(s.wallHeight).toBeCloseTo(3.2, 5)
+    expect(s.pixelsPerMesh).toBe(5)
+    expect(s.originPixels).toEqual({ x: 100, y: 200 })
+    expect(s.elements).toEqual([])
+
+    // Draw an element on Level 1 and set a shifted origin on Level 1's PDF
+    s.setOriginPixels({ x: 150, y: 250 })
+    s.addElement({
+      id: 0,
+      type: 'rect',
+      comments: 'mesh',
+      points: [
+        { x: 150, y: 250 },
+        { x: 350, y: 250 },
+        { x: 350, y: 450 },
+        { x: 150, y: 450 },
+      ],
+    })
+
+    // Switch back to Ground Floor (index 0)
+    useStore.getState().setActiveFloor(0)
+    s = useStore.getState()
+    expect(s.activeFloorIndex).toBe(0)
+    expect(s.fireFloorZ).toBe(0)
+    expect(s.originPixels).toEqual({ x: 100, y: 200 })
+    expect(s.elements).toHaveLength(1)
+    expect(s.elements[0].comments).toBe('obstruction')
+
+    // Switch back to Level 1 (index 1) -> preserves Level 1's elements & origin
+    useStore.getState().setActiveFloor(1)
+    s = useStore.getState()
+    expect(s.activeFloorIndex).toBe(1)
+    expect(s.originPixels).toEqual({ x: 150, y: 250 })
+    expect(s.elements).toHaveLength(1)
+    expect(s.elements[0].comments).toBe('mesh')
+  })
+
+  it('maps points and elements between floors with different origins and scales', () => {
+    const groundFloor = {
+      floor_number: 0,
+      pixels_per_mesh: 5, // 5 px per 0.1m mesh = 50 px/m
+      origin_pixels: { x: 100, y: 100 },
+    }
+    const firstFloor = {
+      floor_number: 1,
+      pixels_per_mesh: 10, // 10 px per 0.1m mesh = 100 px/m (2x higher resolution PDF)
+      origin_pixels: { x: 300, y: 400 },
+    }
+
+    // A point 2m right (+100px) and 3m down (+150px) from Ground Floor's origin
+    const ptGround = { x: 200, y: 250 }
+    const ptFirst = mapPointBetweenFloors(ptGround, groundFloor, firstFloor)
+    // On First Floor (100 px/m, origin 300,400): x = 300 + 2*100 = 500, y = 400 + 3*100 = 700
+    expect(ptFirst).toEqual({ x: 500, y: 700 })
+
+    // Transform a wall element from Ground Floor to First Floor's canvas space (for Ghost Floor rendering)
+    const wall = {
+      id: 1,
+      type: 'line',
+      comments: 'obstruction',
+      points: [{ x: 100, y: 100 }, { x: 200, y: 250 }],
+    }
+    const ghostWall = transformElementBetweenFloors(wall, groundFloor, firstFloor)
+    expect(ghostWall.points[0]).toEqual({ x: 300, y: 400 })
+    expect(ghostWall.points[1]).toEqual({ x: 500, y: 700 })
+  })
+
+  it('round-trips multi-floor state through buildFdsPayload and hydrateFdsState', () => {
+    const store = useStore.getState()
+    store.setPixelsPerMesh(4)
+    store.setWallHeight(3.0)
+    store.setFireFloorZ(0)
+    store.setOriginPixels({ x: 50, y: 60 })
+    store.addElement({
+      id: 0,
+      type: 'line',
+      comments: 'obstruction',
+      points: [{ x: 50, y: 60 }, { x: 250, y: 60 }],
+    })
+
+    useStore.getState().addFloor({ name: 'Level 1', z_level: 3.0, wall_height: 3.5 })
+    useStore.getState().setOriginPixels({ x: 80, y: 90 })
+    useStore.getState().addElement({
+      id: 0,
+      type: 'rect',
+      comments: 'floorOpening',
+      points: [
+        { x: 80, y: 90 },
+        { x: 160, y: 90 },
+        { x: 160, y: 170 },
+        { x: 80, y: 170 },
+      ],
+    })
+
+    const payload = buildFdsPayload(useStore.getState())
+    expect(payload.floors).toHaveLength(2)
+    expect(payload.floors[0].name).toBe('Fire Floor')
+    expect(payload.floors[0].settings.z_level).toBe(0)
+    expect(payload.floors[0].origin_pixels).toEqual({ x: 50, y: 60 })
+    expect(payload.floors[0].elements).toHaveLength(1)
+    expect(payload.floors[1].name).toBe('Level 1')
+    expect(payload.floors[1].settings.z_level).toBe(3.0)
+    expect(payload.floors[1].settings.wall_height).toBe(3.5)
+    expect(payload.floors[1].origin_pixels).toEqual({ x: 80, y: 90 })
+    expect(payload.floors[1].elements[0].comments).toBe('floorOpening')
+
+    // Hydrate from server array of floors
+    const hydrated = hydrateFdsState(
+      { id: 'p-1', name: 'Tower', settings: payload.settings },
+      payload.floors,
+      useStore.getState()
+    )
+    expect(hydrated.floors).toHaveLength(2)
+    expect(hydrated.activeFloorIndex).toBe(0)
+    expect(hydrated.originPixels).toEqual({ x: 50, y: 60 })
+    expect(hydrated.elements).toHaveLength(1)
+    expect(hydrated.floors[1].origin_pixels).toEqual({ x: 80, y: 90 })
+  })
+
+  it('detects stale FDS signature when non-active floor is modified', () => {
+    useStore.getState().addElement({
+      id: 0,
+      type: 'line',
+      comments: 'obstruction',
+      points: [{ x: 0, y: 0 }, { x: 100, y: 0 }],
+    })
+    useStore.getState().addFloor({ name: 'Level 1' })
+    useStore.getState().addElement({
+      id: 0,
+      type: 'line',
+      comments: 'obstruction',
+      points: [{ x: 0, y: 0 }, { x: 100, y: 100 }],
+    })
+    useStore.getState().captureFds('&HEAD /\n&TAIL /')
+    expect(useStore.getState().isFdsStale()).toBe(false)
+
+    // Switch to floor 0 and edit an element -> should mark FDS stale
+    useStore.getState().setActiveFloor(0)
+    expect(useStore.getState().isFdsStale()).toBe(false)
+    useStore.getState().addElement({
+      id: 1,
+      type: 'line',
+      comments: 'obstruction',
+      points: [{ x: 0, y: 0 }, { x: 200, y: 0 }],
+    })
+    expect(useStore.getState().isFdsStale()).toBe(true)
+  })
+
+  it('combines multi-floor FDS strings with XY offsets, inter-floor slabs, and openings into valid 3D scene items', () => {
+    const fdsFloor0 = [
+      "&HEAD CHID='tower'/",
+      "&TIME T_END=600.0/",
+      "&MESH ID='Mesh0', IJK=10,10,6, XB=0.0,10.0,0.0,10.0,0.0,3.0/",
+      "&OBST ID='Wall', XB=0.0,10.0,0.0,0.2,0.0,3.0, SURF_ID='INERT'/",
+      "&TAIL /",
+    ].join('\n')
+
+    const fdsFloor1 = [
+      "&HEAD CHID='tower'/",
+      "&TIME T_END=600.0/",
+      "&MESH ID='Mesh0', IJK=10,10,6, XB=0.0,8.0,0.0,8.0,3.0,6.0/",
+      "&OBST ID='Wall', XB=0.0,8.0,0.0,0.2,3.0,6.0, SURF_ID='INERT'/",
+      "&TAIL /",
+    ].join('\n')
+
+    // Floor 1 in base pixel space (basePxPerM = 100, globalMinX = 0, globalMaxY = 1000)
+    const floor1ElementsInBasePx = [
+      {
+        id: 0,
+        type: 'rect',
+        comments: 'mesh',
+        points: [
+          { x: 100, y: 100 },
+          { x: 900, y: 100 },
+          { x: 900, y: 900 },
+          { x: 100, y: 900 },
+        ],
+      },
+      {
+        id: 1,
+        type: 'rect',
+        comments: 'floorOpening',
+        points: [
+          { x: 300, y: 500 },
+          { x: 500, y: 500 },
+          { x: 500, y: 700 },
+          { x: 300, y: 700 },
+        ],
+      },
+    ]
+
+    const slabLines = generateInterFloorSlabLines(
+      floor1ElementsInBasePx,
+      { floor_number: 1, name: 'Level 1', z_level: 3.0 },
+      0,
+      1000,
+      100,
+      0.2
+    )
+
+    const combined = combineMultiFloorFds([
+      { floorNumber: 0, floorName: 'Ground Floor', fdsText: fdsFloor0, dx: 0, dy: 0, slabLines: [] },
+      { floorNumber: 1, floorName: 'Level 1', fdsText: fdsFloor1, dx: 1.0, dy: 1.0, slabLines },
+    ])
+
+    expect(combined).toContain("&MESH ID='F0_Mesh0'")
+    expect(combined).toContain("&MESH ID='F1_Mesh0'")
+    // Level 1 mesh shifted by dx=1, dy=1 -> XB=1,9,1,9,3.0,6.0
+    expect(combined).toContain('XB=1,9,1,9,3.0,6.0')
+    expect(combined).toContain("ID='Level 1 Slab'")
+    expect(combined).toContain("&HOLE ID='Floor Opening 1', XB=3,5,3,5,2.75,3.05/")
+    // Only a single &HEAD and &TAIL
+    expect(combined.match(/&HEAD\b/g)).toHaveLength(1)
+    expect(combined.match(/&TAIL\b/g)).toHaveLength(1)
+
+    // Verify 3D scene parser builds stacked meshes, walls, slab, and hole
+    const parsed = parseFdsGeometry(combined)
+    const scene = buildFdsScene(parsed)
+    const meshes = scene.items.filter((i) => i.category === 'mesh')
+    const obsts = scene.items.filter((i) => i.category === 'obst')
+    const holes = scene.items.filter((i) => i.category === 'hole')
+    expect(meshes).toHaveLength(2)
+    expect(obsts.length).toBeGreaterThanOrEqual(3) // 2 walls + 1 inter-floor slab (clipped around hole)
+    expect(holes).toHaveLength(1)
+  })
+
+  it('switches floors and restores Fire Floor elements when clicking floor tab with onSwitchFloor handler', () => {
+    useStore.setState({
+      currentMode: 'fdsGen',
+      viewMode: '2d',
+      projectId: 'proj-multi',
+      projectName: 'Multi-Storey Tower',
+    })
+
+    // 1. Draw an obstruction on Floor 0 (Fire Floor)
+    const store = useStore.getState()
+    store.addElement({
+      id: 101,
+      type: 'line',
+      comments: 'obstruction',
+      points: [{ x: 50, y: 50 }, { x: 250, y: 50 }],
+    })
+    expect(useStore.getState().activeFloorIndex).toBe(0)
+    expect(useStore.getState().elements).toHaveLength(1)
+    expect(useStore.getState().elements[0].id).toBe(101)
+
+    // Track onSwitchFloor calls (even if onSwitchFloor did not call setActiveFloor, FloorBar should)
+    const onSwitchFloor = vi.fn()
+    const onReuseGroundFloorPdf = vi.fn()
+
+    render(
+      React.createElement(FloorBar, {
+        onSwitchFloor,
+        onReuseGroundFloorPdf,
+      })
+    )
+
+    // 2. Click "+ Add Floor" -> adds Level 1
+    const addFloorBtn = screen.getByTestId('add-floor-button')
+    act(() => {
+      fireEvent.click(addFloorBtn)
+    })
+
+    expect(useStore.getState().floors).toHaveLength(2)
+    expect(useStore.getState().activeFloorIndex).toBe(1)
+    expect(useStore.getState().elements).toEqual([])
+    expect(onSwitchFloor).toHaveBeenCalledWith(1, expect.objectContaining({ isNew: true }))
+
+    // Draw a floor opening on Level 1
+    act(() => {
+      useStore.getState().addElement({
+        id: 201,
+        type: 'rect',
+        comments: 'floorOpening',
+        points: [
+          { x: 10, y: 10 },
+          { x: 80, y: 10 },
+          { x: 80, y: 80 },
+          { x: 10, y: 80 },
+        ],
+      })
+    })
+    expect(useStore.getState().elements).toHaveLength(1)
+    expect(useStore.getState().elements[0].id).toBe(201)
+
+    // Level 1 starts with a blank drafting sheet banner and reuse button
+    expect(screen.getByTestId('drafting-sheet-banner')).toBeTruthy()
+    const reuseBtn = screen.getByTestId('banner-reuse-ground-pdf-button')
+    expect(reuseBtn).toBeTruthy()
+    act(() => {
+      fireEvent.click(reuseBtn)
+    })
+    expect(onReuseGroundFloorPdf).toHaveBeenCalledWith(1)
+
+    // 3. Click floor-tab-0 ("Fire Floor") -> updates activeFloorIndex back to 0
+    // and restores Fire Floor's elements
+    const floorTab0 = screen.getByTestId('floor-tab-0')
+    act(() => {
+      fireEvent.click(floorTab0)
+    })
+
+    expect(onSwitchFloor).toHaveBeenCalledWith(0, expect.anything())
+    expect(useStore.getState().activeFloorIndex).toBe(0)
+    expect(useStore.getState().elements).toHaveLength(1)
+    expect(useStore.getState().elements[0].id).toBe(101)
+    expect(useStore.getState().elements[0].comments).toBe('obstruction')
+
+    // 4. Click floor-tab-1 ("Floor 1") -> switches back to Level 1 and restores its elements
+    const floorTab1 = screen.getByTestId('floor-tab-1')
+    act(() => {
+      fireEvent.click(floorTab1)
+    })
+
+    expect(useStore.getState().activeFloorIndex).toBe(1)
+    expect(useStore.getState().elements).toHaveLength(1)
+    expect(useStore.getState().elements[0].id).toBe(201)
+    expect(useStore.getState().elements[0].comments).toBe('floorOpening')
+  })
+
+  it('validates mesh existence before calling backend in generateFdsCode', async () => {
+    // 1. With 0 elements across all floors, generateFdsCode rejects clearly
+    await expect(generateFdsCode({ download: false })).rejects.toThrow(
+      /Please draw at least one Mesh on your floor plan before generating FDS/
+    )
+
+    // 2. With walls but NO mesh, generateFdsCode rejects clearly
+    useStore.getState().addElement({
+      id: 1,
+      type: 'polyline',
+      comments: 'obstruction',
+      points: [{ x: 0, y: 0 }, { x: 100, y: 0 }],
+    })
+    await expect(generateFdsCode({ download: false })).rejects.toThrow(
+      /FDS requires at least one computational Mesh domain/
+    )
+  })
+})

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import useStore from '../store/useStore'
 import { fdsElementSignature } from '../utils/fdsSignature'
+import { getSyncedFloors } from '../utils/multiFloorFds'
 import { generateFdsCode } from '../utils/generateFds'
 
 // three.js touches `window`/WebGL, so the renderer is loaded client-side only.
@@ -22,10 +23,12 @@ export default function ThreeView() {
     const fdsCode = useStore((s) => s.fdsCode)
     const fdsGenSig = useStore((s) => s.fdsGenSig)
     const elements = useStore((s) => s.elements)
+    const floors = useStore((s) => s.floors)
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState(null)
 
-    const stale = Boolean(fdsCode) && fdsElementSignature(elements) !== fdsGenSig
+    const syncedFloors = floors?.length > 1 ? getSyncedFloors(useStore.getState()) : null
+    const stale = Boolean(fdsCode) && fdsElementSignature(elements, syncedFloors) !== fdsGenSig
 
     // Auto-refresh on tab-open when the FDS is stale (Q4): switching to 3D should
     // show current geometry without regenerating during 2D drawing. Empty (never

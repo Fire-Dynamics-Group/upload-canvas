@@ -88,6 +88,7 @@ const Toolbar = ({setShowModePopup}) => {
 
     const [showFireInputsPopup, setShowFireInputsPopup] = useState(false)
     const [showFDSInputsPopup, setShowFDSInputsPopup] = useState(false)
+    const [fdsGenerating, setFdsGenerating] = useState(false)
     const showEfsPopup = useStore((state) => state.efsPopupOpen)
     const setShowEfsPopup = useStore((state) => state.setEfsPopupOpen)
 
@@ -243,12 +244,15 @@ const [errorList, setErrorList] = useState(defaultErrorList)
         }
       }
 
-      function handleFDSClick() {
-        // Generate (downloads test.fds as before) and capture the returned text
-        // into the store so the 3D / FDS-code view tabs reflect it. All inputs
-        // are read off the store inside generateFdsCode — see utils/generateFds.js.
-        // (Sensors should already be computed via the Regen Sensors button.)
-        generateFdsCode({ download: true })
+      async function handleFDSClick() {
+        setFdsGenerating(true)
+        try {
+          await generateFdsCode({ download: true })
+        } catch (e) {
+          alert(e?.message || 'Failed to generate FDS')
+        } finally {
+          setFdsGenerating(false)
+        }
       }
 
       function handleFDSInput() {
@@ -565,10 +569,11 @@ const [errorList, setErrorList] = useState(defaultErrorList)
           </button>
           <button
             onClick={handleFDSClick}
-            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
+            disabled={fdsGenerating}
+            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800 disabled:opacity-50"
             type="button"
             >
-            Generate FDS code
+            {fdsGenerating ? 'Generating...' : 'Generate FDS code'}
           </button>
             </>
             }

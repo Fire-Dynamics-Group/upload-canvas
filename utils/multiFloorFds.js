@@ -1,0 +1,416 @@
+// Multi-floor state management, cross-floor coordinate alignment, and
+// multi-floor FDS model assembly.
+
+export const DEFAULT_FLOOR_SETTINGS = {
+    z_level: 0,
+    wall_height: 3,
+    doorRoles: {},
+    doorLeakagesEnabled: true,
+    doorLeakageConfig: {},
+    landingRoles: {},
+    landingUpSide: null,
+    stairStyle: 'individual',
+    extractConfig: {},
+    inletConfig: {},
+    zoneConfig: {},
+    sliceZHeight: 2.0,
+}
+
+/**
+ * Build a normalized floor object from partial data.
+ */
+export function normalizeFloor(raw = {}, index = 0, fallbackState = {}) {
+    const floorNumber = raw.floor_number ?? index
+    const rawSettings = raw.settings || {}
+    const zLevel = Number(
+        raw.z_level ?? rawSettings.z_level ?? (index === 0 ? fallbackState.fireFloorZ ?? 0 : index * (Number(fallbackState.wallHeight) || 3))
+    )
+    const wallHeight = Number(
+        raw.wall_height ?? rawSettings.wall_height ?? fallbackState.wallHeight ?? 3
+    )
+    const defaultName = floorNumber === 0 ? 'Ground Floor' : `Floor ${floorNumber}`
+
+    const rawElements = raw.elements || []
+    const normalizedElements = rawElements.map((el, i) => ({
+        id: el.id ?? el.element_index ?? i,
+        type: el.type,
+        points: el.points,
+        comments: el.comments,
+        ...(el.zoneName ? { zoneName: el.zoneName } : {}),
+        ...(el.fsaDistance != null ? { fsaDistance: el.fsaDistance } : {}),
+    }))
+
+    return {
+        id: raw.id ?? null,
+        floor_number: floorNumber,
+        name: raw.name || defaultName,
+        z_level: Number.isFinite(zLevel) ? zLevel : 0,
+        wall_height: Number.isFinite(wallHeight) && wallHeight > 0 ? wallHeight : 3,
+        canvas_dimensions: raw.canvas_dimensions || {},
+        pixels_per_mesh: raw.pixels_per_mesh || fallbackState.pixelsPerMesh || 1,
+        origin_pixels: raw.origin_pixels ?? null,
+        pdf_s3_key: raw.pdf_s3_key ?? null,
+        hasCustomPdf: raw.hasCustomPdf ?? Boolean(raw.pdf_s3_key),
+        pdfSource: raw.pdfSource ?? (raw.pdf_s3_key ? 'custom' : null),
+        elements: normalizedElements,
+        elementsHistory: raw.elementsHistory || [],
+        elementsFuture: raw.elementsFuture || [],
+        settings: {
+            ...DEFAULT_FLOOR_SETTINGS,
+            ...rawSettings,
+            z_level: Number.isFinite(zLevel) ? zLevel : 0,
+            wall_height: Number.isFinite(wallHeight) && wallHeight > 0 ? wallHeight : 3,
+            doorRoles: rawSettings.doorRoles ?? {},
+            doorLeakagesEnabled: rawSettings.doorLeakagesEnabled ?? true,
+            doorLeakageConfig: rawSettings.doorLeakageConfig ?? {},
+            landingRoles: rawSettings.landingRoles ?? {},
+            landingUpSide: rawSettings.landingUpSide ?? null,
+            stairStyle: rawSettings.stairStyle ?? 'individual',
+            extractConfig: rawSettings.extractConfig ?? {},
+            inletConfig: rawSettings.inletConfig ?? {},
+            zoneConfig: rawSettings.zoneConfig ?? {},
+            sliceZHeight: rawSettings.sliceZHeight ?? 2.0,
+        },
+    }
+}
+
+/**
+ * Return the `floors` array with the active floor synced from the live top-level
+ * store properties (`elements`, `pixelsPerMesh`, `originPixels`, `doorRoles`, etc.).
+ * If `state.floors` is empty, synthesizes Floor 0 from the top-level fields.
+ */
+export function getSyncedFloors(state) {
+    const existing = Array.isArray(state.floors) && state.floors.length > 0
+        ? state.floors
+        : [
+            normalizeFloor(
+                {
+                    id: state.floorId ?? null,
+                    floor_number: 0,
+                    name: 'Fire Floor',
+                    z_level: Number(state.fireFloorZ) || 0,
+                    wall_height: Number(state.wallHeight) || 3,
+                },
+                0,
+                state
+            ),
+        ]
+
+    const activeIdx = Math.min(
+        Math.max(0, state.activeFloorIndex ?? 0),
+        existing.length - 1
+    )
+
+    return existing.map((floor, idx) => {
+        if (idx !== activeIdx) return floor
+        const zLevel = Number(state.fireFloorZ ?? floor.z_level ?? floor.settings?.z_level ?? 0)
+        const wallHeight = Number(state.wallHeight ?? floor.wall_height ?? floor.settings?.wall_height ?? 3)
+        return {
+            ...floor,
+            id: state.floorId ?? floor.id ?? null,
+            z_level: Number.isFinite(zLevel) ? zLevel : 0,
+            wall_height: Number.isFinite(wallHeight) && wallHeight > 0 ? wallHeight : 3,
+            canvas_dimensions: state.canvasDimensions || floor.canvas_dimensions || {},
+            pixels_per_mesh: state.pixelsPerMesh || floor.pixels_per_mesh || 1,
+            origin_pixels: state.originPixels !== undefined ? state.originPixels : (floor.origin_pixels ?? null),
+            elements: state.elements || [],
+            elementsHistory: state.elementsHistory || [],
+            elementsFuture: state.elementsFuture || [],
+            settings: {
+                ...(floor.settings || {}),
+                z_level: Number.isFinite(zLevel) ? zLevel : 0,
+                wall_height: Number.isFinite(wallHeight) && wallHeight > 0 ? wallHeight : 3,
+                doorRoles: state.doorRoles ?? {},
+                doorLeakagesEnabled: state.doorLeakagesEnabled ?? true,
+                doorLeakageConfig: state.doorLeakageConfig ?? {},
+                landingRoles: state.landingRoles ?? {},
+                landingUpSide: state.landingUpSide ?? null,
+                stairStyle: state.stairStyle ?? 'individual',
+                extractConfig: state.extractConfig ?? {},
+                inletConfig: state.inletConfig ?? {},
+                zoneConfig: state.zoneConfig ?? {},
+                sliceZHeight: state.sliceZHeight ?? 2.0,
+            },
+        }
+    })
+}
+
+/**
+ * Extract the top-level store properties to check out when switching to `floor`.
+ */
+export function checkoutFloorToState(floor, state, floorIndex) {
+    const fs = floor.settings || {}
+    const zLevel = floor.z_level ?? fs.z_level ?? 0
+    const wallHeight = floor.wall_height ?? fs.wall_height ?? 3
+    const elements = floor.elements || []
+
+    return {
+        activeFloorIndex: floorIndex,
+        floorId: floor.id ?? null,
+        elements,
+        elementsByMode: {
+            ...(state.elementsByMode || {}),
+            [state.currentMode || 'fdsGen']: elements,
+        },
+        elementsHistory: floor.elementsHistory || [],
+        elementsFuture: floor.elementsFuture || [],
+        canvasDimensions: floor.canvas_dimensions && Object.keys(floor.canvas_dimensions).length > 0
+            ? floor.canvas_dimensions
+            : state.canvasDimensions,
+        pixelsPerMesh: floor.pixels_per_mesh || state.pixelsPerMesh || 1,
+        originPixels: floor.origin_pixels ?? null,
+        fireFloorZ: zLevel,
+        wallHeight: wallHeight,
+        doorRoles: fs.doorRoles ?? {},
+        doorLeakagesEnabled: fs.doorLeakagesEnabled ?? true,
+        doorLeakageConfig: fs.doorLeakageConfig ?? {},
+        landingRoles: fs.landingRoles ?? {},
+        landingUpSide: fs.landingUpSide ?? null,
+        stairStyle: fs.stairStyle ?? 'individual',
+        extractConfig: fs.extractConfig ?? {},
+        inletConfig: fs.inletConfig ?? {},
+        zoneConfig: fs.zoneConfig ?? {},
+        sliceZHeight: fs.sliceZHeight ?? 2.0,
+        selectedElement: null,
+    }
+}
+
+/**
+ * Resolve a floor's reference origin in canvas pixels.
+ * Defaults to `(0, canvasHeight)` (bottom-left of the sheet) when not explicitly set.
+ */
+export function getFloorOrigin(floor, fallbackHeight = 0) {
+    if (floor?.origin_pixels && typeof floor.origin_pixels.x === 'number' && typeof floor.origin_pixels.y === 'number') {
+        return { x: floor.origin_pixels.x, y: floor.origin_pixels.y }
+    }
+    const h = floor?.canvas_dimensions?.height || fallbackHeight || 0
+    return { x: 0, y: h }
+}
+
+/**
+ * Transform a 2D point `{ x, y }` from `fromFloor`'s pixel space into `toFloor`'s
+ * pixel space using each floor's `origin_pixels` and `pixels_per_mesh`.
+ */
+export function mapPointBetweenFloors(pt, fromFloor, toFloor) {
+    if (!pt || !fromFloor || !toFloor) return pt
+    const fromPxPerM = (Number(fromFloor.pixels_per_mesh) || 1) * 10
+    const toPxPerM = (Number(toFloor.pixels_per_mesh) || 1) * 10
+    const fallbackH = toFloor.canvas_dimensions?.height || fromFloor.canvas_dimensions?.height || 0
+    const fromOrigin = getFloorOrigin(fromFloor, fallbackH)
+    const toOrigin = getFloorOrigin(toFloor, fallbackH)
+
+    const dxMeters = (pt.x - fromOrigin.x) / fromPxPerM
+    const dyMeters = (pt.y - fromOrigin.y) / fromPxPerM
+
+    return {
+        ...pt,
+        x: toOrigin.x + dxMeters * toPxPerM,
+        y: toOrigin.y + dyMeters * toPxPerM,
+    }
+}
+
+/**
+ * Transform all points of an element from `fromFloor` into `toFloor`'s pixel coordinates.
+ */
+export function transformElementBetweenFloors(el, fromFloor, toFloor) {
+    if (!el || !Array.isArray(el.points)) return el
+    return {
+        ...el,
+        points: el.points.map((p) => mapPointBetweenFloors(p, fromFloor, toFloor)),
+    }
+}
+
+/**
+ * Shift all `XB=x1,x2,y1,y2,z1,z2`, `XYZ=x,y,z`, `PBX=x`, and `PBY=y` coordinates
+ * in an FDS line by `(dx, dy)` metres.
+ */
+export function offsetFdsLineXY(line, dx, dy) {
+    if (!line || (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6)) return line
+    let out = line
+
+    // Shift XB=x1,x2,y1,y2,z1,z2
+    out = out.replace(
+        /XB=\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)/gi,
+        (_, x1, x2, y1, y2, z1, z2) => {
+            const nx1 = Number(( parseFloat(x1) + dx ).toFixed(3))
+            const nx2 = Number(( parseFloat(x2) + dx ).toFixed(3))
+            const ny1 = Number(( parseFloat(y1) + dy ).toFixed(3))
+            const ny2 = Number(( parseFloat(y2) + dy ).toFixed(3))
+            return `XB=${nx1},${nx2},${ny1},${ny2},${z1},${z2}`
+        }
+    )
+
+    // Shift XYZ=x,y,z
+    out = out.replace(
+        /XYZ=\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)/gi,
+        (_, x, y, z) => {
+            const nx = Number(( parseFloat(x) + dx ).toFixed(3))
+            const ny = Number(( parseFloat(y) + dy ).toFixed(3))
+            return `XYZ=${nx},${ny},${z}`
+        }
+    )
+
+    // Shift PBX=x
+    out = out.replace(
+        /PBX=\s*([-\d.]+)/gi,
+        (_, x) => `PBX=${Number(( parseFloat(x) + dx ).toFixed(3))}`
+    )
+
+    // Shift PBY=y
+    out = out.replace(
+        /PBY=\s*([-\d.]+)/gi,
+        (_, y) => `PBY=${Number(( parseFloat(y) + dy ).toFixed(3))}`
+    )
+
+    return out
+}
+
+/**
+ * Generate inter-floor slab `&OBST` and `floorOpening` `&HOLE` lines for upper floors
+ * (`floor_number > 0` or `z_level > baseZ`).
+ */
+export function generateInterFloorSlabLines(floorElementsInBasePx, floor, globalMinX, globalMaxY, basePxPerM, slabThickness = 0.1) {
+    const lines = []
+    const zLevel = Number(floor.z_level) || 0
+    const zBottom = Number((zLevel - slabThickness).toFixed(3))
+    const zTop = Number(zLevel.toFixed(3))
+
+    // Use meshes or walls on this floor to determine the floor slab footprint
+    const meshOrWallEls = floorElementsInBasePx.filter(
+        (el) => el.comments === 'mesh' || el.comments === 'obstruction'
+    )
+    if (meshOrWallEls.length === 0) return lines
+
+    const xs = []
+    const ys = []
+    for (const el of meshOrWallEls) {
+        for (const p of el.points || []) {
+            xs.push((p.x - globalMinX) / basePxPerM)
+            ys.push((globalMaxY - p.y) / basePxPerM)
+        }
+    }
+    if (xs.length === 0 || ys.length === 0) return lines
+
+    const x1 = Number((Math.round((Math.min(...xs)) / 0.1) * 0.1).toFixed(2))
+    const x2 = Number((Math.round((Math.max(...xs)) / 0.1) * 0.1).toFixed(2))
+    const y1 = Number((Math.round((Math.min(...ys)) / 0.1) * 0.1).toFixed(2))
+    const y2 = Number((Math.round((Math.max(...ys)) / 0.1) * 0.1).toFixed(2))
+
+    if (x2 > x1 && y2 > y1) {
+        const floorLabel = (floor.name || `Floor_${floor.floor_number}`).replace(/'/g, '')
+        lines.push(
+            `&OBST ID='${floorLabel} Slab', XB=${x1},${x2},${y1},${y2},${zBottom},${zTop}, SURF_ID='Plasterboard', RGB=200,200,205, TRANSPARENCY=0.35/`
+        )
+    }
+
+    // Punch holes for any floorOpening or stairMesh rects
+    const openingEls = floorElementsInBasePx.filter(
+        (el) => el.comments === 'floorOpening' || el.comments === 'stairMesh'
+    )
+    openingEls.forEach((el, idx) => {
+        const oxs = (el.points || []).map((p) => (p.x - globalMinX) / basePxPerM)
+        const oys = (el.points || []).map((p) => (globalMaxY - p.y) / basePxPerM)
+        if (oxs.length >= 2 && oys.length >= 2) {
+            const hx1 = Number((Math.round((Math.min(...oxs)) / 0.1) * 0.1).toFixed(2))
+            const hx2 = Number((Math.round((Math.max(...oxs)) / 0.1) * 0.1).toFixed(2))
+            const hy1 = Number((Math.round((Math.min(...oys)) / 0.1) * 0.1).toFixed(2))
+            const hy2 = Number((Math.round((Math.max(...oys)) / 0.1) * 0.1).toFixed(2))
+            const hz1 = Number((zBottom - 0.05).toFixed(3))
+            const hz2 = Number((zTop + 0.05).toFixed(3))
+            lines.push(
+                `&HOLE ID='Floor Opening ${idx + 1}', XB=${hx1},${hx2},${hy1},${hy2},${hz1},${hz2}/`
+            )
+        }
+    })
+
+    return lines
+}
+
+/**
+ * Combine multiple per-floor FDS outputs into a single valid multi-floor FDS input file.
+ * Deduplicates singleton namelists (&HEAD, &TIME, &DUMP, &COMB, &MATL, Plasterboard &SURF,
+ * &REAC, &TAIL), prefixes floor-specific IDs to avoid collisions, applies each floor's
+ * global (dx, dy) offset, and inserts inter-floor slab &OBST / &HOLE lines.
+ */
+export function combineMultiFloorFds(floorRuns) {
+    if (!Array.isArray(floorRuns) || floorRuns.length === 0) return ''
+    if (floorRuns.length === 1 && (!floorRuns[0].slabLines || floorRuns[0].slabLines.length === 0)) {
+        return floorRuns[0].fdsText || ''
+    }
+
+    const combinedLines = []
+    const seenBlocks = new Set()
+
+    // Split FDS text into logical namelist records (handling multi-line &SURF / &MATL / &REAC)
+    const splitNamelists = (text) => {
+        const records = []
+        const rawLines = (text || '').split(/\r?\n/)
+        let current = []
+        for (const raw of rawLines) {
+            const trimmed = raw.trim()
+            if (!trimmed) continue
+            if (trimmed.startsWith('&') && current.length > 0) {
+                records.push(current.join('\n'))
+                current = [raw]
+            } else {
+                current.push(raw)
+                if (trimmed.endsWith('/')) {
+                    records.push(current.join('\n'))
+                    current = []
+                }
+            }
+        }
+        if (current.length > 0) records.push(current.join('\n'))
+        return records
+    }
+
+    floorRuns.forEach((run, runIdx) => {
+        const { floor, fdsText, dx = 0, dy = 0, slabLines = [] } = run
+        const floorPrefix = `F${floor?.floor_number ?? run.floorNumber ?? runIdx}_`
+        const records = splitNamelists(fdsText)
+
+        for (const rec of records) {
+            const upper = rec.trim().toUpperCase()
+            if (upper.startsWith('&TAIL')) continue
+
+            const isSingleton =
+                upper.startsWith('&HEAD') ||
+                upper.startsWith('&TIME') ||
+                upper.startsWith('&DUMP') ||
+                upper.startsWith('&COMB') ||
+                upper.startsWith('&MATL') ||
+                upper.startsWith('&REAC') ||
+                (upper.startsWith('&SURF') && upper.includes("ID='PLASTERBOARD'")) ||
+                (upper.startsWith('&SURF') && upper.includes("ID='FIRE'")) ||
+                upper.startsWith('&RAMP') ||
+                upper.startsWith('&PROP')
+
+            if (isSingleton) {
+                const key = upper.replace(/\s+/g, ' ')
+                if (seenBlocks.has(key)) continue
+                seenBlocks.add(key)
+                combinedLines.push(rec)
+                continue
+            }
+
+            // Offset XY coordinates to global world space
+            let shifted = offsetFdsLineXY(rec, dx, dy)
+
+            // Prefix Mesh IDs and Obstruction IDs when multiple floors exist so they are distinct
+            if (floorRuns.length > 1) {
+                if (upper.startsWith('&MESH')) {
+                    shifted = shifted.replace(/ID='([^']+)'/i, `ID='${floorPrefix}$1'`)
+                }
+            }
+
+            combinedLines.push(shifted)
+        }
+
+        for (const slabLine of slabLines) {
+            combinedLines.push(slabLine)
+        }
+    })
+
+    combinedLines.push('&TAIL/')
+    return combinedLines.join('\n')
+}

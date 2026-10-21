@@ -1,18 +1,20 @@
 import { get, set, del } from 'idb-keyval'
 
 const PDF_KEY = 'project-pdf'
+const floorKey = (floorNumber) =>
+    floorNumber == null || floorNumber === 0 ? PDF_KEY : `${PDF_KEY}-floor-${floorNumber}`
 
-export async function savePdfToIndexedDB(arrayBuffer) {
+export async function savePdfToIndexedDB(arrayBuffer, floorNumber = 0) {
     try {
-        await set(PDF_KEY, arrayBuffer)
+        await set(floorKey(floorNumber), arrayBuffer)
     } catch (err) {
         console.warn('Failed to save PDF to IndexedDB:', err)
     }
 }
 
-export async function loadPdfFromIndexedDB() {
+export async function loadPdfFromIndexedDB(floorNumber = 0) {
     try {
-        return await get(PDF_KEY) || null
+        return await get(floorKey(floorNumber)) || null
     } catch (err) {
         console.warn('Failed to load PDF from IndexedDB:', err)
         return null
