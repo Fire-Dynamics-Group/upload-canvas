@@ -119,7 +119,7 @@ test.describe('Selection disambiguation', () => {
         expect(selected!.comments).toBe('door')
         expect(selected!.id).toBe(7002)
 
-        // Escape while the click is held — highlight is hold-to-target.
+        // Escape deletes the highlighted door.
         await page.keyboard.press('Escape')
         await page.waitForTimeout(150)
         await page.mouse.up()

@@ -12,9 +12,9 @@ const FIXTURE = path.join(
 test.use({ viewport: { width: 1440, height: 900 } })
 
 /**
- * Highlight is hold-to-target: mouse-up drops it (vertices must not follow).
- * Escape while the button is held removes that wall.
- * These tests fail if click-to-select (highlight after release) comes back.
+ * Click keeps the highlight so Escape can delete after mouse-up.
+ * Vertices must not follow the cursor after release (nudge is hold-only).
+ * Hold + Escape still deletes.
  */
 async function bootstrapSitePlan(page: import('@playwright/test').Page) {
     await page.addInitScript(() => localStorage.setItem('upload-canvas-username', 'Canvas test'))
@@ -107,7 +107,7 @@ async function seedWall(page: import('@playwright/test').Page, id: number, x: nu
     }, { id, x })
 }
 
-test('releasing the click drops the highlight so the vertex does not follow the mouse', async ({ page }) => {
+test('releasing the click keeps the highlight but the vertex does not follow the mouse', async ({ page }) => {
     const drawing = await bootstrapSitePlan(page)
     await seedWall(page, 9001, 400)
 
@@ -123,16 +123,16 @@ test('releasing the click drops the highlight so the vertex does not follow the 
     await page.screenshot({ path: `${SHOT_DIR}/01-obstruction-highlighted.png` })
 
     await page.mouse.up()
-    await expect.poll(async () => (await storeState(page)).selectedId).toBeNull()
+    await expect.poll(async () => (await storeState(page)).selectedId).toBe(9001)
 
     const afterMove = canvasClick(box, zoom, 520, 300)
     await page.mouse.move(afterMove.x, afterMove.y, { steps: 8 })
     const after = await storeState(page)
-    expect(after.selectedId).toBeNull()
+    expect(after.selectedId).toBe(9001)
     expect(after.points).toEqual([{ id: 9001, x0: 400, y0: 200, x1: 400, y1: 400 }])
 })
 
-test('Escape after mouse-up does not delete — that was the broken click-to-select path', async ({ page }) => {
+test('Escape after mouse-up deletes the selected obstruction', async ({ page }) => {
     const drawing = await bootstrapSitePlan(page)
     await seedWall(page, 9001, 400)
 
@@ -145,12 +145,12 @@ test('Escape after mouse-up does not delete — that was the broken click-to-sel
     await page.mouse.down()
     await expect.poll(async () => (await storeState(page)).selectedId).toBe(9001)
     await page.mouse.up()
-    await expect.poll(async () => (await storeState(page)).selectedId).toBeNull()
+    await expect.poll(async () => (await storeState(page)).selectedId).toBe(9001)
 
     await page.keyboard.press('Escape')
     const after = await storeState(page)
     expect(after.selectedId).toBeNull()
-    expect(after.points.map((p) => p.id)).toEqual([9001])
+    expect(after.points.map((p) => p.id)).toEqual([])
 })
 
 test('Escape while holding the click deletes the highlighted obstruction', async ({ page }) => {

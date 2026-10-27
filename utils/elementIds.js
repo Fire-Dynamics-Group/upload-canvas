@@ -69,8 +69,9 @@ function selectionId(el) {
 }
 
 /**
- * Hold-click highlight + Escape deletes that wall. Pointer-up drops the
- * highlight; Escape after release must not delete. The key handler reads
+ * Click (or hold) highlights a wall; Escape/Delete/Backspace removes it.
+ * Pointer-up keeps the highlight so Escape still works after a normal click.
+ * Vertex dragging is gated separately on pointerHeld. The key handler reads
  * selection from a ref so Escape works before React rebinds the listener.
  * Backspace/Delete still yield when a text field is focused; Escape does not.
  */
@@ -93,10 +94,9 @@ export function canvasKeyAction({
         ? selectedElement
         : holdTarget
     const hasSelection = !!(selected && selected.element)
-    // pointercancel (Escape while captured) clears pointerHeld; holdTarget
-    // is the wall from this press and must still delete.
-    const holding = pointerHeld || !!(holdTarget && holdTarget.element)
-    if (isElementDeleteKey(key) && hasSelection && holding) {
+    // pointercancel (Escape while captured) can clear selectedElement before
+    // keydown; holdTarget is the wall from this press and must still delete.
+    if (isElementDeleteKey(key) && hasSelection) {
         if (typing && (key === 'Backspace' || key === 'Delete')) {
             return { type: 'none' }
         }

@@ -8,9 +8,10 @@ import {
 
 const selected = { element: { id: 3, comments: 'obstruction' }, pointerDown: { x: 0, y: 0 } }
 
-describe('hold-to-target highlight (must fail if click-to-select comes back)', () => {
-    it('clears selection on pointer-up so the vertex cannot follow the mouse', () => {
-        expect(selectionAfterPointerUp()).toBeNull()
+describe('click-to-select highlight; vertex follow stays hold-only', () => {
+    it('keeps selection on pointer-up so Escape can delete after a normal click', () => {
+        expect(selectionAfterPointerUp(selected)).toBe(selected)
+        expect(selectionAfterPointerUp(null)).toBeNull()
     })
 
     it('does not drag a vertex after the button is released', () => {
@@ -19,9 +20,9 @@ describe('hold-to-target highlight (must fail if click-to-select comes back)', (
         expect(shouldNudgeHeldVertex({ pointerHeld: true, buttons: 1 })).toBe(true)
     })
 
-    it('deletes only while the click is held', () => {
+    it('deletes the highlighted wall after mouse-up', () => {
         expect(canDeleteHeldSelection({ selectedElement: selected, pointerHeld: true })).toBe(true)
-        expect(canDeleteHeldSelection({ selectedElement: selected, pointerHeld: false })).toBe(false)
+        expect(canDeleteHeldSelection({ selectedElement: selected, pointerHeld: false })).toBe(true)
         expect(canDeleteHeldSelection({ selectedElement: null, pointerHeld: true })).toBe(false)
     })
 

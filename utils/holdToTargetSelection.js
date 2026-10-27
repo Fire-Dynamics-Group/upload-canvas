@@ -1,12 +1,11 @@
 /**
- * Highlight is hold-to-target. These helpers exist so a regression that
- * leaves the wall selected after mouse-up fails in unit tests, not in the
- * user's hand.
+ * Click keeps the highlight so Escape/Delete can remove the wall after
+ * mouse-up. Vertex follow is gated on pointerHeld, not on selection.
  */
 
-/** Pointer-up always drops the highlight. Never persist click-to-select. */
-export function selectionAfterPointerUp() {
-    return null
+/** Pointer-up keeps the current highlight. Pass null only when the wall is gone. */
+export function selectionAfterPointerUp(current = null) {
+    return current ?? null
 }
 
 /** Vertex follow / guide-line nudge only while the button is still down. */
@@ -22,12 +21,12 @@ export function shouldDropHoldOnPointerEvent(type) {
     return type === 'pointerup'
 }
 
-/** Escape/Delete the wall from this hold, even if pointercancel cleared pointerHeld. */
+/** Escape/Delete the highlighted wall, including after mouse-up or pointercancel. */
 export function canDeleteHeldSelection({
     selectedElement = null,
     holdTarget = null,
     pointerHeld = false,
 } = {}) {
     const target = (selectedElement && selectedElement.element) ? selectedElement : holdTarget
-    return Boolean(target && target.element && (pointerHeld || holdTarget))
+    return Boolean(target && target.element)
 }

@@ -558,18 +558,15 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             setIsShiftPressed(false)
         }
         window.addEventListener('blur', clearModifiers)
-        // If pointerup misses the canvas, the highlight must still drop.
+        // If pointerup misses the canvas, stop vertex-follow. Keep the
+        // highlight so Escape still deletes after a normal click.
         // Do not treat pointercancel as mouse-up: Escape while captured fires
         // cancel, and that used to wipe the hold before delete ran.
         const dropStuckHighlight = (event) => {
             if (!shouldDropHoldOnPointerEvent(event.type)) return
             if (event.button != null && event.button !== 0) return
             pointerHeldRef.current = false
-            if (!selectedElementRef.current && !holdTargetRef.current) return
-            assignSelection(selectionAfterPointerUp())
             setGuideLine(null)
-            setCandidateCycleState(null)
-            setSnapGuides([])
         }
         window.addEventListener('pointerup', dropStuckHighlight)
 
@@ -707,8 +704,8 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                     buttons: event.buttons,
                 })) {
                     // Vertex nudge only while the button is held. After mouse-up
-                    // the highlight is cleared; if it weren't, this still must
-                    // not drag the wall around under the cursor.
+                    // the highlight stays so Escape can delete; this must not
+                    // drag the wall around under the cursor.
                     setGuideLine(raw)
                     setSnapGuides([])
                 } else {
@@ -818,7 +815,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 
                 // TODO: overule mouse move if one of wasd are pressed 
                 let startingPointPosition = selectedElement["pointerDown"]
-                if (guideLine != null) {
+                if (guideLine != null && pointerHeldRef.current) {
                     let current = guideLine
                     // bug: top right and bottom left corners change whilst mouse is close to corner but not after that??
                     // below get 4 corners of rect
@@ -2306,7 +2303,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             // Escape-while-held already removed this wall. Don't keep mutating it.
             const live = useStore.getState().elements || []
             if (!el || !live.some((item) => elementIsHighlighted(item, el))) {
-                assignSelection(selectionAfterPointerUp())
+                assignSelection(selectionAfterPointerUp(null))
                 setCandidateCycleState(null)
                 setSnapGuides([])
                 setXCounter(0)
@@ -2353,9 +2350,9 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 }
                 changeElement(el)
             }
-            // Highlight is hold-to-target, not click-to-select. Releasing the
-            // button must drop it so the vertex does not follow the cursor.
-            assignSelection(selectionAfterPointerUp())
+            // Keep the highlight after mouse-up so Escape/Delete still work.
+            // Vertex follow is gated on pointerHeld, already false here.
+            assignSelection(selectionAfterPointerUp(held))
             setCandidateCycleState(null)
             setSnapGuides([])
             setXCounter(0)
