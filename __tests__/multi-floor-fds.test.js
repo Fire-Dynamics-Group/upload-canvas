@@ -444,8 +444,10 @@ describe('Multi-floor FDS state, coordinate alignment, persistence, and FDS comb
     expect(useStore.getState().elements).toHaveLength(1)
     expect(useStore.getState().elements[0].id).toBe(201)
 
-    // Level 1 starts with a blank drafting sheet banner and reuse button
+    // Level 1 starts with a blank drafting sheet banner: upload this floor's
+    // PDF (then Scale if it isn't 1:1 with Ground) or reuse Ground's PDF.
     expect(screen.getByTestId('drafting-sheet-banner')).toBeTruthy()
+    expect(screen.getByTestId('banner-upload-floor-pdf-button')).toBeTruthy()
     const reuseBtn = screen.getByTestId('banner-reuse-ground-pdf-button')
     expect(reuseBtn).toBeTruthy()
     act(() => {

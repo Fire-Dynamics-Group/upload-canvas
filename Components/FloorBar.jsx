@@ -199,6 +199,15 @@ export default function FloorBar({ onSwitchFloor, onUploadFloorPdf, onReuseGroun
                 )}
             </div>
 
+            <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf"
+                data-testid="floor-pdf-input"
+                onChange={handlePdfInputChange}
+                className="hidden"
+            />
+
             {/* Indicator banner when active upper floor is on a blank drafting sheet */}
             {activeIdx > 0 && !activeFloor.hasCustomPdf && (
                 <div
@@ -206,19 +215,30 @@ export default function FloorBar({ onSwitchFloor, onUploadFloorPdf, onReuseGroun
                     className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-lg bg-amber-950/95 text-amber-200 border border-amber-600/70 shadow-lg backdrop-blur-sm text-xs"
                 >
                     <span>
-                        📝 <strong>{activeFloor.name}</strong>: Blank sheet (Ghost Floor outline active). Trace over or reuse/upload a PDF.
+                        📝 <strong>{activeFloor.name}</strong>: Blank sheet. Upload this floor's PDF (then Scale if it isn't 1:1 with Ground), reuse Ground's PDF, or trace the Ghost Floor.
                     </span>
-                    {onReuseGroundFloorPdf && (
+                    <span className="flex items-center gap-1.5 shrink-0">
                         <button
                             type="button"
-                            data-testid="banner-reuse-ground-pdf-button"
-                            onClick={() => onReuseGroundFloorPdf(activeIdx)}
-                            className="px-2 py-0.5 rounded bg-amber-800 hover:bg-amber-700 text-white font-medium text-[11px] whitespace-nowrap transition-colors"
-                            title="Reuse Ground Floor PDF background on this level"
+                            data-testid="banner-upload-floor-pdf-button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="px-2 py-0.5 rounded bg-indigo-700 hover:bg-indigo-600 text-white font-medium text-[11px] whitespace-nowrap transition-colors"
+                            title="Upload this level's floor plan PDF, then calibrate Scale if it differs from Ground"
                         >
-                            📋 Use Ground Floor PDF
+                            📄 Upload Floor PDF
                         </button>
-                    )}
+                        {onReuseGroundFloorPdf && (
+                            <button
+                                type="button"
+                                data-testid="banner-reuse-ground-pdf-button"
+                                onClick={() => onReuseGroundFloorPdf(activeIdx)}
+                                className="px-2 py-0.5 rounded bg-amber-800 hover:bg-amber-700 text-white font-medium text-[11px] whitespace-nowrap transition-colors"
+                                title="Reuse Ground Floor PDF background on this level (keeps Ground’s scale)"
+                            >
+                                📋 Use Ground Floor PDF
+                            </button>
+                        )}
+                    </span>
                 </div>
             )}
 
@@ -297,14 +317,6 @@ export default function FloorBar({ onSwitchFloor, onUploadFloorPdf, onReuseGroun
 
                     {/* Upload/Reuse PDF for this floor */}
                     <div className="flex flex-wrap items-center gap-1.5">
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept=".pdf"
-                            data-testid="floor-pdf-input"
-                            onChange={handlePdfInputChange}
-                            className="hidden"
-                        />
                         <button
                             type="button"
                             data-testid="floor-upload-pdf-button"

@@ -366,6 +366,9 @@ export default function Home() {
     if (skipScale) {
       setTool("selection")
       setComment("obstruction")
+    } else {
+      setTool("scale")
+      setComment("")
     }
   }
 
@@ -498,10 +501,13 @@ export default function Home() {
     const targetFloor = synced[floorIndex] || synced[st.activeFloorIndex]
     const floorNum = targetFloor?.floor_number ?? floorIndex ?? 0
 
-    // Render onto canvas; keep current tool if scale is already calibrated on this floor
-    const hasScale = Boolean(targetFloor?.pixels_per_mesh || st.pixelsPerMesh)
-    await renderPdf(URL.createObjectURL(file), hasScale, floorNum)
+    // Dedicated PDF: do not keep the other floor's scale. Run Scale so this
+    // drawing can be calibrated if it isn't 1:1 with Ground. Reuse-ground keeps scale.
+    useStore.getState().setPixelsPerMesh(1)
+    await renderPdf(URL.createObjectURL(file), false, floorNum)
     useStore.getState().updateFloorMeta(floorIndex, { hasCustomPdf: true, pdfSource: 'custom' })
+    useStore.getState().setTool('scale')
+    useStore.getState().setComment('')
 
     if (isDbBacked(st.currentMode)) {
       savePdfToIndexedDB(arrayBuffer, floorNum)
