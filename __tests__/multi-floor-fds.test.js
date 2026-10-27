@@ -19,6 +19,31 @@ import path from 'path'
 
 const RAILWAY_DEV_API = 'https://backendfornextapp-dev.up.railway.app'
 const FDS_OUTPUT_DIR = '/cursor/stores/bc-ba8cf0f9-ea7f-5db3-ae81-ac8a639e9b4d/media/multi-floor-fds-output'
+const ALIGN_DIR = '/cursor/stores/bc-ba8cf0f9-ea7f-5db3-ae81-ac8a639e9b4d/media/multi-floor-mesh-align'
+
+function parseMeshTable(fdsText) {
+  return (fdsText || '')
+    .split(/\r?\n/)
+    .filter((l) => l.trim().toUpperCase().startsWith('&MESH'))
+    .map((line) => {
+      const id = line.match(/ID='([^']+)'/i)?.[1]
+      const ijk = line.match(/IJK=\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)/i)
+      const xb = (line.match(/XB=\s*([^/]+)/i)?.[1] || '').split(',').map(Number)
+      return {
+        id,
+        i: ijk ? Number(ijk[1]) : undefined,
+        j: ijk ? Number(ijk[2]) : undefined,
+        k: ijk ? Number(ijk[3]) : undefined,
+        xmin: xb[0],
+        xmax: xb[1],
+        ymin: xb[2],
+        ymax: xb[3],
+        zmin: xb[4],
+        zmax: xb[5],
+        line,
+      }
+    })
+}
 
 function meshRect(id, size = 100) {
   return {
@@ -293,8 +318,6 @@ describe('Multi-floor FDS state, coordinate alignment, persistence, and FDS comb
 
     expect(combined).toContain("&MESH ID='F0_Mesh0'")
     expect(combined).toContain("&MESH ID='F1_Mesh0'")
-    // Level 1 mesh shifted by dx=1, dy=1 -> XB=1,9,1,9,3.0,6.0
-    expect(combined).toContain('XB=1,9,1,9,3.0,6.0')
     expect(combined).toContain("ID='Level 1 Slab'")
     expect(combined).toContain("&HOLE ID='Floor Opening 1', XB=3,5,3,5,2.75,3.05/")
     // Only a single &HEAD and &TAIL
@@ -535,5 +558,118 @@ describe('Multi-floor FDS state, coordinate alignment, persistence, and FDS comb
     expect(meshes.length).toBeGreaterThanOrEqual(2)
 
     expect(useStore.getState().fdsCode).toBe(combined)
+  }, 60000)
+
+  it('snaps stacked floor meshes to a shared XY footprint so FDS faces meet', () => {
+    const fdsFloor0 = [
+      "&HEAD CHID='tower'/",
+      "&MESH ID='Mesh0', IJK=10,10,6, XB=0.0,10.0,0.0,10.0,0.0,3.0/",
+      "&OBST ID='Wall', XB=0.0,10.0,0.0,0.2,0.0,3.0, SURF_ID='INERT'/",
+      "&TAIL /",
+    ].join('\n')
+    const fdsFloor1 = [
+      "&HEAD CHID='tower'/",
+      "&MESH ID='Mesh0', IJK=10,10,6, XB=0.0,8.0,0.0,8.0,3.0,6.0/",
+      "&OBST ID='Wall', XB=0.0,8.0,0.0,0.2,3.0,6.0, SURF_ID='INERT'/",
+      "&TAIL /",
+    ].join('\n')
+    const runs = [
+      { floorNumber: 0, floorName: 'Ground Floor', fdsText: fdsFloor0, dx: 0, dy: 0, slabLines: [] },
+      { floorNumber: 1, floorName: 'Level 1', fdsText: fdsFloor1, dx: 1.0, dy: 1.0, slabLines: [] },
+    ]
+
+    const misaligned = combineMultiFloorFds(runs, { alignStackedMeshes: false })
+    const before = parseMeshTable(misaligned)
+    expect(before).toHaveLength(2)
+    expect(before[0].xmin).not.toBeCloseTo(before[1].xmin, 5)
+
+    mkdirSync(ALIGN_DIR, { recursive: true })
+    writeFileSync(path.join(ALIGN_DIR, 'misaligned-before.fds'), misaligned)
+
+    const aligned = combineMultiFloorFds(runs)
+    const meshes = parseMeshTable(aligned)
+    expect(meshes).toHaveLength(2)
+    const f0 = meshes.find((m) => m.id.startsWith('F0_'))
+    const f1 = meshes.find((m) => m.id.startsWith('F1_'))
+    expect(f0.xmin).toBeCloseTo(f1.xmin, 5)
+    expect(f0.xmax).toBeCloseTo(f1.xmax, 5)
+    expect(f0.ymin).toBeCloseTo(f1.ymin, 5)
+    expect(f0.ymax).toBeCloseTo(f1.ymax, 5)
+    expect(f0.i).toBe(f1.i)
+    expect(f0.j).toBe(f1.j)
+    expect(f0.zmax).toBeCloseTo(f1.zmin, 5)
+    expect(aligned.match(/&HEAD\b/g)).toHaveLength(1)
+    expect(aligned.match(/&TAIL\b/g)).toHaveLength(1)
+
+    writeFileSync(path.join(ALIGN_DIR, 'aligned-after.fds'), aligned)
+    const table = [
+      'id\tIJK\tXB',
+      ...meshes.map((m) => `${m.id}\t${m.i},${m.j},${m.k}\t${m.xmin},${m.xmax},${m.ymin},${m.ymax},${m.zmin},${m.zmax}`),
+    ].join('\n')
+    writeFileSync(path.join(ALIGN_DIR, 'mesh-xb-ijk.txt'), `${table}\n`)
+  })
+
+  it('live /fds: stacked meshes share XY even when drawings and origins differ', async () => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', RAILWAY_DEV_API)
+
+    useStore.setState({
+      currentMode: 'fdsGen',
+      viewMode: '2d',
+      pixelsPerMesh: 1,
+      wallHeight: 3,
+      fireFloorZ: 0,
+      originPixels: { x: 0, y: 0 },
+      totalFloors: 2,
+      isSprinklered: false,
+      includeSensors: false,
+      simEndTime: 30,
+      doorLeakagesEnabled: false,
+    })
+
+    useStore.getState().addElement({
+      id: 1,
+      type: 'rect',
+      comments: 'mesh',
+      points: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 100 },
+        { x: 0, y: 100 },
+      ],
+    })
+    useStore.getState().addElement(wallLine(2, 100))
+    useStore.getState().addFloor({ name: 'Level 1' })
+    useStore.getState().setOriginPixels({ x: 15, y: 10 })
+    useStore.getState().addElement({
+      id: 1,
+      type: 'rect',
+      comments: 'mesh',
+      points: [
+        { x: 25, y: 20 },
+        { x: 95, y: 20 },
+        { x: 95, y: 90 },
+        { x: 25, y: 90 },
+      ],
+    })
+    useStore.getState().addElement(wallLine(2, 70))
+    useStore.getState().addElement(openingRect(3))
+
+    const combined = await generateFdsCode({ download: false })
+    const meshes = parseMeshTable(combined)
+    const f0 = meshes.find((m) => m.id.startsWith('F0_'))
+    const f1 = meshes.find((m) => m.id.startsWith('F1_'))
+    expect(f0).toBeTruthy()
+    expect(f1).toBeTruthy()
+    expect(f0.xmin).toBeCloseTo(f1.xmin, 5)
+    expect(f0.xmax).toBeCloseTo(f1.xmax, 5)
+    expect(f0.ymin).toBeCloseTo(f1.ymin, 5)
+    expect(f0.ymax).toBeCloseTo(f1.ymax, 5)
+    expect(f0.i).toBe(f1.i)
+    expect(f0.j).toBe(f1.j)
+    expect(Math.min(f0.zmin, f1.zmin)).toBeCloseTo(0, 1)
+    expect(Math.max(f0.zmin, f1.zmin)).toBeGreaterThan(2)
+
+    mkdirSync(ALIGN_DIR, { recursive: true })
+    writeFileSync(path.join(ALIGN_DIR, 'aligned-live.fds'), combined)
   }, 60000)
 })

@@ -326,13 +326,167 @@ export function generateInterFloorSlabLines(floorElementsInBasePx, floor, global
     return lines
 }
 
+function localMeshId(id) {
+    return String(id || '').replace(/^F\d+_/, '')
+}
+
+function snapToCell(value, cell) {
+    const c = Number(cell) || 0.1
+    return Number((Math.round(Number(value) / c) * c).toFixed(6))
+}
+
+/**
+ * Expand each floor's mesh drawings to the union footprint of the matching
+ * mesh index on every floor (already mapped into a shared pixel space).
+ * Stacked FDS meshes then share XY so vertical cell faces meet.
+ */
+export function alignMeshElementsAcrossFloors(transformedByFloor) {
+    if (!Array.isArray(transformedByFloor) || transformedByFloor.length < 2) {
+        return transformedByFloor
+    }
+    const isMesh = (el) => el && (el.comments === 'mesh' || el.comments === 'stairMesh')
+    const lists = transformedByFloor.map(({ mappedElements }) =>
+        (mappedElements || []).filter(isMesh)
+    )
+    const maxCount = Math.max(0, ...lists.map((l) => l.length))
+    const footprints = []
+    for (let i = 0; i < maxCount; i++) {
+        const xs = []
+        const ys = []
+        for (const list of lists) {
+            const el = list[i]
+            if (!el) continue
+            for (const p of el.points || []) {
+                if (p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y))) {
+                    xs.push(Number(p.x))
+                    ys.push(Number(p.y))
+                }
+            }
+        }
+        if (xs.length === 0) continue
+        footprints[i] = {
+            minX: Math.min(...xs),
+            maxX: Math.max(...xs),
+            minY: Math.min(...ys),
+            maxY: Math.max(...ys),
+        }
+    }
+    return transformedByFloor.map(({ floor, mappedElements }) => {
+        let meshIdx = 0
+        const next = (mappedElements || []).map((el) => {
+            if (!isMesh(el)) return el
+            const fp = footprints[meshIdx++]
+            if (!fp) return el
+            return {
+                ...el,
+                points: [
+                    { x: fp.minX, y: fp.minY },
+                    { x: fp.maxX, y: fp.minY },
+                    { x: fp.maxX, y: fp.maxY },
+                    { x: fp.minX, y: fp.maxY },
+                ],
+            }
+        })
+        return { floor, mappedElements: next }
+    })
+}
+
+/**
+ * Snap stacked MESH namelists that share a local id (Mesh0, …) onto one XY
+ * footprint and matching I,J so FDS/PyroSim vertical interfaces line up.
+ * Leaves Z and K alone. Same-floor abutting meshes (different local ids) are
+ * untouched — those still go through backend align_meshes().
+ */
+export function alignStackedMeshesInFds(fdsText) {
+    if (!fdsText || typeof fdsText !== 'string') return fdsText
+    const meshRe = /&MESH\b[\s\S]*?\//gi
+    const meshes = []
+    let match
+    while ((match = meshRe.exec(fdsText)) !== null) {
+        const rec = match[0]
+        const id = rec.match(/ID='([^']+)'/i)?.[1]
+        const ijk = rec.match(/IJK=\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)/i)
+        const xb = rec.match(
+            /XB=\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)/i
+        )
+        if (!id || !ijk || !xb) continue
+        meshes.push({
+            id,
+            localId: localMeshId(id),
+            i: Number(ijk[1]),
+            j: Number(ijk[2]),
+            k: Number(ijk[3]),
+            xmin: Number(xb[1]),
+            xmax: Number(xb[2]),
+            ymin: Number(xb[3]),
+            ymax: Number(xb[4]),
+            zmin: Number(xb[5]),
+            zmax: Number(xb[6]),
+            index: match.index,
+            length: rec.length,
+            rec,
+        })
+    }
+    if (meshes.length < 2) return fdsText
+
+    const groups = new Map()
+    for (const mesh of meshes) {
+        const key = mesh.localId || mesh.id
+        if (!groups.has(key)) groups.set(key, [])
+        groups.get(key).push(mesh)
+    }
+
+    const replacements = []
+    for (const group of groups.values()) {
+        const zKeys = new Set(group.map((g) => Number(g.zmin.toFixed(4))))
+        if (group.length < 2 || zKeys.size < 2) continue
+
+        const ref = group[0]
+        const dx = Math.abs(ref.xmax - ref.xmin) / Math.max(1, ref.i)
+        const dy = Math.abs(ref.ymax - ref.ymin) / Math.max(1, ref.j)
+        const cell = Math.min(dx || 0.1, dy || 0.1) || 0.1
+
+        let xmin = Math.min(...group.map((g) => Math.min(g.xmin, g.xmax)))
+        let xmax = Math.max(...group.map((g) => Math.max(g.xmin, g.xmax)))
+        let ymin = Math.min(...group.map((g) => Math.min(g.ymin, g.ymax)))
+        let ymax = Math.max(...group.map((g) => Math.max(g.ymin, g.ymax)))
+        xmin = snapToCell(xmin, cell)
+        xmax = snapToCell(xmax, cell)
+        ymin = snapToCell(ymin, cell)
+        ymax = snapToCell(ymax, cell)
+        if (xmax <= xmin) xmax = xmin + cell
+        if (ymax <= ymin) ymax = ymin + cell
+        const i = Math.max(1, Math.round((xmax - xmin) / cell))
+        const j = Math.max(1, Math.round((ymax - ymin) / cell))
+
+        for (const mesh of group) {
+            const next = mesh.rec
+                .replace(/IJK=\s*[-\d.]+,\s*[-\d.]+,\s*[-\d.]+/i, `IJK=${i},${j},${mesh.k}`)
+                .replace(
+                    /XB=\s*[-\d.]+,\s*[-\d.]+,\s*[-\d.]+,\s*[-\d.]+,\s*[-\d.]+,\s*[-\d.]+/i,
+                    `XB=${xmin},${xmax},${ymin},${ymax},${mesh.zmin},${mesh.zmax}`
+                )
+            replacements.push({ index: mesh.index, length: mesh.length, next })
+        }
+    }
+
+    if (replacements.length === 0) return fdsText
+    replacements.sort((a, b) => b.index - a.index)
+    let out = fdsText
+    for (const r of replacements) {
+        out = out.slice(0, r.index) + r.next + out.slice(r.index + r.length)
+    }
+    return out
+}
+
 /**
  * Combine multiple per-floor FDS outputs into a single valid multi-floor FDS input file.
  * Deduplicates singleton namelists (&HEAD, &TIME, &DUMP, &COMB, &MATL, Plasterboard &SURF,
  * &REAC, &TAIL), prefixes floor-specific IDs to avoid collisions, applies each floor's
- * global (dx, dy) offset, and inserts inter-floor slab &OBST / &HOLE lines.
+ * global (dx, dy) offset, inserts inter-floor slab &OBST / &HOLE lines, then snaps
+ * stacked meshes onto a shared XY footprint (FDS/PyroSim interface rule).
  */
-export function combineMultiFloorFds(floorRuns) {
+export function combineMultiFloorFds(floorRuns, options = {}) {
     if (!Array.isArray(floorRuns) || floorRuns.length === 0) return ''
     if (floorRuns.length === 1 && (!floorRuns[0].slabLines || floorRuns[0].slabLines.length === 0)) {
         return floorRuns[0].fdsText || ''
@@ -412,5 +566,7 @@ export function combineMultiFloorFds(floorRuns) {
     })
 
     combinedLines.push('&TAIL/')
-    return combinedLines.join('\n')
+    const combined = combinedLines.join('\n')
+    if (options.alignStackedMeshes === false) return combined
+    return alignStackedMeshesInFds(combined)
 }
