@@ -3,6 +3,7 @@ import {
     selectionAfterPointerUp,
     shouldNudgeHeldVertex,
     canDeleteHeldSelection,
+    shouldDropHoldOnPointerEvent,
 } from '../utils/holdToTargetSelection'
 
 const selected = { element: { id: 3, comments: 'obstruction' }, pointerDown: { x: 0, y: 0 } }
@@ -22,5 +23,15 @@ describe('hold-to-target highlight (must fail if click-to-select comes back)', (
         expect(canDeleteHeldSelection({ selectedElement: selected, pointerHeld: true })).toBe(true)
         expect(canDeleteHeldSelection({ selectedElement: selected, pointerHeld: false })).toBe(false)
         expect(canDeleteHeldSelection({ selectedElement: null, pointerHeld: true })).toBe(false)
+    })
+
+    it('still deletes after pointercancel — Escape while held is not mouse-up', () => {
+        expect(shouldDropHoldOnPointerEvent('pointercancel')).toBe(false)
+        expect(shouldDropHoldOnPointerEvent('pointerup')).toBe(true)
+        expect(canDeleteHeldSelection({
+            selectedElement: null,
+            holdTarget: selected,
+            pointerHeld: false,
+        })).toBe(true)
     })
 })

@@ -13,7 +13,7 @@ import { computeTimeEqLabels } from '@/utils/timeEqLabels'
 import { boundaryDistanceOutward, gridlineStations, buildRequiredBoundaryLine, projectSpanOntoWall, baysCoveredBySpan, polylineLength, splitIntoElevations, pointToPolylineDistance } from '@/utils/efsViewFactor'
 import { getSyncedFloors, transformElementBetweenFloors, mapPointBetweenFloors } from '@/utils/multiFloorFds'
 import { canvasKeyAction, shouldCommitSelectionNudge, nextNumericElementId, elementIsHighlighted } from '@/utils/elementIds'
-import { selectionAfterPointerUp, shouldNudgeHeldVertex } from '@/utils/holdToTargetSelection'
+import { selectionAfterPointerUp, shouldNudgeHeldVertex, shouldDropHoldOnPointerEvent } from '@/utils/holdToTargetSelection'
 import { get } from 'http'
 
 /**
@@ -371,8 +371,10 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
     const selectedElementRef = useRef(selectedElement)
     selectedElementRef.current = selectedElement
     const pointerHeldRef = useRef(false)
+    const holdTargetRef = useRef(null)
     const assignSelection = (payload) => {
         selectedElementRef.current = payload
+        holdTargetRef.current = payload
         setSelectedElement(payload)
     }
 
@@ -469,6 +471,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 currentRect,
                 typing,
                 pointerHeld: pointerHeldRef.current,
+                holdTarget: holdTargetRef.current,
             })
             if (action.type === 'restartScale') {
                 if (!showPopup) {
@@ -556,24 +559,25 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
         }
         window.addEventListener('blur', clearModifiers)
         // If pointerup misses the canvas, the highlight must still drop.
+        // Do not treat pointercancel as mouse-up: Escape while captured fires
+        // cancel, and that used to wipe the hold before delete ran.
         const dropStuckHighlight = (event) => {
+            if (!shouldDropHoldOnPointerEvent(event.type)) return
             if (event.button != null && event.button !== 0) return
             pointerHeldRef.current = false
-            if (!selectedElementRef.current) return
+            if (!selectedElementRef.current && !holdTargetRef.current) return
             assignSelection(selectionAfterPointerUp())
             setGuideLine(null)
             setCandidateCycleState(null)
             setSnapGuides([])
         }
         window.addEventListener('pointerup', dropStuckHighlight)
-        window.addEventListener('pointercancel', dropStuckHighlight)
 
         return () => {
             window.removeEventListener("keydown", handleKeyPress, true)
             window.removeEventListener("keyup", handleCtrlRelease)
             window.removeEventListener('blur', clearModifiers)
             window.removeEventListener('pointerup', dropStuckHighlight)
-            window.removeEventListener('pointercancel', dropStuckHighlight)
         }
     }, [elements, currentPoly, currentRect, tool, setTool, comment, addElement, selectedElement, currentId, removeElement, returnElementObject, setSelectedElement, undo, redo, showPopup])
 
@@ -2280,8 +2284,17 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
         }
         return [rectPoints[0], rectPoints[2]]
     }
+    function handlePointerCancel() {
+        // Escape-while-held releases pointer capture. Keep holdTargetRef so
+        // the keydown can still delete; do not treat this as mouse-up.
+        pointerHeldRef.current = false
+    }
     function handlePointerUp(event){
         if (currentMode === 'efs' && tool === 'efsBay') return
+        if (!shouldDropHoldOnPointerEvent(event.type || 'pointerup')) {
+            handlePointerCancel()
+            return
+        }
         if (event.button !== 0) return
         pointerHeldRef.current = false
         setGuideLine(null)
@@ -2372,7 +2385,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
       className={`bg-transparent top-0 left-0 absolute z-10 outline-none ${selectedElement ? 'select-none' : ''}`}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
       onContextMenu={event => { if (tool === 'scale') event.preventDefault() }}
       />
       {tool === 'scale' && !showPopup && scalePoints.length < 2 && guideLine && (

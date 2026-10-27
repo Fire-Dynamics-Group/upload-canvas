@@ -135,6 +135,16 @@ describe('canvasKeyAction: Escape on a highlighted obstruction', () => {
         })).toEqual({ type: 'none' })
     })
 
+    it('still deletes when Escape fires pointercancel and clears pointerHeld', () => {
+        expect(canvasKeyAction({
+            key: 'Escape',
+            tool: 'selection',
+            selectedElement: null,
+            pointerHeld: false,
+            holdTarget: selected,
+        })).toEqual({ type: 'deleteSelection', element: selected.element, id: 3 })
+    })
+
     it('still deletes on Escape when a FloorBar input kept focus', () => {
         expect(canvasKeyAction({
             key: 'Escape',

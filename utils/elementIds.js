@@ -83,20 +83,27 @@ export function canvasKeyAction({
     currentRect = [],
     typing = false,
     pointerHeld = false,
+    holdTarget = null,
 } = {}) {
     if (key === 'Escape' && tool === 'scale' && !showScalePopup) {
         return { type: 'restartScale' }
     }
 
-    const hasSelection = !!(selectedElement && selectedElement.element)
-    if (isElementDeleteKey(key) && hasSelection && pointerHeld) {
+    const selected = (selectedElement && selectedElement.element)
+        ? selectedElement
+        : holdTarget
+    const hasSelection = !!(selected && selected.element)
+    // pointercancel (Escape while captured) clears pointerHeld; holdTarget
+    // is the wall from this press and must still delete.
+    const holding = pointerHeld || !!(holdTarget && holdTarget.element)
+    if (isElementDeleteKey(key) && hasSelection && holding) {
         if (typing && (key === 'Backspace' || key === 'Delete')) {
             return { type: 'none' }
         }
         return {
             type: 'deleteSelection',
-            element: selectedElement.element,
-            id: selectionId(selectedElement.element),
+            element: selected.element,
+            id: selectionId(selected.element),
         }
     }
 

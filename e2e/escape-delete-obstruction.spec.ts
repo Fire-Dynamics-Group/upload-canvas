@@ -211,3 +211,39 @@ test('Escape while holding the click deletes the highlighted obstruction', async
 
     expect(errors.filter((e) => !/Download the React DevTools/i.test(e))).toEqual([])
 })
+
+test('Escape still deletes after the browser fires pointercancel (hold + Escape)', async ({ page }) => {
+    const drawing = await bootstrapSitePlan(page)
+    await page.evaluate(() => {
+        const s = (window as any).__useStore || (window as any).__store
+        s.setState({
+            pixelsPerMesh: 33.6,
+            currentMode: 'fdsGen',
+            elements: [{
+                id: 8002,
+                type: 'polyline',
+                comments: 'obstruction',
+                points: [{ x: 400, y: 200 }, { x: 400, y: 400 }],
+            }],
+            selectedElement: null,
+        })
+        s.getState().setTool('selection')
+    })
+
+    const zoom = await drawing.evaluate((el: HTMLCanvasElement) => el.getBoundingClientRect().width / el.width)
+    const box = await drawing.boundingBox()
+    if (!box) throw new Error('drawing canvas has no box')
+
+    const mid = canvasClick(box, zoom, 400, 300)
+    await page.mouse.move(mid.x, mid.y)
+    await page.mouse.down()
+    await expect.poll(async () => (await storeState(page)).selectedId).toBe(8002)
+
+    // Real browsers fire this when Escape is pressed during pointer capture.
+    await drawing.dispatchEvent('pointercancel', { button: 0, buttons: 0 })
+    await page.keyboard.down('Escape')
+    await page.keyboard.up('Escape')
+
+    await expect.poll(async () => (await storeState(page)).points.map((p) => p.id)).toEqual([])
+    await page.mouse.up()
+})

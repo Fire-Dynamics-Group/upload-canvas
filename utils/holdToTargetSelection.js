@@ -14,7 +14,20 @@ export function shouldNudgeHeldVertex({ pointerHeld = false, buttons = 0 } = {})
     return Boolean(pointerHeld && (buttons & 1))
 }
 
-/** Escape/Delete only remove the wall that is currently held. */
-export function canDeleteHeldSelection({ selectedElement = null, pointerHeld = false } = {}) {
-    return Boolean(pointerHeld && selectedElement && selectedElement.element)
+/**
+ * Escape while holding often fires pointercancel (browser releases capture).
+ * That is not mouse-up. Keep the hold target so Escape can still delete.
+ */
+export function shouldDropHoldOnPointerEvent(type) {
+    return type === 'pointerup'
+}
+
+/** Escape/Delete the wall from this hold, even if pointercancel cleared pointerHeld. */
+export function canDeleteHeldSelection({
+    selectedElement = null,
+    holdTarget = null,
+    pointerHeld = false,
+} = {}) {
+    const target = (selectedElement && selectedElement.element) ? selectedElement : holdTarget
+    return Boolean(target && target.element && (pointerHeld || holdTarget))
 }
