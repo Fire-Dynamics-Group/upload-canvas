@@ -13,6 +13,26 @@ const ensureNumber = (v, fallback = 0) => (Number.isFinite(Number(v)) ? Number(v
 const ensureInt = (v, fallback = 0) => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : fallback)
 const ensureDict = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {})
 
+export function quantizePointToGrid(point, pixelsPerMesh) {
+    const step = Number(pixelsPerMesh)
+    const g = Number.isFinite(step) && step > 0 ? step : 1
+    return {
+        x: Math.round(Number(point.x) / g) * g,
+        y: Math.round(Number(point.y) / g) * g,
+    }
+}
+
+function collapseDuplicatePoints(points) {
+    if (!Array.isArray(points) || points.length === 0) return []
+    const out = [points[0]]
+    for (let i = 1; i < points.length; i++) {
+        const prev = out[out.length - 1]
+        const p = points[i]
+        if (p.x !== prev.x || p.y !== prev.y) out.push(p)
+    }
+    return out
+}
+
 /**
  * Sanitize an element into the exact schema expected by FastAPI /fds ElementsData:
  * { id: int, type: str, comments: str, points: [{ x: float, y: float }], zoneName?: str, fsaDistance?: float }
@@ -40,11 +60,19 @@ function sanitizeBackendElement(el, fallbackId = 1) {
     return out
 }
 
-function prepareElementsForFloor(rawElements, pixelsPerMesh, isSprinklered) {
+export function prepareElementsForFloor(rawElements, pixelsPerMesh, isSprinklered) {
     // Filter out floorOpening elements before sending to backend (handled as slab HOLEs)
     const validRaw = (rawElements || [])
         .filter((el) => el && el.comments !== 'floorOpening')
         .map((el, i) => sanitizeBackendElement(el, i + 1))
+        .map((el) => {
+            if (!el) return null
+            const quantized = el.points.map((p) => quantizePointToGrid(p, pixelsPerMesh))
+            const points = el.type === 'point' ? quantized : collapseDuplicatePoints(quantized)
+            if (el.type !== 'point' && points.length < 2) return null
+            if (el.type === 'point' && points.length === 0) return null
+            return { ...el, points }
+        })
         .filter(Boolean)
 
     let elementsToSend = validRaw

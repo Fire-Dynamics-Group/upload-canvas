@@ -228,13 +228,22 @@ export const sendFdsData = async (
       fire_custom_alpha,
       slice_z_height
     } )
-    const response = await authedFetch(`${getApiBase()}/fds`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: bodyContent,
-    });  
+    let response
+    try {
+      response = await authedFetch(`${getApiBase()}/fds`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: bodyContent,
+      });
+    } catch (err) {
+      const msg = `${err?.message || err}`
+      if (/failed to fetch|networkerror|load failed|network error/i.test(msg)) {
+        throw new Error('Failed to generate FDS: the /fds server error never reached the browser (often a 500 on a degenerate wall, with no CORS). Check Railway dev and that walls sit on the mesh grid.')
+      }
+      throw err
+    }
     if (!response.ok) {
       let detail = `Server responded with status ${response.status}`
       try {
