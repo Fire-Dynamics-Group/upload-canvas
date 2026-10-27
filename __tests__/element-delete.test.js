@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import useStore from '../store/useStore'
-import { isElementDeleteKey, elementMatchesSelectionId } from '../utils/elementIds'
+import {
+    isElementDeleteKey,
+    elementMatchesSelectionId,
+    elementIsHighlighted,
+    nextNumericElementId,
+    shouldCommitSelectionNudge,
+    canvasKeyAction,
+} from '../utils/elementIds'
 
 const wall = (id, extra = {}) => ({
     id,
@@ -35,6 +42,22 @@ describe('elementMatchesSelectionId', () => {
         expect(elementMatchesSelectionId(wall(3), 3)).toBe(true)
         expect(elementMatchesSelectionId(wall(3), 4)).toBe(false)
     })
+
+    it('does not treat undefined/NaN as a match for every unindexed wall', () => {
+        expect(elementMatchesSelectionId(wall(NaN), undefined)).toBe(false)
+        expect(elementMatchesSelectionId(wall(NaN), NaN)).toBe(false)
+        expect(elementMatchesSelectionId(wall(3), undefined)).toBe(false)
+    })
+})
+
+describe('nextNumericElementId', () => {
+    it('skips UUID and NaN ids left over from loaded floors', () => {
+        expect(nextNumericElementId([
+            wall('d97fec84-10e1-4f05-a63f-e5fa8b27e448', { element_index: 2 }),
+            wall(NaN),
+        ])).toBe(3)
+        expect(nextNumericElementId([])).toBe(0)
+    })
 })
 
 describe('removeElement deletes a highlighted obstruction', () => {
@@ -61,5 +84,113 @@ describe('removeElement deletes a highlighted obstruction', () => {
         useStore.getState().addElement(wall(uuid, { element_index: 2 }))
         useStore.getState().removeElement(2)
         expect(useStore.getState().elements).toHaveLength(0)
+    })
+
+    it('removes only the held/highlighted NaN-id wall by object identity', () => {
+        const keep = wall(NaN)
+        const drop = wall(NaN)
+        useStore.getState().addElement(keep)
+        useStore.getState().addElement(drop)
+        useStore.getState().removeElement(drop)
+        expect(useStore.getState().elements).toEqual([keep])
+    })
+
+    it('does not wipe every unindexed wall when the delete key is undefined', () => {
+        useStore.getState().addElement(wall(NaN))
+        useStore.getState().addElement(wall(NaN))
+        useStore.getState().removeElement(undefined)
+        expect(useStore.getState().elements).toHaveLength(2)
+    })
+})
+
+describe('shouldCommitSelectionNudge', () => {
+    it('does not rewrite a wall that was only clicked', () => {
+        expect(shouldCommitSelectionNudge(0, 0)).toBe(false)
+    })
+
+    it('commits when WASD actually nudged the vertex', () => {
+        expect(shouldCommitSelectionNudge(10, 0)).toBe(true)
+        expect(shouldCommitSelectionNudge(0, -10)).toBe(true)
+    })
+})
+
+describe('canvasKeyAction: Escape on a highlighted obstruction', () => {
+    const selected = { element: wall(3), pointerDown: { x: 0, y: 0 } }
+
+    it('deletes the wall on Escape while the click is held', () => {
+        expect(canvasKeyAction({
+            key: 'Escape',
+            tool: 'selection',
+            selectedElement: selected,
+            pointerHeld: true,
+        })).toEqual({ type: 'deleteSelection', element: selected.element, id: 3 })
+    })
+
+    it('deletes after mouse-up — click keeps the highlight so Escape still works', () => {
+        expect(canvasKeyAction({
+            key: 'Escape',
+            tool: 'selection',
+            selectedElement: selected,
+            pointerHeld: false,
+        })).toEqual({ type: 'deleteSelection', element: selected.element, id: 3 })
+    })
+
+    it('still deletes when Escape fires pointercancel and clears pointerHeld', () => {
+        expect(canvasKeyAction({
+            key: 'Escape',
+            tool: 'selection',
+            selectedElement: null,
+            pointerHeld: false,
+            holdTarget: selected,
+        })).toEqual({ type: 'deleteSelection', element: selected.element, id: 3 })
+    })
+
+    it('still deletes on Escape when a FloorBar input kept focus', () => {
+        expect(canvasKeyAction({
+            key: 'Escape',
+            tool: 'selection',
+            selectedElement: selected,
+            typing: true,
+            pointerHeld: true,
+        })).toEqual({ type: 'deleteSelection', element: selected.element, id: 3 })
+    })
+
+    it('passes the wall object when live id is NaN so Escape can still remove it', () => {
+        const broken = wall(NaN)
+        const action = canvasKeyAction({
+            key: 'Escape',
+            tool: 'selection',
+            selectedElement: { element: broken, pointerDown: { x: 0, y: 0 } },
+            pointerHeld: true,
+        })
+        expect(action.type).toBe('deleteSelection')
+        expect(action.element).toBe(broken)
+        expect(elementIsHighlighted(broken, action.element)).toBe(true)
+    })
+
+    it('does not steal Backspace from a focused text field', () => {
+        expect(canvasKeyAction({
+            key: 'Backspace',
+            tool: 'selection',
+            selectedElement: selected,
+            typing: true,
+        })).toEqual({ type: 'none' })
+    })
+
+    it('cancels an in-progress obstruction if nothing is selected', () => {
+        expect(canvasKeyAction({
+            key: 'Escape',
+            tool: 'polyline',
+            currentPoly: [{ x: 0, y: 0 }, { x: 10, y: 0 }],
+        })).toEqual({ type: 'cancelPoly' })
+    })
+
+    it('restarts scale calibration instead of deleting', () => {
+        expect(canvasKeyAction({
+            key: 'Escape',
+            tool: 'scale',
+            showScalePopup: false,
+            selectedElement: selected,
+        })).toEqual({ type: 'restartScale' })
     })
 })

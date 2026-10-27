@@ -98,10 +98,6 @@ async function readElementIds(page: import('@playwright/test').Page) {
     )
 }
 
-// Press the mouse at (x, y) but don't release. The app's handlePointerUp
-// always clears selection on release (treats every pointerup as a drag-commit),
-// so to assert selection state we have to keep the press held. Caller must
-// call page.mouse.up() after the assertions.
 async function selectionPointerDown(page: import('@playwright/test').Page, x: number, y: number, alt = false) {
     if (alt) await page.keyboard.down('Alt')
     await page.mouse.move(x, y)
@@ -123,9 +119,7 @@ test.describe('Selection disambiguation', () => {
         expect(selected!.comments).toBe('door')
         expect(selected!.id).toBe(7002)
 
-        // Escape deletes the door, wall remains. Press Escape BEFORE releasing
-        // the mouse — mouse.up clears selection due to handlePointerUp's
-        // drag-commit block.
+        // Escape deletes the highlighted door.
         await page.keyboard.press('Escape')
         await page.waitForTimeout(150)
         await page.mouse.up()
@@ -135,15 +129,8 @@ test.describe('Selection disambiguation', () => {
         expect(ids).not.toContain(7002) // door gone
     })
 
-    // The next three tests rely on selection persisting across multiple discrete
-    // user actions (Alt+click cycling, clicking chips, clicking empty space).
-    // The current handlePointerUp at Canvas.jsx:1701-1745 unconditionally clears
-    // selectedElement and candidateCycleState on every pointerup, which makes
-    // these flows uncoverable in Playwright without first refactoring that
-    // handler to only clear on actual drags. Tracked as a separate concern —
-    // unit tests in __tests__/selection-priority.test.js cover the underlying
-    // collectSelectionCandidates ranking logic.
-
+    // These need the highlight to survive mouse-up (click-to-select). Highlight
+    // is hold-to-target again, so they are uncoverable without that UX.
     test.skip('Alt+click cycles through stacked candidates', async ({ page }) => {
         await bootstrap(page)
         const { shared } = await seedWallAndDoorSharingVertex(page)
