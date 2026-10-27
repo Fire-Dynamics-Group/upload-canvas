@@ -2,6 +2,41 @@ import { useRef, useState } from 'react'
 import useStore from '../store/useStore'
 import { getSyncedFloors } from '../utils/multiFloorFds'
 
+function syncedFloorCount(state) {
+    return getSyncedFloors(state).length
+}
+
+function addNewFloor(onSwitchFloor) {
+    const prevIdx = useStore.getState().activeFloorIndex ?? 0
+    useStore.getState().addFloor()
+    const nextIdx = useStore.getState().activeFloorIndex
+    if (onSwitchFloor) {
+        onSwitchFloor(nextIdx, { isNew: true, prevIndex: prevIdx })
+    }
+    return nextIdx
+}
+
+/** Quiet + Floor in the project cluster. Visible only while there is a single floor. */
+export function AddFloorClusterButton({ onSwitchFloor }) {
+    const currentMode = useStore((s) => s.currentMode)
+    const viewMode = useStore((s) => s.viewMode)
+    const floorCount = useStore((s) => syncedFloorCount(s))
+
+    if (currentMode !== 'fdsGen' || viewMode !== '2d' || floorCount > 1) return null
+
+    return (
+        <button
+            type="button"
+            data-testid="add-floor-cluster-button"
+            onClick={() => addNewFloor(onSwitchFloor)}
+            className="text-white bg-gray-700 hover:bg-gray-600 font-medium rounded-lg text-sm px-4 py-2"
+            title="Add a second floor plan"
+        >
+            + Floor
+        </button>
+    )
+}
+
 export default function FloorBar({ onSwitchFloor, onUploadFloorPdf, onReuseGroundFloorPdf }) {
     const currentMode = useStore((s) => s.currentMode)
     const viewMode = useStore((s) => s.viewMode)
@@ -20,7 +55,6 @@ export default function FloorBar({ onSwitchFloor, onUploadFloorPdf, onReuseGroun
     const setComment = useStore((s) => s.setComment)
     const setOriginPixels = useStore((s) => s.setOriginPixels)
     const setShowGhostFloorBelow = useStore((s) => s.setShowGhostFloorBelow)
-    const addFloor = useStore((s) => s.addFloor)
     const updateFloorMeta = useStore((s) => s.updateFloorMeta)
     const removeFloor = useStore((s) => s.removeFloor)
 
@@ -39,6 +73,8 @@ export default function FloorBar({ onSwitchFloor, onUploadFloorPdf, onReuseGroun
         elements,
     })
 
+    if (floors.length <= 1) return null
+
     const activeIdx = Math.min(Math.max(0, activeFloorIndex ?? 0), floors.length - 1)
     const activeFloor = floors[activeIdx] || floors[0]
 
@@ -55,12 +91,7 @@ export default function FloorBar({ onSwitchFloor, onUploadFloorPdf, onReuseGroun
     }
 
     const handleAddFloor = () => {
-        const prevIdx = activeIdx
-        addFloor()
-        const nextIdx = useStore.getState().activeFloorIndex
-        if (onSwitchFloor) {
-            onSwitchFloor(nextIdx, { isNew: true, prevIndex: prevIdx })
-        }
+        addNewFloor(onSwitchFloor)
         setConfigOpen(true)
     }
 

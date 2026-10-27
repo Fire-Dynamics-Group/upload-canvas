@@ -45,13 +45,23 @@ test('Levels bar: add a floor, ground PDF, and reuse/upload on the new level', a
     await expect(fileInput).toBeAttached({ timeout: 15000 })
     await fileInput.setInputFiles(FIXTURE)
 
+    await expect(page.getByTestId('floor-bar')).toHaveCount(0)
+    const clusterAdd = page.getByTestId('add-floor-cluster-button')
+    await expect(clusterAdd).toBeVisible({ timeout: 30000 })
+    await expect(page.getByRole('button', { name: 'All Projects' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'New Project' })).toBeVisible()
+    await page.screenshot({ path: `${SHOT_DIR}/01-levels-bar-ground-floor.png`, fullPage: false })
+    await page.screenshot({
+        path: `${SHOT_DIR}/01b-plus-floor-cluster.png`,
+        clip: { x: 900, y: 0, width: 540, height: 72 },
+    })
+
+    await clusterAdd.click()
     const floorBar = page.getByTestId('floor-bar')
-    await expect(floorBar).toBeVisible({ timeout: 30000 })
+    await expect(floorBar).toBeVisible({ timeout: 15000 })
     await expect(floorBar.getByText('Levels', { exact: false })).toBeVisible()
     await expect(page.getByTestId('add-floor-button')).toBeVisible()
-    await page.screenshot({ path: `${SHOT_DIR}/01-levels-bar-ground-floor.png`, fullPage: false })
-
-    await page.getByTestId('add-floor-button').click()
+    await expect(page.getByTestId('add-floor-cluster-button')).toHaveCount(0)
     await expect(page.getByTestId('floor-tab-1')).toBeVisible()
     await expect(page.getByTestId('drafting-sheet-banner')).toBeVisible()
     await page.screenshot({ path: `${SHOT_DIR}/02-levels-bar-after-add-floor.png`, fullPage: false })

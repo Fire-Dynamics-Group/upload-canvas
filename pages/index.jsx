@@ -11,7 +11,7 @@ import ViewTabs from '../Components/ViewTabs'
 import ReliabilityResultsView from '../Components/ReliabilityResultsView'
 import ThreeView from '../Components/ThreeView'
 import FdsCodeView from '../Components/FdsCodeView'
-import FloorBar from '../Components/FloorBar'
+import FloorBar, { AddFloorClusterButton } from '../Components/FloorBar'
 import { getSyncedFloors } from '../utils/multiFloorFds'
 
 import ProjectDashboard from '../Components/ProjectDashboard'
@@ -730,6 +730,9 @@ export default function Home() {
       {/* Top bar - visible when working on a project */}
       {selectedFile && (
         <div className="fixed top-2 right-2 z-50 flex gap-2">
+          {viewMode === '2d' && (
+            <AddFloorClusterButton onSwitchFloor={handleSwitchFloor} />
+          )}
           {isDbBacked(currentMode) && (
             <>
               <button

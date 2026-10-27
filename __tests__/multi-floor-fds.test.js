@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import React from 'react'
 import { render, fireEvent, screen, act } from '@testing-library/react'
-import FloorBar from '../Components/FloorBar'
+import FloorBar, { AddFloorClusterButton } from '../Components/FloorBar'
 import useStore from '../store/useStore'
 import { buildFdsPayload, hydrateFdsState } from '../store/fdsPersistence'
 import {
@@ -270,6 +270,50 @@ describe('Multi-floor FDS state, coordinate alignment, persistence, and FDS comb
     expect(holes).toHaveLength(1)
   })
 
+  it('hides the Levels bar on a single floor and adds the second floor from the project-cluster + Floor button', () => {
+    useStore.setState({
+      currentMode: 'fdsGen',
+      viewMode: '2d',
+      projectId: 'proj-multi',
+      projectName: 'Multi-Storey Tower',
+    })
+
+    const onSwitchFloor = vi.fn()
+    const { rerender } = render(
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(AddFloorClusterButton, { onSwitchFloor }),
+        React.createElement(FloorBar, { onSwitchFloor })
+      )
+    )
+
+    expect(screen.queryByTestId('floor-bar')).toBeNull()
+    expect(screen.queryByTestId('add-floor-button')).toBeNull()
+    const clusterBtn = screen.getByTestId('add-floor-cluster-button')
+    expect(clusterBtn).toBeTruthy()
+    expect(clusterBtn.textContent).toMatch(/\+ Floor/)
+
+    act(() => {
+      fireEvent.click(clusterBtn)
+    })
+    rerender(
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(AddFloorClusterButton, { onSwitchFloor }),
+        React.createElement(FloorBar, { onSwitchFloor })
+      )
+    )
+
+    expect(useStore.getState().floors).toHaveLength(2)
+    expect(useStore.getState().activeFloorIndex).toBe(1)
+    expect(onSwitchFloor).toHaveBeenCalledWith(1, expect.objectContaining({ isNew: true }))
+    expect(screen.getByTestId('floor-bar')).toBeTruthy()
+    expect(screen.queryByTestId('add-floor-cluster-button')).toBeNull()
+    expect(screen.getByTestId('add-floor-button')).toBeTruthy()
+  })
+
   it('switches floors and restores Fire Floor elements when clicking floor tab with onSwitchFloor handler', () => {
     useStore.setState({
       currentMode: 'fdsGen',
@@ -295,16 +339,22 @@ describe('Multi-floor FDS state, coordinate alignment, persistence, and FDS comb
     const onReuseGroundFloorPdf = vi.fn()
 
     render(
-      React.createElement(FloorBar, {
-        onSwitchFloor,
-        onReuseGroundFloorPdf,
-      })
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(AddFloorClusterButton, { onSwitchFloor }),
+        React.createElement(FloorBar, {
+          onSwitchFloor,
+          onReuseGroundFloorPdf,
+        })
+      )
     )
 
-    // 2. Click "+ Add Floor" -> adds Level 1
-    const addFloorBtn = screen.getByTestId('add-floor-button')
+    // 2. Single-floor: no Levels bar. Cluster "+ Floor" adds Level 1 and reveals the bar.
+    expect(screen.queryByTestId('floor-bar')).toBeNull()
+    const clusterBtn = screen.getByTestId('add-floor-cluster-button')
     act(() => {
-      fireEvent.click(addFloorBtn)
+      fireEvent.click(clusterBtn)
     })
 
     expect(useStore.getState().floors).toHaveLength(2)
