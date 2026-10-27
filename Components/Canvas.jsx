@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Gridlines from './Gridlines'
-import { canvasPoint, canvasClientPoint } from '../utils/canvasCoordinates'
+import { canvasPoint, canvasClientPoint, canvasSnapThreshold, SNAP_SCREEN_PX } from '../utils/canvasCoordinates'
 import { canvasBays, hitCanvasBay, assessCanvasElevation } from '../utils/efsCanvasBays'
 import ScalePopup from './ScalePopup'
 import FDRobot from './FDRobot'
@@ -222,6 +222,15 @@ export function applyGridFallback({ raw, snapped, guides, pixelsPerMesh }) {
         x: hasXSnap ? snapped.x : Math.round(raw.x / pixelsPerMesh) * pixelsPerMesh,
         y: hasYSnap ? snapped.y : Math.round(raw.y / pixelsPerMesh) * pixelsPerMesh,
     }
+}
+
+/**
+ * EFS wall/boundary drawing stays freehand (Kevin EFS UX). FDS obstruction
+ * walls must stay on the point-alignment waterfall — KK's canvas UX had
+ * bundled them into the same skip, which removed wall snap in fdsGen.
+ */
+export function polylineSkipsAlignment(comment) {
+    return comment === 'efsWall' || comment === 'efsBoundary'
 }
 
 export function snapToPointAlignment(vertex, coordsResult, threshold) {
@@ -588,7 +597,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             if (tool === 'scale' && scalePoints.length >= 2) return
             const raw = canvasPoint(event, canvasRef.current)
             setIsCtrlPressed(event.ctrlKey)
-            if (tool === 'polyline' && ['obstruction', 'efsWall', 'efsBoundary'].includes(comment)) {
+            if (tool === 'polyline' && polylineSkipsAlignment(comment)) {
                 setGuideLine(event.shiftKey ? {
                     x: Math.round(raw.x / pixelsPerMesh) * pixelsPerMesh,
                     y: Math.round(raw.y / pixelsPerMesh) * pixelsPerMesh,
@@ -666,7 +675,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
         return () => {
             window.removeEventListener("mousemove", handleMouseMove)
         }
-    }, [isDrawing, currentPoly, scalePoints.length, tool, currentRect, selectedElement, comment, pixelsPerMesh, elements, elementsForSnap, isShiftPressed, currentMode, hasScale])
+    }, [isDrawing, currentPoly, scalePoints.length, tool, currentRect, selectedElement, comment, pixelsPerMesh, elements, elementsForSnap, isShiftPressed, currentMode, hasScale, zoom])
 
     function deltaGridlines(pxPerMesh, tool) { // actioned if debug mode and after scale set normally
         setPixelsPerMesh(pxPerMesh)
@@ -852,7 +861,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                     // Snap-to-close indicator: when cursor is near the first
                     // point with >= 3 points drawn, show a green circle and
                     // dashed line to signal the polygon will close on click
-                    const CLOSE_SNAP_PX = 15
+                    const CLOSE_SNAP_PX = canvasSnapThreshold(SNAP_SCREEN_PX, zoom)
                     if (poly.length >= 3 && calcDistance(current, poly[0]) < CLOSE_SNAP_PX) {
                         // Highlight the start point with a snap circle
                         context.beginPath()
@@ -1738,7 +1747,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             context.restore()
         }
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, ghostElements, originPixels, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsActiveElevation, efsProtectedByElev, efsRequiredByElev, efsEndSpacingByElev, debugRects, snapGuides, candidateCycleState])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, ghostElements, originPixels, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsActiveElevation, efsProtectedByElev, efsRequiredByElev, efsEndSpacingByElev, debugRects, snapGuides, candidateCycleState, zoom])
 
     // Generate thumbnail by compositing PDF + drawing canvases
     const thumbnailTimerRef = useRef(null)
@@ -1841,7 +1850,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
         return vertex
     }
 
-    const MESH_SNAP_THRESHOLD = 15 // pixels
+    const MESH_SNAP_THRESHOLD = canvasSnapThreshold(SNAP_SCREEN_PX, zoom)
 
     function collectMeshEdgeCoordinates(excludeId = null) {
         const xCoords = []
@@ -1948,7 +1957,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
         }
         if (currentMode === 'efs' && tool === 'efsBay') {
             const wall = elements.find(el => el.comments === 'efsWall')
-            const bay = hitCanvasBay(canvasBays(wall?.points || [], Number(efsColumnSpacing), pixelsPerMesh * 10, efsEndSpacingByElev), canvasPoint(event, canvasRef.current), 10 / zoom)
+            const bay = hitCanvasBay(canvasBays(wall?.points || [], Number(efsColumnSpacing), pixelsPerMesh * 10, efsEndSpacingByElev), canvasPoint(event, canvasRef.current), canvasSnapThreshold(10, zoom))
             if (bay) {
                 const state = useStore.getState()
                 state.setEfsActiveElevation(bay.elevation)
@@ -2010,7 +2019,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 let dimension = 10
                 context.fillStyle = 'green'
                 let newP = canvasPoint(event, canvasRef.current)
-                const freePolyline = ['obstruction', 'efsWall', 'efsBoundary'].includes(comment)
+                const freePolyline = polylineSkipsAlignment(comment)
                 if (freePolyline) {
                     if (event.shiftKey) newP = snapVertexToGrid(newP)
                     setSnapGuides([])
@@ -2023,7 +2032,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
 
                 // Snap-to-close: if clicking near the first point with >= 3 points,
                 // close the polygon and finalize (like Figma/Bluebeam)
-                const CLOSE_SNAP_PX = 15
+                const CLOSE_SNAP_PX = canvasSnapThreshold(SNAP_SCREEN_PX, zoom)
                 if (currentPoly.length >= 3 && calcDistance(newP, currentPoly[0]) < CLOSE_SNAP_PX) {
                     // Close by adding first point, finalize the element
                     const closedPoly = [...currentPoly, currentPoly[0]]
