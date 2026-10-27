@@ -14,6 +14,48 @@ import {
 import { parseFdsGeometry } from '../utils/fdsParse'
 import { buildFdsScene } from '../utils/fdsScene'
 import { generateFdsCode } from '../utils/generateFds'
+import { mkdirSync, writeFileSync } from 'fs'
+import path from 'path'
+
+const RAILWAY_DEV_API = 'https://backendfornextapp-dev.up.railway.app'
+const FDS_OUTPUT_DIR = '/cursor/stores/bc-ba8cf0f9-ea7f-5db3-ae81-ac8a639e9b4d/media/multi-floor-fds-output'
+
+function meshRect(id, size = 100) {
+  return {
+    id,
+    type: 'rect',
+    comments: 'mesh',
+    points: [
+      { x: 0, y: 0 },
+      { x: size, y: 0 },
+      { x: size, y: size },
+      { x: 0, y: size },
+    ],
+  }
+}
+
+function wallLine(id, size = 100) {
+  return {
+    id,
+    type: 'polyline',
+    comments: 'obstruction',
+    points: [{ x: 0, y: 0 }, { x: size, y: 0 }],
+  }
+}
+
+function openingRect(id) {
+  return {
+    id,
+    type: 'rect',
+    comments: 'floorOpening',
+    points: [
+      { x: 30, y: 30 },
+      { x: 50, y: 30 },
+      { x: 50, y: 50 },
+      { x: 30, y: 50 },
+    ],
+  }
+}
 
 describe('Multi-floor FDS state, coordinate alignment, persistence, and FDS combination', () => {
   beforeEach(() => {
@@ -430,4 +472,68 @@ describe('Multi-floor FDS state, coordinate alignment, persistence, and FDS comb
       /FDS requires at least one computational Mesh domain/
     )
   })
+
+  it('POSTs two floors to live /fds and combines stacked meshes into one file', async () => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', RAILWAY_DEV_API)
+
+    useStore.setState({
+      currentMode: 'fdsGen',
+      viewMode: '2d',
+      pixelsPerMesh: 1,
+      wallHeight: 3,
+      fireFloorZ: 0,
+      originPixels: { x: 0, y: 0 },
+      totalFloors: 2,
+      isSprinklered: false,
+      includeSensors: false,
+      simEndTime: 30,
+      doorLeakagesEnabled: false,
+    })
+
+    useStore.getState().addElement(meshRect(1))
+    useStore.getState().addElement(wallLine(2))
+    useStore.getState().addFloor({ name: 'Level 1' })
+    useStore.getState().addElement(meshRect(1))
+    useStore.getState().addElement(wallLine(2))
+    useStore.getState().addElement(openingRect(3))
+
+    const combined = await generateFdsCode({ download: false })
+    expect(typeof combined).toBe('string')
+    expect(combined.length).toBeGreaterThan(200)
+
+    mkdirSync(FDS_OUTPUT_DIR, { recursive: true })
+    const outPath = path.join(FDS_OUTPUT_DIR, 'two-floor-live.fds')
+    writeFileSync(outPath, combined)
+
+    expect(combined.match(/&HEAD\b/g)).toHaveLength(1)
+    expect(combined.match(/&TAIL\b/g)).toHaveLength(1)
+    expect(combined).toMatch(/&MESH ID='F0_/)
+    expect(combined).toMatch(/&MESH ID='F1_/)
+
+    const meshLines = combined.split(/\r?\n/).filter((l) => l.trim().toUpperCase().startsWith('&MESH'))
+    expect(meshLines.length).toBeGreaterThanOrEqual(2)
+
+    const parseXb = (line) => {
+      const m = line.match(/XB=([^/]+)/i)
+      expect(m).toBeTruthy()
+      return m[1].split(',').map(Number)
+    }
+    const zRanges = meshLines.map((line) => {
+      const xb = parseXb(line)
+      return { zmin: xb[4], zmax: xb[5] }
+    })
+    const zMins = zRanges.map((z) => z.zmin)
+    expect(Math.min(...zMins)).toBeCloseTo(0, 1)
+    expect(Math.max(...zMins)).toBeGreaterThan(2)
+
+    expect(combined).toMatch(/Slab/)
+    expect(combined).toMatch(/&HOLE /)
+
+    const parsed = parseFdsGeometry(combined)
+    const scene = buildFdsScene(parsed)
+    const meshes = scene.items.filter((i) => i.category === 'mesh')
+    expect(meshes.length).toBeGreaterThanOrEqual(2)
+
+    expect(useStore.getState().fdsCode).toBe(combined)
+  }, 60000)
 })

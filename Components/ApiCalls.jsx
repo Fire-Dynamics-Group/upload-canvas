@@ -10,14 +10,14 @@ const server_urls = {
     // fastapi-production-e615.up.railway.app
   }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || server_urls.localhost
+const getApiBase = () => process.env.NEXT_PUBLIC_API_URL || server_urls.localhost
 
 // --- Project persistence API ---
 
 // `mode` is the canvas mode that owns the project (fdsGen / timeEq). Each
 // DB-backed mode has its own dashboard; see store/persistenceModes.js.
 export const createProject = async (name = "Untitled Project", createdBy = null, mode = "fdsGen") => {
-    const resp = await authedFetch(`${API_BASE}/projects`, {
+    const resp = await authedFetch(`${getApiBase()}/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, mode, settings: {}, created_by: createdBy }),
@@ -29,19 +29,19 @@ export const createProject = async (name = "Untitled Project", createdBy = null,
 // Omit `mode` to list every project regardless of owning mode.
 export const listProjects = async (mode = null) => {
     const query = mode ? `?mode=${encodeURIComponent(mode)}` : ''
-    const resp = await authedFetch(`${API_BASE}/projects${query}`)
+    const resp = await authedFetch(`${getApiBase()}/projects${query}`)
     if (!resp.ok) throw new Error(`Failed to list projects: ${resp.status}`)
     return resp.json()
 }
 
 export const loadProject = async (projectId) => {
-    const resp = await authedFetch(`${API_BASE}/projects/${projectId}`)
+    const resp = await authedFetch(`${getApiBase()}/projects/${projectId}`)
     if (!resp.ok) throw new Error(`Failed to load project: ${resp.status}`)
     return resp.json()
 }
 
 export const renameProject = async (projectId, name) => {
-    const resp = await authedFetch(`${API_BASE}/projects/${projectId}`, {
+    const resp = await authedFetch(`${getApiBase()}/projects/${projectId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
@@ -51,7 +51,7 @@ export const renameProject = async (projectId, name) => {
 }
 
 export const deleteProject = async (projectId) => {
-    const resp = await authedFetch(`${API_BASE}/projects/${projectId}`, {
+    const resp = await authedFetch(`${getApiBase()}/projects/${projectId}`, {
         method: 'DELETE',
     })
     if (!resp.ok) throw new Error(`Failed to delete project: ${resp.status}`)
@@ -60,7 +60,7 @@ export const deleteProject = async (projectId) => {
 }
 
 export const saveProjectToServer = async (projectId, payload) => {
-    const resp = await authedFetch(`${API_BASE}/projects/${projectId}/save`, {
+    const resp = await authedFetch(`${getApiBase()}/projects/${projectId}/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -70,7 +70,7 @@ export const saveProjectToServer = async (projectId, payload) => {
 }
 
 export const loadFloorDetail = async (projectId, floorId) => {
-    const resp = await authedFetch(`${API_BASE}/projects/${projectId}/floors/${floorId}`)
+    const resp = await authedFetch(`${getApiBase()}/projects/${projectId}/floors/${floorId}`)
     if (!resp.ok) throw new Error(`Failed to load floor: ${resp.status}`)
     return resp.json()
 }
@@ -78,7 +78,7 @@ export const loadFloorDetail = async (projectId, floorId) => {
 export const uploadFloorPdf = async (projectId, floorId, file) => {
     const formData = new FormData()
     formData.append('file', file)
-    const resp = await authedFetch(`${API_BASE}/projects/${projectId}/floors/${floorId}/pdf`, {
+    const resp = await authedFetch(`${getApiBase()}/projects/${projectId}/floors/${floorId}/pdf`, {
         method: 'POST',
         body: formData,
     })
@@ -87,7 +87,7 @@ export const uploadFloorPdf = async (projectId, floorId, file) => {
 }
 
 export const getFloorPdfUrl = async (projectId, floorId) => {
-    const resp = await authedFetch(`${API_BASE}/projects/${projectId}/floors/${floorId}/pdf`)
+    const resp = await authedFetch(`${getApiBase()}/projects/${projectId}/floors/${floorId}/pdf`)
     if (!resp.ok) throw new Error(`Failed to get PDF URL: ${resp.status}`)
     return resp.json()
 }
@@ -119,7 +119,7 @@ export const sendRadiationData = async (
     } )   
 
     try{
-      const response = await authedFetch(`${API_BASE}/radiation`, {
+      const response = await authedFetch(`${getApiBase()}/radiation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -228,7 +228,7 @@ export const sendFdsData = async (
       fire_custom_alpha,
       slice_z_height
     } )
-    const response = await authedFetch(`${API_BASE}/fds`, {
+    const response = await authedFetch(`${getApiBase()}/fds`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -312,7 +312,7 @@ export const sendTimeEqData = async (
         tLim,
         fireResistancePeriod
     } )
-    const response = await authedFetch(`${API_BASE}/timeEq`, {
+    const response = await authedFetch(`${getApiBase()}/timeEq`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -376,7 +376,7 @@ const reliabilityRequestBody = (
   }
 
 const postReliabilityRequest = async (path, body, failLabel) => {
-    const response = await authedFetch(`${API_BASE}${path}`, {
+    const response = await authedFetch(`${getApiBase()}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -497,7 +497,7 @@ export const downloadReliabilityCharts = (charts, seed = null) => {
 // Ported app lives in backendForNextApp (routers/efs.py, services/efs_calculator.py).
 // `elevations` is an array of { boundary_distance, height, width, has_suppression }.
 export const calculateEfs = async (elevations, isCommercial = true) => {
-    const resp = await authedFetch(`${API_BASE}/efs/calculate`, {
+    const resp = await authedFetch(`${getApiBase()}/efs/calculate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ elevations, is_commercial: isCommercial }),
@@ -512,7 +512,7 @@ export const calculateEfs = async (elevations, isCommercial = true) => {
 
 // Generate the BRE 135 Word report and trigger a download.
 export const downloadEfsReport = async (elevations, isCommercial = true) => {
-    const resp = await authedFetch(`${API_BASE}/efs/report`, {
+    const resp = await authedFetch(`${getApiBase()}/efs/report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ elevations, is_commercial: isCommercial }),
