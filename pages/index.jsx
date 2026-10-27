@@ -30,6 +30,11 @@ import {
 } from '../Components/ApiCalls'
 import { wouldWipeElements } from '../utils/persistenceSafeguards'
 import { describeSaveStatus } from '../utils/saveStatus'
+import {
+  chooseFloorPdfRestoreSource,
+  floorsToRebindPdf,
+  pdfKeyFromUpload,
+} from '../utils/floorPdfPersistence'
 
 
 
@@ -89,6 +94,41 @@ const loadPdfDocument = async (pdfjs, source, maxAttempts = 3) => {
     }
   }
   throw new PdfLoadError(friendlyPdfError(lastErr), lastErr)
+}
+
+async function rebindFloorPdfs(projectId, rebindList) {
+  for (const item of rebindList || []) {
+    let buf = await loadPdfFromIndexedDB(item.floorNumber)
+    if (!buf && item.pdfSource === 'ground' && item.floorNumber !== 0) {
+      buf = await loadPdfFromIndexedDB(0)
+      if (buf) await savePdfToIndexedDB(buf, item.floorNumber)
+    }
+    if (!buf) continue
+    const pdfFile = new File([buf], `floor_${item.floorNumber}.pdf`, { type: 'application/pdf' })
+    const uploaded = await uploadFloorPdf(projectId, item.floorId, pdfFile)
+    const key = pdfKeyFromUpload(uploaded)
+    useStore.getState().updateFloorMeta(item.floorIndex, {
+      ...(key ? { pdf_s3_key: key } : {}),
+      hasCustomPdf: true,
+      pdfSource: item.pdfSource || 'custom',
+    })
+  }
+}
+
+async function saveProjectAndRebindPdfs(projectId, payload) {
+  const localFloors = getSyncedFloors(useStore.getState())
+  const saved = await saveProjectToServer(projectId, payload)
+  if (saved?.floors) {
+    const rebind = floorsToRebindPdf(localFloors, saved.floors)
+    useStore.getState().syncServerFloors(saved.floors)
+    try {
+      await rebindFloorPdfs(projectId, rebind)
+    } catch (pdfErr) {
+      console.error('Failed to reattach floor PDFs after save:', pdfErr)
+      useStore.getState().setSaveStatus('pdf-failed')
+    }
+  }
+  return saved
 }
 
 export default function Home() {
@@ -228,10 +268,7 @@ export default function Home() {
 
       useStore.getState().setSaveStatus("saving")
       try {
-        const saved = await saveProjectToServer(currentProjectId, payload)
-        if (saved?.floors) {
-          useStore.getState().syncServerFloors(saved.floors)
-        }
+        await saveProjectAndRebindPdfs(currentProjectId, payload)
         lastSavedRef.current = payloadStr
         useStore.getState().setSaveStatus("saved")
         // Clear "saved" indicator after 2s
@@ -353,7 +390,9 @@ export default function Home() {
 
     const st = useStore.getState()
     const synced = getSyncedFloors(st)
+    const metaIndex = floorNumOverride != null ? floorNumOverride : (st.activeFloorIndex ?? 0)
     const activeFloor = synced[st.activeFloorIndex] || synced[0]
+    const targetMeta = synced[metaIndex] || activeFloor
     const floorNum = floorNumOverride != null ? floorNumOverride : (activeFloor?.floor_number ?? 0)
     pdfCacheByFloorRef.current[floorNum] = {
       coloured: colouredImageData,
@@ -361,7 +400,10 @@ export default function Home() {
       width: canvas.width,
       height: canvas.height,
     }
-    useStore.getState().updateFloorMeta(floorNumOverride != null ? floorNumOverride : (st.activeFloorIndex ?? 0), { hasCustomPdf: true, pdfSource: 'custom' })
+    useStore.getState().updateFloorMeta(metaIndex, {
+      hasCustomPdf: true,
+      pdfSource: targetMeta?.pdfSource || 'custom',
+    })
 
     if (skipScale) {
       setTool("selection")
@@ -413,38 +455,48 @@ export default function Home() {
 
     if (pdfCacheByFloorRef.current[floorNum]) {
       paintCachedFloorPdf(floorNum, {
-        width: targetFloor.canvas_width,
-        height: targetFloor.canvas_height,
+        width: targetFloor.canvas_dimensions?.width,
+        height: targetFloor.canvas_dimensions?.height,
       })
       return
     }
 
-    // Try loading from S3 if the floor has a stored PDF key
-    if (currentSt.projectId && targetFloor.id && targetFloor.pdf_s3_key) {
+    let indexedDbBuf = null
+    try {
+      indexedDbBuf = await loadPdfFromIndexedDB(floorNum)
+    } catch (err) {
+      console.warn('Could not load floor PDF from IndexedDB:', err)
+    }
+
+    const restoreFrom = chooseFloorPdfRestoreSource({
+      hasCache: false,
+      hasIndexedDb: Boolean(indexedDbBuf),
+      canFetchS3: Boolean(currentSt.projectId && targetFloor.id),
+    })
+
+    if (restoreFrom === 'indexeddb' && indexedDbBuf) {
+      try {
+        await renderPdf(indexedDbBuf, true, floorNum)
+        return
+      } catch (err) {
+        console.warn('Could not render floor PDF from IndexedDB:', err)
+      }
+    }
+
+    if (restoreFrom === 's3' || (currentSt.projectId && targetFloor.id)) {
       try {
         const { url } = await getFloorPdfUrl(currentSt.projectId, targetFloor.id)
         await renderPdf(url, true, floorNum)
         return
       } catch (err) {
-        console.warn('Could not load floor PDF from S3, falling back to IndexedDB:', err)
+        console.warn('Could not load floor PDF from S3:', err)
       }
-    }
-
-    // Try IndexedDB per-floor cache
-    try {
-      const buf = await loadPdfFromIndexedDB(floorNum)
-      if (buf) {
-        await renderPdf(buf, true, floorNum)
-        return
-      }
-    } catch (err) {
-      console.warn('Could not load floor PDF from IndexedDB:', err)
     }
 
     // No PDF uploaded for this floor yet — paint clean background with Floor 0 dimensions
     paintCachedFloorPdf(floorNum, {
-      width: targetFloor.canvas_width,
-      height: targetFloor.canvas_height,
+      width: targetFloor.canvas_dimensions?.width,
+      height: targetFloor.canvas_dimensions?.height,
     })
   }
 
@@ -456,6 +508,55 @@ export default function Home() {
     const targetFloor = synced[idx]
     if (!targetFloor) return
     const floorNum = targetFloor.floor_number ?? idx
+
+    const persistReusedGround = async (buf) => {
+      useStore.getState().updateFloorMeta(idx, { hasCustomPdf: true, pdfSource: 'ground' })
+      if (!isDbBacked(st.currentMode)) return
+      if (!buf) {
+        const ground = getSyncedFloors(useStore.getState())[0]
+        const pid = useStore.getState().projectId
+        if (pid && ground?.id) {
+          try {
+            const { url } = await getFloorPdfUrl(pid, ground.id)
+            const resp = await fetch(url)
+            if (resp.ok) {
+              buf = await resp.arrayBuffer()
+              await savePdfToIndexedDB(buf, 0)
+            }
+          } catch (err) {
+            console.warn('Could not copy Ground PDF from S3 for reuse:', err)
+          }
+        }
+      }
+      if (!buf) return
+      await savePdfToIndexedDB(buf, floorNum)
+      let projectId = useStore.getState().projectId
+      let floorId = (getSyncedFloors(useStore.getState())[idx] || {}).id
+      if (projectId && !floorId) {
+        try {
+          const payload = useStore.getState().buildSavePayload()
+          const saved = await saveProjectAndRebindPdfs(projectId, payload)
+          floorId = saved?.floors?.find((f) => f.floor_number === floorNum)?.id
+            || (getSyncedFloors(useStore.getState())[idx] || {}).id
+        } catch (err) {
+          console.error('Failed to sync new floor before reused Ground PDF upload:', err)
+        }
+      }
+      if (!projectId || !floorId) return
+      try {
+        const pdfFile = new File([buf], `floor_${floorNum}.pdf`, { type: 'application/pdf' })
+        const uploaded = await uploadFloorPdf(projectId, floorId, pdfFile)
+        const key = pdfKeyFromUpload(uploaded)
+        useStore.getState().updateFloorMeta(idx, {
+          ...(key ? { pdf_s3_key: key } : {}),
+          hasCustomPdf: true,
+          pdfSource: 'ground',
+        })
+      } catch (err) {
+        console.error('Failed to upload reused Ground PDF to S3:', err)
+        setSaveStatus('pdf-failed')
+      }
+    }
 
     let floor0Cached = pdfCacheByFloorRef.current[0]
     if (!floor0Cached && st.pdfData?.greyscaled && !st.pdfData?.isBlank) {
@@ -477,7 +578,8 @@ export default function Home() {
         isReusedGround: true,
       }
       paintCachedFloorPdf(floorNum)
-      useStore.getState().updateFloorMeta(idx, { hasCustomPdf: true, pdfSource: 'ground' })
+      const buf = await loadPdfFromIndexedDB(0)
+      await persistReusedGround(buf)
       return
     }
 
@@ -485,7 +587,7 @@ export default function Home() {
       const buf = await loadPdfFromIndexedDB(0)
       if (buf) {
         await renderPdf(buf, true, floorNum)
-        useStore.getState().updateFloorMeta(idx, { hasCustomPdf: true, pdfSource: 'ground' })
+        await persistReusedGround(buf)
       }
     } catch (err) {
       console.warn('Could not load Ground Floor PDF from IndexedDB:', err)
@@ -510,19 +612,16 @@ export default function Home() {
     })
 
     if (isDbBacked(st.currentMode)) {
-      savePdfToIndexedDB(arrayBuffer, floorNum)
+      await savePdfToIndexedDB(arrayBuffer, floorNum)
       let currentProjectId = useStore.getState().projectId
       let targetFloorId = targetFloor?.id
 
       if (currentProjectId && !targetFloorId) {
         try {
           const payload = useStore.getState().buildSavePayload()
-          const saved = await saveProjectToServer(currentProjectId, payload)
-          if (saved?.floors) {
-            useStore.getState().syncServerFloors(saved.floors)
-            const matched = saved.floors.find((f) => f.floor_number === floorNum)
-            targetFloorId = matched?.id
-          }
+          const saved = await saveProjectAndRebindPdfs(currentProjectId, payload)
+          targetFloorId = saved?.floors?.find((f) => f.floor_number === floorNum)?.id
+            || (getSyncedFloors(useStore.getState())[floorIndex] || {}).id
         } catch (err) {
           console.error('Failed to sync new floor before PDF upload:', err)
         }
@@ -531,8 +630,13 @@ export default function Home() {
       if (currentProjectId && targetFloorId) {
         try {
           const pdfFile = new File([arrayBuffer], `floor_${floorNum}.pdf`, { type: 'application/pdf' })
-          await uploadFloorPdf(currentProjectId, targetFloorId, pdfFile)
-          useStore.getState().updateFloorMeta(floorIndex, { pdf_s3_key: `uploaded_${floorNum}` })
+          const uploaded = await uploadFloorPdf(currentProjectId, targetFloorId, pdfFile)
+          const key = pdfKeyFromUpload(uploaded)
+          useStore.getState().updateFloorMeta(floorIndex, {
+            ...(key ? { pdf_s3_key: key } : {}),
+            hasCustomPdf: true,
+            pdfSource: 'custom',
+          })
         } catch (err) {
           console.error('Failed to upload floor PDF to S3:', err)
           setSaveStatus('pdf-failed')
@@ -556,7 +660,7 @@ export default function Home() {
     const mode = useStore.getState().currentMode
     if (isDbBacked(mode)) {
       // Cache raw PDF bytes in IndexedDB for later restore
-      savePdfToIndexedDB(arrayBuffer, 0)
+      await savePdfToIndexedDB(arrayBuffer, 0)
 
       let currentProjectId = useStore.getState().projectId
       let currentFloorId = useStore.getState().floorId
@@ -593,7 +697,13 @@ export default function Home() {
       if (currentProjectId && currentFloorId) {
         try {
           const pdfFile = new File([arrayBuffer], 'plan.pdf', { type: 'application/pdf' })
-          await uploadFloorPdf(currentProjectId, currentFloorId, pdfFile)
+          const uploaded = await uploadFloorPdf(currentProjectId, currentFloorId, pdfFile)
+          const key = pdfKeyFromUpload(uploaded)
+          useStore.getState().updateFloorMeta(0, {
+            ...(key ? { pdf_s3_key: key } : {}),
+            hasCustomPdf: true,
+            pdfSource: 'custom',
+          })
           console.log('PDF uploaded to S3')
         } catch (err) {
           console.error('Failed to upload PDF to S3:', err)
