@@ -199,7 +199,8 @@ export async function generateFdsCode({ download = true } = {}) {
     if (!Number.isFinite(globalMaxY)) globalMaxY = 0
 
     const floorRuns = []
-    for (const { floor, mappedElements } of transformedByFloor) {
+    for (let floorIdx = 0; floorIdx < transformedByFloor.length; floorIdx++) {
+        const { floor, mappedElements } = transformedByFloor[floorIdx]
         const backendEls = prepareElementsForFloor(mappedElements, basePxPerMesh, s.isSprinklered)
         if (backendEls.length === 0) continue
 
@@ -269,9 +270,17 @@ export async function generateFdsCode({ download = true } = {}) {
             { download: false },
         )
 
-        const isUpperFloor = zLevel > minZ || hasFloorOpenings
-        const slabLines = isUpperFloor
-            ? generateInterFloorSlabLines(mappedElements, floor, globalMinX, globalMaxY, basePxPerM)
+        const lowerMapped = floorIdx > 0 ? transformedByFloor[floorIdx - 1].mappedElements : []
+        const slabLines = zLevel > minZ
+            ? generateInterFloorSlabLines(
+                mappedElements,
+                floor,
+                globalMinX,
+                globalMaxY,
+                basePxPerM,
+                0.2,
+                lowerMapped
+            )
             : []
 
         floorRuns.push({ floor, fdsText, dx, dy, slabLines })

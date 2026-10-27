@@ -689,4 +689,190 @@ describe('Multi-floor FDS state, coordinate alignment, persistence, and FDS comb
     mkdirSync(ALIGN_DIR, { recursive: true })
     writeFileSync(path.join(ALIGN_DIR, 'aligned-live.fds'), combined)
   }, 60000)
+
+  it('emits a 0.2 m concrete slab over the floor-join overlap and cuts the stair void', () => {
+    const SLAB_DIR = '/cursor/stores/bc-ba8cf0f9-ea7f-5db3-ae81-ac8a639e9b4d/media/inter-floor-slabs'
+    // Upper mesh is larger (0–10 m) than ground (2–8 m). Slab must be the overlap,
+    // not the union and not the full upper footprint.
+    const groundEls = [
+      {
+        id: 1,
+        type: 'rect',
+        comments: 'mesh',
+        points: [
+          { x: 20, y: 20 },
+          { x: 80, y: 20 },
+          { x: 80, y: 80 },
+          { x: 20, y: 80 },
+        ],
+      },
+    ]
+    const upperEls = [
+      {
+        id: 1,
+        type: 'rect',
+        comments: 'mesh',
+        points: [
+          { x: 0, y: 0 },
+          { x: 100, y: 0 },
+          { x: 100, y: 100 },
+          { x: 0, y: 100 },
+        ],
+      },
+      {
+        id: 2,
+        type: 'rect',
+        comments: 'stairMesh',
+        points: [
+          { x: 40, y: 40 },
+          { x: 55, y: 40 },
+          { x: 55, y: 70 },
+          { x: 40, y: 70 },
+        ],
+      },
+    ]
+
+    const lines = generateInterFloorSlabLines(
+      upperEls,
+      { floor_number: 1, name: 'Level 1', z_level: 3.0 },
+      0,
+      100,
+      10,
+      undefined,
+      groundEls
+    )
+    const obst = lines.find((l) => /^\s*&OBST\b/i.test(l))
+    const hole = lines.find((l) => /^\s*&HOLE\b/i.test(l))
+    expect(obst).toBeTruthy()
+    expect(hole).toBeTruthy()
+    expect(obst).toMatch(/SURF_ID='Concrete'/i)
+    expect(obst).not.toMatch(/Plasterboard/i)
+
+    const xb = obst.match(/XB=\s*([^/]+)/i)[1].split(',').map(Number)
+    const [x1, x2, y1, y2, z1, z2] = xb
+    expect(z2 - z1).toBeCloseTo(0.2, 5)
+    expect(z2).toBeCloseTo(3.0, 5)
+    expect(x2 - x1).toBeCloseTo(6, 1)
+    expect(y2 - y1).toBeCloseTo(6, 1)
+    expect(x1).toBeGreaterThanOrEqual(1.9)
+    expect(x2).toBeLessThanOrEqual(8.1)
+
+    const hxb = hole.match(/XB=\s*([^/]+)/i)[1].split(',').map(Number)
+    expect(hxb[0]).toBeGreaterThanOrEqual(3.9)
+    expect(hxb[1]).toBeLessThanOrEqual(5.6)
+    expect(hxb[4]).toBeLessThan(z1)
+    expect(hxb[5]).toBeGreaterThan(z2)
+
+    const combined = combineMultiFloorFds([
+      {
+        floorNumber: 0,
+        fdsText: "&HEAD CHID='tower'/\n&MESH ID='Mesh0', IJK=10,10,6, XB=0,10,0,10,0,3/\n&TAIL /",
+        dx: 0,
+        dy: 0,
+        slabLines: [],
+      },
+      {
+        floorNumber: 1,
+        fdsText: "&HEAD CHID='tower'/\n&MESH ID='Mesh0', IJK=10,10,6, XB=0,10,0,10,3,6/\n&TAIL /",
+        dx: 0,
+        dy: 0,
+        slabLines: lines,
+      },
+    ])
+    expect(combined).toMatch(/SURF_ID='Concrete'/i)
+    expect(combined).toMatch(/&SURF\b[^/]*ID='Concrete'/i)
+    expect(combined).toMatch(/&HOLE /)
+    expect(combined.match(/&MESH\b/g).length).toBe(2)
+
+    mkdirSync(SLAB_DIR, { recursive: true })
+    writeFileSync(path.join(SLAB_DIR, 'slab-join.fds'), combined)
+    writeFileSync(
+      path.join(SLAB_DIR, 'slab-obst-hole.txt'),
+      lines.filter((l) => /^\s*&OBST\b|^\s*&HOLE\b/i.test(l)).join('\n') + '\n'
+    )
+  })
+
+  it('live /fds: 0.2 m concrete join slab matches the smaller upper overlap and is cut at the stair', async () => {
+    const SLAB_DIR = '/cursor/stores/bc-ba8cf0f9-ea7f-5db3-ae81-ac8a639e9b4d/media/inter-floor-slabs'
+    vi.stubEnv('NEXT_PUBLIC_API_URL', RAILWAY_DEV_API)
+
+    useStore.setState({
+      currentMode: 'fdsGen',
+      viewMode: '2d',
+      pixelsPerMesh: 1,
+      wallHeight: 3,
+      fireFloorZ: 0,
+      originPixels: { x: 0, y: 0 },
+      totalFloors: 2,
+      isSprinklered: false,
+      includeSensors: false,
+      simEndTime: 30,
+      doorLeakagesEnabled: false,
+    })
+
+    useStore.getState().addElement({
+      id: 1,
+      type: 'rect',
+      comments: 'mesh',
+      points: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 100 },
+        { x: 0, y: 100 },
+      ],
+    })
+    useStore.getState().addElement(wallLine(2, 100))
+    useStore.getState().addFloor({ name: 'Level 1' })
+    useStore.getState().addElement({
+      id: 1,
+      type: 'rect',
+      comments: 'mesh',
+      points: [
+        { x: 20, y: 20 },
+        { x: 80, y: 20 },
+        { x: 80, y: 80 },
+        { x: 20, y: 80 },
+      ],
+    })
+    useStore.getState().addElement({
+      id: 2,
+      type: 'polyline',
+      comments: 'obstruction',
+      points: [{ x: 20, y: 20 }, { x: 80, y: 20 }],
+    })
+    useStore.getState().addElement({
+      id: 3,
+      type: 'rect',
+      comments: 'stairMesh',
+      points: [
+        { x: 40, y: 40 },
+        { x: 55, y: 40 },
+        { x: 55, y: 70 },
+        { x: 40, y: 70 },
+      ],
+    })
+
+    const combined = await generateFdsCode({ download: false })
+    const slab = (combined.split(/\r?\n/).find((l) => /Slab/i.test(l) && /^\s*&OBST\b/i.test(l))) || ''
+    const hole = (combined.split(/\r?\n/).find((l) => /^\s*&HOLE\b/i.test(l))) || ''
+    expect(slab).toMatch(/SURF_ID='Concrete'/i)
+    expect(slab).not.toMatch(/Plasterboard/i)
+    const sxb = slab.match(/XB=\s*([^/]+)/i)[1].split(',').map(Number)
+    expect(sxb[5] - sxb[4]).toBeCloseTo(0.2, 5)
+    const meshes = parseMeshTable(combined)
+    const f0 = meshes.find((m) => m.id.startsWith('F0_'))
+    const f1 = meshes.find((m) => m.id.startsWith('F1_'))
+    expect(f0.xmax - f0.xmin).toBeGreaterThan(f1.xmax - f1.xmin)
+    expect(sxb[1] - sxb[0]).toBeLessThanOrEqual((f1.xmax - f1.xmin) + 0.15)
+    expect(sxb[1] - sxb[0]).toBeLessThan(f0.xmax - f0.xmin)
+    expect(hole).toMatch(/&HOLE /)
+    expect(combined).toMatch(/&SURF\b[\s\S]*?ID='Concrete'/i)
+
+    mkdirSync(SLAB_DIR, { recursive: true })
+    writeFileSync(path.join(SLAB_DIR, 'slab-live.fds'), combined)
+    writeFileSync(
+      path.join(SLAB_DIR, 'slab-obst-hole.txt'),
+      [slab, hole].join('\n') + '\n'
+    )
+  }, 60000)
 })
