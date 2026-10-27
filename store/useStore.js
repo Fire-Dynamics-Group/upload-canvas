@@ -6,6 +6,7 @@ import { defaultDoorTimings } from './defaultDoorTimings'
 import { isDbBacked, MODE_PERSISTENCE, PERSIST_VERSION, migratePersistedState, mergePersistedState, partializeState } from './persistenceModes'
 import { fdsElementSignature } from '../utils/fdsSignature'
 import { getSyncedFloors, normalizeFloor, checkoutFloorToState } from '../utils/multiFloorFds'
+import { elementMatchesSelectionId } from '../utils/elementIds'
 
 const useStore = create(persist((set, get) => {
     const defaultStairObject = {"fire_floor": 0, "total_floors": 5, "stair_roof_z": 25, "top_storey_height": 21}
@@ -267,7 +268,7 @@ const useStore = create(persist((set, get) => {
         )),
         removeElement: (selectedID) => set((state) => commitElements(
             state,
-            state.elements.filter(element => element.id !== selectedID)
+            state.elements.filter((element) => !elementMatchesSelectionId(element, selectedID))
         )),
         // change tool to incoming
         // if tool not selection; set selection to null

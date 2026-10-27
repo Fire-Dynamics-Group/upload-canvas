@@ -12,6 +12,7 @@ import { computeAutoSprinklerPositions, shouldShowAutoSprinklers } from '@/utils
 import { computeTimeEqLabels } from '@/utils/timeEqLabels'
 import { boundaryDistanceOutward, gridlineStations, buildRequiredBoundaryLine, projectSpanOntoWall, baysCoveredBySpan, polylineLength, splitIntoElevations, pointToPolylineDistance } from '@/utils/efsViewFactor'
 import { getSyncedFloors, transformElementBetweenFloors, mapPointBetweenFloors } from '@/utils/multiFloorFds'
+import { isElementDeleteKey } from '@/utils/elementIds'
 import { get } from 'http'
 
 /**
@@ -440,15 +441,16 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                     return
                 }
                 setIsEscapePressed(true)
-                
-                if (selectedElement && selectedElement["element"]) {
-                    // remove selected element from elements
-                    let selectedId = selectedElement["element"]["id"]
-                    // console.log("filtered element: ", elements.filter(element => element.id !== selectedId))
-                    removeElement(selectedId); // filter returns array of all items meeting condition
-                    setSelectedElement(null)
-                    setCandidateCycleState(null)
-                }
+            }
+            // Highlighted drawing: Delete / Backspace / Escape. Escape-only
+            // left the orange selection on screen when people pressed Delete.
+            const typing = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)
+            if (!typing && isElementDeleteKey(key) && selectedElement && selectedElement["element"] && !(tool === 'scale' && key === 'Escape')) {
+                e.preventDefault()
+                const selectedEl = selectedElement["element"]
+                removeElement(selectedEl.id ?? selectedEl.element_index)
+                setSelectedElement(null)
+                setCandidateCycleState(null)
             }
             // "Enter"
             if (key == 'Enter') {
@@ -956,7 +958,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             context.restore()
 
             // Floating label near the click anchor so the user can read what
-            // the Escape key will delete. Title-cases the comment (or falls
+            // Delete / Backspace / Escape will remove. Title-cases the comment (or falls
             // back to the element type) and appends a "(1 of N)" suffix when
             // multiple candidates are stacked under the cursor.
             const anchor = selectedElement["pointerDown"]
