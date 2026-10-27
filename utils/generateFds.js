@@ -7,7 +7,6 @@ import {
     transformElementBetweenFloors,
     generateInterFloorSlabLines,
     combineMultiFloorFds,
-    alignMeshElementsAcrossFloors,
 } from './multiFloorFds'
 
 const ensureNumber = (v, fallback = 0) => (Number.isFinite(Number(v)) ? Number(v) : fallback)
@@ -177,14 +176,12 @@ export async function generateFdsCode({ download = true } = {}) {
     const minZ = Math.min(...sortedFloors.map((f) => Number(f.z_level) || 0))
 
     // Transform all floors' elements into baseFloor's pixel space
-    const transformedByFloor = alignMeshElementsAcrossFloors(
-        sortedFloors.map((floor) => {
-            const mappedElements = (floor.elements || []).map((el) =>
-                transformElementBetweenFloors(el, floor, baseFloor)
-            )
-            return { floor, mappedElements }
-        })
-    )
+    const transformedByFloor = sortedFloors.map((floor) => {
+        const mappedElements = (floor.elements || []).map((el) =>
+            transformElementBetweenFloors(el, floor, baseFloor)
+        )
+        return { floor, mappedElements }
+    })
 
     // Compute global bounding box across all floors (in baseFloor pixel space)
     let globalMinX = Infinity

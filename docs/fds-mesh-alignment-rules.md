@@ -110,6 +110,16 @@ Run FDS with these two lines added to the input file to check alignment without 
 
 If FDS exits without error, the mesh configuration is valid.
 
+## Stacked floors (multi-floor generate)
+
+Meshes stay **floor-by-floor**. The combiner does not draw or generate a mesh that spans two floors.
+
+Floors may have **different XY extents**. Alignment applies only where they overlap:
+
+- Snap each stacked MESH onto the lowest floor's cell grid so overlap bounds land on cell faces.
+- Recompute I and J so cell size matches the reference floor. Z and K stay per-floor.
+- Extra mesh on the larger floor may stick out. The smaller floor is **not** expanded to match the larger footprint.
+
 ## References
 
 - NIST FDS User Guide, Chapter 6: "Multiple Meshes"

@@ -330,72 +330,17 @@ function localMeshId(id) {
     return String(id || '').replace(/^F\d+_/, '')
 }
 
-function snapToCell(value, cell) {
+function snapToGrid(value, origin, cell) {
     const c = Number(cell) || 0.1
-    return Number((Math.round(Number(value) / c) * c).toFixed(6))
+    const o = Number(origin) || 0
+    return Number((o + Math.round((Number(value) - o) / c) * c).toFixed(6))
 }
 
 /**
- * Expand each floor's mesh drawings to the union footprint of the matching
- * mesh index on every floor (already mapped into a shared pixel space).
- * Stacked FDS meshes then share XY so vertical cell faces meet.
- */
-export function alignMeshElementsAcrossFloors(transformedByFloor) {
-    if (!Array.isArray(transformedByFloor) || transformedByFloor.length < 2) {
-        return transformedByFloor
-    }
-    const isMesh = (el) => el && (el.comments === 'mesh' || el.comments === 'stairMesh')
-    const lists = transformedByFloor.map(({ mappedElements }) =>
-        (mappedElements || []).filter(isMesh)
-    )
-    const maxCount = Math.max(0, ...lists.map((l) => l.length))
-    const footprints = []
-    for (let i = 0; i < maxCount; i++) {
-        const xs = []
-        const ys = []
-        for (const list of lists) {
-            const el = list[i]
-            if (!el) continue
-            for (const p of el.points || []) {
-                if (p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y))) {
-                    xs.push(Number(p.x))
-                    ys.push(Number(p.y))
-                }
-            }
-        }
-        if (xs.length === 0) continue
-        footprints[i] = {
-            minX: Math.min(...xs),
-            maxX: Math.max(...xs),
-            minY: Math.min(...ys),
-            maxY: Math.max(...ys),
-        }
-    }
-    return transformedByFloor.map(({ floor, mappedElements }) => {
-        let meshIdx = 0
-        const next = (mappedElements || []).map((el) => {
-            if (!isMesh(el)) return el
-            const fp = footprints[meshIdx++]
-            if (!fp) return el
-            return {
-                ...el,
-                points: [
-                    { x: fp.minX, y: fp.minY },
-                    { x: fp.maxX, y: fp.minY },
-                    { x: fp.maxX, y: fp.maxY },
-                    { x: fp.minX, y: fp.maxY },
-                ],
-            }
-        })
-        return { floor, mappedElements: next }
-    })
-}
-
-/**
- * Snap stacked MESH namelists that share a local id (Mesh0, …) onto one XY
- * footprint and matching I,J so FDS/PyroSim vertical interfaces line up.
- * Leaves Z and K alone. Same-floor abutting meshes (different local ids) are
- * untouched — those still go through backend align_meshes().
+ * Snap each stacked MESH to the lowest floor's cell grid without changing
+ * which floor owns it or forcing identical XY. A larger ground mesh may stick
+ * out; the smaller upper mesh stays smaller. Overlap bounds land on cell faces
+ * so FDS/PyroSim vertical interfaces meet. Meshes never span two floors.
  */
 export function alignStackedMeshesInFds(fdsText) {
     if (!fdsText || typeof fdsText !== 'string') return fdsText
@@ -441,25 +386,23 @@ export function alignStackedMeshesInFds(fdsText) {
         const zKeys = new Set(group.map((g) => Number(g.zmin.toFixed(4))))
         if (group.length < 2 || zKeys.size < 2) continue
 
-        const ref = group[0]
-        const dx = Math.abs(ref.xmax - ref.xmin) / Math.max(1, ref.i)
-        const dy = Math.abs(ref.ymax - ref.ymin) / Math.max(1, ref.j)
-        const cell = Math.min(dx || 0.1, dy || 0.1) || 0.1
-
-        let xmin = Math.min(...group.map((g) => Math.min(g.xmin, g.xmax)))
-        let xmax = Math.max(...group.map((g) => Math.max(g.xmin, g.xmax)))
-        let ymin = Math.min(...group.map((g) => Math.min(g.ymin, g.ymax)))
-        let ymax = Math.max(...group.map((g) => Math.max(g.ymin, g.ymax)))
-        xmin = snapToCell(xmin, cell)
-        xmax = snapToCell(xmax, cell)
-        ymin = snapToCell(ymin, cell)
-        ymax = snapToCell(ymax, cell)
-        if (xmax <= xmin) xmax = xmin + cell
-        if (ymax <= ymin) ymax = ymin + cell
-        const i = Math.max(1, Math.round((xmax - xmin) / cell))
-        const j = Math.max(1, Math.round((ymax - ymin) / cell))
+        const ref = [...group].sort((a, b) => a.zmin - b.zmin)[0]
+        const cellX = Math.abs(ref.xmax - ref.xmin) / Math.max(1, ref.i) || 0.1
+        const cellY = Math.abs(ref.ymax - ref.ymin) / Math.max(1, ref.j) || 0.1
+        const originX = Math.min(ref.xmin, ref.xmax)
+        const originY = Math.min(ref.ymin, ref.ymax)
 
         for (const mesh of group) {
+            let xmin = snapToGrid(Math.min(mesh.xmin, mesh.xmax), originX, cellX)
+            let xmax = snapToGrid(Math.max(mesh.xmin, mesh.xmax), originX, cellX)
+            let ymin = snapToGrid(Math.min(mesh.ymin, mesh.ymax), originY, cellY)
+            let ymax = snapToGrid(Math.max(mesh.ymin, mesh.ymax), originY, cellY)
+            if (xmax <= xmin) xmax = xmin + cellX
+            if (ymax <= ymin) ymax = ymin + cellY
+            const i = Math.max(1, Math.round((xmax - xmin) / cellX))
+            const j = Math.max(1, Math.round((ymax - ymin) / cellY))
+            xmax = Number((xmin + i * cellX).toFixed(6))
+            ymax = Number((ymin + j * cellY).toFixed(6))
             const next = mesh.rec
                 .replace(/IJK=\s*[-\d.]+,\s*[-\d.]+,\s*[-\d.]+/i, `IJK=${i},${j},${mesh.k}`)
                 .replace(
@@ -484,7 +427,8 @@ export function alignStackedMeshesInFds(fdsText) {
  * Deduplicates singleton namelists (&HEAD, &TIME, &DUMP, &COMB, &MATL, Plasterboard &SURF,
  * &REAC, &TAIL), prefixes floor-specific IDs to avoid collisions, applies each floor's
  * global (dx, dy) offset, inserts inter-floor slab &OBST / &HOLE lines, then snaps
- * stacked meshes onto a shared XY footprint (FDS/PyroSim interface rule).
+ * stacked mesh bounds onto a shared cell grid at the XY overlap (sizes stay
+ * per-floor; a larger mesh may stick out).
  */
 export function combineMultiFloorFds(floorRuns, options = {}) {
     if (!Array.isArray(floorRuns) || floorRuns.length === 0) return ''

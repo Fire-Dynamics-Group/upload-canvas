@@ -18,8 +18,14 @@ function parseMeshTable(fdsText: string) {
             const id = line.match(/ID='([^']+)'/i)?.[1] || ''
             const ijk = line.match(/IJK=\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)/i)
             const xb = (line.match(/XB=\s*([^/]+)/i)?.[1] || '').split(',').map(Number)
+            const i = ijk ? Number(ijk[1]) : 0
+            const j = ijk ? Number(ijk[2]) : 0
+            const k = ijk ? Number(ijk[3]) : 0
             return {
                 id,
+                i,
+                j,
+                k,
                 ijk: ijk ? `${ijk[1]},${ijk[2]},${ijk[3]}` : '',
                 xb: xb.join(','),
                 xmin: xb[0],
@@ -34,7 +40,7 @@ function parseMeshTable(fdsText: string) {
 
 test.use({ viewport: { width: 1440, height: 900 } })
 
-test('stacked meshes: misaligned vs FDS/PyroSim-aligned XY', async ({ page }) => {
+test('stacked meshes: larger ground, smaller upper, overlap on the cell grid', async ({ page }) => {
     mkdirSync(OUT_DIR, { recursive: true })
 
     const fdsFloor0 = [
@@ -60,20 +66,26 @@ test('stacked meshes: misaligned vs FDS/PyroSim-aligned XY', async ({ page }) =>
 
     const beforeMeshes = parseMeshTable(misaligned)
     const afterMeshes = parseMeshTable(aligned)
+    const g0 = afterMeshes.find((m) => m.id.startsWith('F0_'))!
+    const g1 = afterMeshes.find((m) => m.id.startsWith('F1_'))!
+    const cell0 = (g0.xmax - g0.xmin) / g0.i
+    const cell1 = (g1.xmax - g1.xmin) / g1.i
     expect(beforeMeshes[0].xmin).not.toBe(beforeMeshes[1].xmin)
-    expect(afterMeshes[0].xmin).toBe(afterMeshes[1].xmin)
-    expect(afterMeshes[0].xmax).toBe(afterMeshes[1].xmax)
-    expect(afterMeshes[0].ymin).toBe(afterMeshes[1].ymin)
-    expect(afterMeshes[0].ymax).toBe(afterMeshes[1].ymax)
+    expect(g0.xmax - g0.xmin).toBeGreaterThan(g1.xmax - g1.xmin)
+    expect(g0.xmin).not.toBe(g1.xmin)
+    expect(g0.xmax).not.toBe(g1.xmax)
+    expect(cell1).toBeCloseTo(cell0, 5)
+    expect((g1.xmin - g0.xmin) / cell0).toBeCloseTo(Math.round((g1.xmin - g0.xmin) / cell0), 5)
+    expect((g1.xmax - g0.xmin) / cell0).toBeCloseTo(Math.round((g1.xmax - g0.xmin) / cell0), 5)
 
     const tablePage = await page.context().newPage()
     const rows = [
-        ...beforeMeshes.map((m) => ({ ...m, state: 'before (independent offset)' })),
-        ...afterMeshes.map((m) => ({ ...m, state: 'after (shared XY)' })),
+        ...beforeMeshes.map((m) => ({ ...m, state: 'before (0.8 m vs 1 m cells)' })),
+        ...afterMeshes.map((m) => ({ ...m, state: 'after (same cell size; upper stays smaller)' })),
     ]
     await tablePage.setContent(`<!doctype html><html><body style="font-family:ui-sans-serif,system-ui,sans-serif;padding:28px;background:#111827;color:#e5e7eb">
-      <h1 style="font-size:20px;margin:0 0 8px">Stacked MESH XB / IJK</h1>
-      <p style="margin:0 0 16px;color:#9ca3af;font-size:14px">FDS/PyroSim: cell faces must meet at mesh interfaces. Stacked floors share XY so the vertical face lines up.</p>
+      <h1 style="font-size:20px;margin:0 0 8px">Stacked MESH XB / IJK — floor-by-floor</h1>
+      <p style="margin:0 0 16px;color:#9ca3af;font-size:14px">Meshes stay per floor. Ground can be bigger. Overlap bounds land on a shared cell grid so FDS/PyroSim faces meet. No mesh spans two floors.</p>
       <table style="border-collapse:collapse;font-size:14px">
         <tr>${['state', 'id', 'IJK', 'XB (xmin,xmax,ymin,ymax,zmin,zmax)'].map((h) => `<th style="text-align:left;padding:8px 12px;border-bottom:1px solid #374151">${h}</th>`).join('')}</tr>
         ${rows.map((r) => `<tr>
@@ -220,23 +232,23 @@ test('stacked meshes: misaligned vs FDS/PyroSim-aligned XY', async ({ page }) =>
             points: [{ x: 0, y: 0 }, { x: 100, y: 0 }],
         })
         store.getState().setActiveFloor(1)
-        store.setState({ ...shared, fireFloorZ: 3, originPixels: { x: 15, y: 10 } })
+        store.setState({ ...shared, fireFloorZ: 3 })
         store.getState().addElement({
             id: 1,
             type: 'rect',
             comments: 'mesh',
             points: [
-                { x: 25, y: 20 },
-                { x: 95, y: 20 },
-                { x: 95, y: 90 },
-                { x: 25, y: 90 },
+                { x: 20, y: 20 },
+                { x: 80, y: 20 },
+                { x: 80, y: 80 },
+                { x: 20, y: 80 },
             ],
         })
         store.getState().addElement({
             id: 2,
             type: 'polyline',
             comments: 'obstruction',
-            points: [{ x: 25, y: 20 }, { x: 95, y: 20 }],
+            points: [{ x: 20, y: 20 }, { x: 80, y: 20 }],
         })
     })
 
@@ -250,10 +262,19 @@ test('stacked meshes: misaligned vs FDS/PyroSim-aligned XY', async ({ page }) =>
     expect(live).toMatch(/CHID='model'/)
     const liveMeshes = parseMeshTable(live)
     expect(liveMeshes.length).toBeGreaterThanOrEqual(2)
-    expect(liveMeshes[0].xmin).toBe(liveMeshes[1].xmin)
-    expect(liveMeshes[0].xmax).toBe(liveMeshes[1].xmax)
-    expect(liveMeshes[0].ymin).toBe(liveMeshes[1].ymin)
-    expect(liveMeshes[0].ymax).toBe(liveMeshes[1].ymax)
+    const live0 = liveMeshes.find((m) => m.id.startsWith('F0_'))!
+    const live1 = liveMeshes.find((m) => m.id.startsWith('F1_'))!
+    const liveCell0 = (live0.xmax - live0.xmin) / live0.i
+    const liveCell1 = (live1.xmax - live1.xmin) / live1.i
+    expect(live0.xmax - live0.xmin).toBeGreaterThan(live1.xmax - live1.xmin)
+    expect(live0.xmin).not.toBe(live1.xmin)
+    expect(live0.xmax).not.toBe(live1.xmax)
+    expect(live0.i).not.toBe(live1.i)
+    expect(liveCell1).toBeCloseTo(liveCell0, 5)
+    expect((live1.xmin - live0.xmin) / liveCell0).toBeCloseTo(
+        Math.round((live1.xmin - live0.xmin) / liveCell0),
+        5,
+    )
     writeFileSync(
         path.join(OUT_DIR, 'mesh-xb-ijk.txt'),
         [

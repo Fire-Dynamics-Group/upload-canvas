@@ -560,7 +560,7 @@ describe('Multi-floor FDS state, coordinate alignment, persistence, and FDS comb
     expect(useStore.getState().fdsCode).toBe(combined)
   }, 60000)
 
-  it('snaps stacked floor meshes to a shared XY footprint so FDS faces meet', () => {
+  it('keeps floor-by-floor mesh sizes and snaps only the overlap to a shared cell grid', () => {
     const fdsFloor0 = [
       "&HEAD CHID='tower'/",
       "&MESH ID='Mesh0', IJK=10,10,6, XB=0.0,10.0,0.0,10.0,0.0,3.0/",
@@ -581,7 +581,14 @@ describe('Multi-floor FDS state, coordinate alignment, persistence, and FDS comb
     const misaligned = combineMultiFloorFds(runs, { alignStackedMeshes: false })
     const before = parseMeshTable(misaligned)
     expect(before).toHaveLength(2)
-    expect(before[0].xmin).not.toBeCloseTo(before[1].xmin, 5)
+    const before0 = before.find((m) => m.id.startsWith('F0_'))
+    const before1 = before.find((m) => m.id.startsWith('F1_'))
+    // Independent combine: larger ground 0–10, inset upper 1–9, but 0.8 m vs 1 m cells.
+    expect(before0.xmax - before0.xmin).toBeGreaterThan(before1.xmax - before1.xmin)
+    expect((before1.xmax - before1.xmin) / before1.i).not.toBeCloseTo(
+      (before0.xmax - before0.xmin) / before0.i,
+      5
+    )
 
     mkdirSync(ALIGN_DIR, { recursive: true })
     writeFileSync(path.join(ALIGN_DIR, 'misaligned-before.fds'), misaligned)
@@ -591,12 +598,17 @@ describe('Multi-floor FDS state, coordinate alignment, persistence, and FDS comb
     expect(meshes).toHaveLength(2)
     const f0 = meshes.find((m) => m.id.startsWith('F0_'))
     const f1 = meshes.find((m) => m.id.startsWith('F1_'))
-    expect(f0.xmin).toBeCloseTo(f1.xmin, 5)
-    expect(f0.xmax).toBeCloseTo(f1.xmax, 5)
-    expect(f0.ymin).toBeCloseTo(f1.ymin, 5)
-    expect(f0.ymax).toBeCloseTo(f1.ymax, 5)
-    expect(f0.i).toBe(f1.i)
-    expect(f0.j).toBe(f1.j)
+    const cell0 = (f0.xmax - f0.xmin) / f0.i
+    const cell1 = (f1.xmax - f1.xmin) / f1.i
+    expect(f0.xmax - f0.xmin).toBeGreaterThan(f1.xmax - f1.xmin)
+    expect(f0.ymax - f0.ymin).toBeGreaterThan(f1.ymax - f1.ymin)
+    expect(f0.xmin).not.toBeCloseTo(f1.xmin, 5)
+    expect(f0.xmax).not.toBeCloseTo(f1.xmax, 5)
+    expect(cell1).toBeCloseTo(cell0, 5)
+    expect((f1.xmin - f0.xmin) / cell0).toBeCloseTo(Math.round((f1.xmin - f0.xmin) / cell0), 5)
+    expect((f1.xmax - f0.xmin) / cell0).toBeCloseTo(Math.round((f1.xmax - f0.xmin) / cell0), 5)
+    expect(f1.xmin).toBeGreaterThanOrEqual(f0.xmin - 1e-6)
+    expect(f1.xmax).toBeLessThanOrEqual(f0.xmax + 1e-6)
     expect(f0.zmax).toBeCloseTo(f1.zmin, 5)
     expect(aligned.match(/&HEAD\b/g)).toHaveLength(1)
     expect(aligned.match(/&TAIL\b/g)).toHaveLength(1)
@@ -609,7 +621,7 @@ describe('Multi-floor FDS state, coordinate alignment, persistence, and FDS comb
     writeFileSync(path.join(ALIGN_DIR, 'mesh-xb-ijk.txt'), `${table}\n`)
   })
 
-  it('live /fds: stacked meshes share XY even when drawings and origins differ', async () => {
+  it('live /fds: larger ground mesh can stick out; upper stays smaller and overlap sits on the cell grid', async () => {
     vi.stubEnv('NEXT_PUBLIC_API_URL', RAILWAY_DEV_API)
 
     useStore.setState({
@@ -639,19 +651,23 @@ describe('Multi-floor FDS state, coordinate alignment, persistence, and FDS comb
     })
     useStore.getState().addElement(wallLine(2, 100))
     useStore.getState().addFloor({ name: 'Level 1' })
-    useStore.getState().setOriginPixels({ x: 15, y: 10 })
     useStore.getState().addElement({
       id: 1,
       type: 'rect',
       comments: 'mesh',
       points: [
-        { x: 25, y: 20 },
-        { x: 95, y: 20 },
-        { x: 95, y: 90 },
-        { x: 25, y: 90 },
+        { x: 20, y: 20 },
+        { x: 80, y: 20 },
+        { x: 80, y: 80 },
+        { x: 20, y: 80 },
       ],
     })
-    useStore.getState().addElement(wallLine(2, 70))
+    useStore.getState().addElement({
+      id: 2,
+      type: 'polyline',
+      comments: 'obstruction',
+      points: [{ x: 20, y: 20 }, { x: 80, y: 20 }],
+    })
     useStore.getState().addElement(openingRect(3))
 
     const combined = await generateFdsCode({ download: false })
@@ -660,12 +676,13 @@ describe('Multi-floor FDS state, coordinate alignment, persistence, and FDS comb
     const f1 = meshes.find((m) => m.id.startsWith('F1_'))
     expect(f0).toBeTruthy()
     expect(f1).toBeTruthy()
-    expect(f0.xmin).toBeCloseTo(f1.xmin, 5)
-    expect(f0.xmax).toBeCloseTo(f1.xmax, 5)
-    expect(f0.ymin).toBeCloseTo(f1.ymin, 5)
-    expect(f0.ymax).toBeCloseTo(f1.ymax, 5)
-    expect(f0.i).toBe(f1.i)
-    expect(f0.j).toBe(f1.j)
+    const cell0 = (f0.xmax - f0.xmin) / f0.i
+    const cell1 = (f1.xmax - f1.xmin) / f1.i
+    expect(f0.xmax - f0.xmin).toBeGreaterThan(f1.xmax - f1.xmin)
+    expect(f0.i).not.toBe(f1.i)
+    expect(cell1).toBeCloseTo(cell0, 5)
+    expect((f1.xmin - f0.xmin) / cell0).toBeCloseTo(Math.round((f1.xmin - f0.xmin) / cell0), 5)
+    expect((f1.xmax - f0.xmin) / cell0).toBeCloseTo(Math.round((f1.xmax - f0.xmin) / cell0), 5)
     expect(Math.min(f0.zmin, f1.zmin)).toBeCloseTo(0, 1)
     expect(Math.max(f0.zmin, f1.zmin)).toBeGreaterThan(2)
 
