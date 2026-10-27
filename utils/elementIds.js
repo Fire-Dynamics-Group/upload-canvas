@@ -9,9 +9,25 @@ function numericId(value) {
     return Number.isInteger(n) ? n : null
 }
 
+function isUsableId(value) {
+    if (value === null || value === undefined || value === '') return false
+    // NaN !== NaN, so it can never match a store key.
+    return value === value
+}
+
+/** Next integer id, ignoring UUID / NaN leftovers from loaded floors. */
+export function nextNumericElementId(elements) {
+    let max = -1
+    for (const el of elements || []) {
+        const n = numericId(el?.id) ?? numericId(el?.element_index)
+        if (n !== null && n > max) max = n
+    }
+    return max + 1
+}
+
 /** True if this element is the one the selection/delete path named. */
 export function elementMatchesSelectionId(el, selectedID) {
-    if (!el) return false
+    if (!el || !isUsableId(selectedID)) return false
     if (el.id === selectedID) return true
     if (el.element_index === selectedID) return true
     const selectedNum = numericId(selectedID)
@@ -22,9 +38,24 @@ export function elementMatchesSelectionId(el, selectedID) {
 }
 
 /**
- * Click-to-highlight used to commit a zero-offset move and clear selection on
- * pointerup, so Escape had nothing left to delete. Only write the element when
- * a nudge actually moved it.
+ * Delete the highlighted drawing, not "every wall without an element_index".
+ * Object identity wins because loaded floors can leave live ids as UUID/NaN.
+ */
+export function elementIsHighlighted(el, selected) {
+    if (!el || selected == null || selected !== selected) return false
+    if (el === selected) return true
+    if (typeof selected === 'object') {
+        const target = selected.element ?? selected
+        if (el === target) return true
+        const id = selectionId(target)
+        return isUsableId(id) && elementMatchesSelectionId(el, id)
+    }
+    return elementMatchesSelectionId(el, selected)
+}
+
+/**
+ * Highlight is hold-to-target. Pointerup must not rewrite the wall for a
+ * zero-offset click; WASD nudges still commit.
  */
 export function shouldCommitSelectionNudge(offsetX, offsetY) {
     return Number(offsetX) !== 0 || Number(offsetY) !== 0
@@ -32,18 +63,15 @@ export function shouldCommitSelectionNudge(offsetX, offsetY) {
 
 function selectionId(el) {
     if (!el) return undefined
-    // NaN is not a usable store key (NaN !== NaN), so fall back to element_index.
-    if (el.id !== undefined && el.id !== null && el.id !== '' && el.id === el.id) {
-        return el.id
-    }
-    return el.element_index
+    if (isUsableId(el.id)) return el.id
+    if (isUsableId(el.element_index)) return el.element_index
+    return undefined
 }
 
 /**
- * What a canvas keydown should do. Highlighted drawings stay selected after
- * the click (pointerup no longer clears them), so Escape can remove them.
- * Backspace/Delete still yield when a text field is focused; Escape does not,
- * because FloorBar number inputs keep focus after a canvas click.
+ * Hold-click highlight + Escape deletes that wall. The key handler reads
+ * selection from a ref so Escape works before React rebinds the listener.
+ * Backspace/Delete still yield when a text field is focused; Escape does not.
  */
 export function canvasKeyAction({
     key,
@@ -63,7 +91,11 @@ export function canvasKeyAction({
         if (typing && (key === 'Backspace' || key === 'Delete')) {
             return { type: 'none' }
         }
-        return { type: 'deleteSelection', id: selectionId(selectedElement.element) }
+        return {
+            type: 'deleteSelection',
+            element: selectedElement.element,
+            id: selectionId(selectedElement.element),
+        }
     }
 
     if (key === 'Escape') {

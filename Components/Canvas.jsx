@@ -12,7 +12,7 @@ import { computeAutoSprinklerPositions, shouldShowAutoSprinklers } from '@/utils
 import { computeTimeEqLabels } from '@/utils/timeEqLabels'
 import { boundaryDistanceOutward, gridlineStations, buildRequiredBoundaryLine, projectSpanOntoWall, baysCoveredBySpan, polylineLength, splitIntoElevations, pointToPolylineDistance } from '@/utils/efsViewFactor'
 import { getSyncedFloors, transformElementBetweenFloors, mapPointBetweenFloors } from '@/utils/multiFloorFds'
-import { canvasKeyAction, shouldCommitSelectionNudge } from '@/utils/elementIds'
+import { canvasKeyAction, shouldCommitSelectionNudge, nextNumericElementId, elementIsHighlighted } from '@/utils/elementIds'
 import { get } from 'http'
 
 /**
@@ -358,10 +358,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
     // under the cursor, keep the full sorted list around so the user can
     // Alt+click to cycle or click a chip in the picker overlay.
     const [candidateCycleState, setCandidateCycleState] = useState(null)
-    const [currentId, setCurrentId] = useState(() => {
-        if (elements.length === 0) return 0
-        return Math.max(...elements.map(el => el.id)) + 1
-    })
+    const [currentId, setCurrentId] = useState(() => nextNumericElementId(elements))
     const [xCounter, setXCounter] = useState(0)
     const [yCounter, setYCounter] = useState(0)
 
@@ -370,6 +367,13 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
     const [scaleDistance, setScaleDistance] = useState(null)
     const selectedElement = useStore((state) => state.selectedElement)
     const setSelectedElement = useStore((state) => state.setSelectedElement)
+    const selectedElementRef = useRef(selectedElement)
+    selectedElementRef.current = selectedElement
+    const pointerHeldRef = useRef(false)
+    const assignSelection = (payload) => {
+        selectedElementRef.current = payload
+        setSelectedElement(payload)
+    }
 
     const beingEditedElement = useStore((state) => state.beingEditedElement)
     const nullSelectedAndEditedElements = useStore((state) => state.nullSelectedAndEditedElements)
@@ -408,10 +412,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
     }, [])
 
     useEffect(() => {
-        if (elements.length > 0) {
-            const maxId = Math.max(...elements.map(el => el.id))
-            setCurrentId(prev => Math.max(prev, maxId + 1))
-        }
+        setCurrentId(prev => Math.max(prev, nextNumericElementId(elements)))
     }, [elements])
 
     // event listener for ctrl button
@@ -448,7 +449,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             }
             // have arrow keys for controlling element location
             if (key == 'ArrowUp') {
-                event.preventDefault();
+                e.preventDefault();
                 setIsUpPressed(true)
             }        
             if (key == 'Control') {
@@ -462,7 +463,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 key,
                 tool,
                 showScalePopup: showPopup,
-                selectedElement,
+                selectedElement: selectedElementRef.current,
                 currentPoly,
                 currentRect,
                 typing,
@@ -481,9 +482,10 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             }
             if (action.type === 'deleteSelection') {
                 e.preventDefault()
-                removeElement(action.id)
-                setSelectedElement(null)
+                removeElement(action.element ?? action.id)
+                assignSelection(null)
                 setCandidateCycleState(null)
+                setGuideLine(null)
                 return
             }
             if (action.type === 'cancelPoly') {
@@ -544,7 +546,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 }
         };
 
-        window.addEventListener("keydown", handleKeyPress)
+        window.addEventListener("keydown", handleKeyPress, true)
         window.addEventListener("keyup", handleCtrlRelease)
         const clearModifiers = () => {
             setIsCtrlPressed(false)
@@ -553,7 +555,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
         window.addEventListener('blur', clearModifiers)
 
         return () => {
-            window.removeEventListener("keydown", handleKeyPress)
+            window.removeEventListener("keydown", handleKeyPress, true)
             window.removeEventListener("keyup", handleCtrlRelease)
             window.removeEventListener('blur', clearModifiers)
         }
@@ -680,10 +682,14 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                     const { guideLine, snapGuides } = computeScaleHoverFromCursor(raw)
                     setGuideLine(guideLine)
                     setSnapGuides(snapGuides)
-                } else {
-                    // Fall-through for selectedElement — keep raw cursor available
-                    // for non-marker consumers; render gate hides the dot.
+                } else if (selectedElement && (event.buttons & 1)) {
+                    // Vertex nudge only while the button is held. After mouse-up
+                    // the highlight is cleared; if it weren't, this still must
+                    // not drag the wall around under the cursor.
                     setGuideLine(raw)
+                    setSnapGuides([])
+                } else {
+                    setGuideLine(null)
                     setSnapGuides([])
                 }
                 return
@@ -875,7 +881,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 // use guideLine for selectedPoint
                 // 
                 let startingPointPosition = selectedElement["pointerDown"]
-                if (guideLine != null) {
+                if (guideLine != null && pointerHeldRef.current) {
                     let current = guideLine
                     for (let i = 0; i < poly.length; i++) {
                         let point = poly[i]
@@ -1998,10 +2004,14 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
     //   TODO: polyline and mark point tools
     function handlePointerDown(event) { // should this be handle mouse down?
         if (event.button !== 0) return
+        pointerHeldRef.current = true
         // Canvas is not focusable by default, so FloorBar inputs keep keydown
         // after a click. Take focus so Escape hits the highlighted drawing.
         if (canvasRef.current && typeof canvasRef.current.focus === 'function') {
             canvasRef.current.focus({ preventScroll: true })
+        }
+        if (canvasRef.current && event.pointerId != null && typeof canvasRef.current.setPointerCapture === 'function') {
+            try { canvasRef.current.setPointerCapture(event.pointerId) } catch (_) { /* already captured / unsupported */ }
         }
         if (tool === 'origin') {
             let newP = canvasPoint(event, canvasRef.current)
@@ -2165,7 +2175,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                         (candidateCycleState.index + 1) %
                         candidateCycleState.candidates.length
                     const picked = candidateCycleState.candidates[nextIndex]
-                    setSelectedElement({
+                    assignSelection({
                         element: picked.element,
                         pointerDown: picked.pointerDown,
                     })
@@ -2181,7 +2191,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             const candidates = collectSelectionCandidates(pointer, elements, 40)
             if (candidates.length > 0) {
                 const picked = candidates[0]
-                setSelectedElement({
+                assignSelection({
                     element: picked.element,
                     pointerDown: picked.pointerDown,
                 })
@@ -2191,7 +2201,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                     index: 0,
                 })
             } else {
-                setSelectedElement(null)
+                assignSelection(null)
                 setCandidateCycleState(null)
             }
             event.preventDefault()
@@ -2254,12 +2264,24 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
     function handlePointerUp(event){
         if (currentMode === 'efs' && tool === 'efsBay') return
         if (event.button !== 0) return
+        pointerHeldRef.current = false
+        setGuideLine(null)
         // event.preventDefault(); 
         let pointer = canvasPoint(event, canvasRef.current)
-        if (selectedElement) {
-            let el = selectedElement["element"] // needs id added to state
-            let elementId = el["id"]
-            let startingPointPosition = selectedElement["pointerDown"]
+        const held = selectedElementRef.current
+        if (held) {
+            let el = held["element"] // needs id added to state
+            // Escape-while-held already removed this wall. Don't keep mutating it.
+            const live = useStore.getState().elements || []
+            if (!el || !live.some((item) => elementIsHighlighted(item, el))) {
+                assignSelection(null)
+                setCandidateCycleState(null)
+                setSnapGuides([])
+                setXCounter(0)
+                setYCounter(0)
+                return
+            }
+            let startingPointPosition = held["pointerDown"]
             // should be amount of times wasd clicked if this had been the case
             // let yCounter = 1
             // let xCounter = 0
@@ -2267,9 +2289,6 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             // TODO: use one cells distance
             let offsetY = 10*yCounter 
             let offsetX = 10*xCounter
-            // Click-to-highlight must survive pointerup so Escape can delete.
-            // A zero-offset click used to changeElement + clear selection, which
-            // left the orange overlay gone and the wall still in the store.
             if (shouldCommitSelectionNudge(offsetX, offsetY)) {
                 if (isRect(el)) {
                     let rectPoints = getRectCorners(el.points) // returns points in order of top left, bottom left, bottom right, top right
@@ -2302,16 +2321,14 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 }
                 changeElement(el)
             }
+            // Highlight is hold-to-target, not click-to-select. Releasing the
+            // button must drop it so the vertex does not follow the cursor.
+            assignSelection(null)
+            setCandidateCycleState(null)
             setSnapGuides([])
             setXCounter(0)
             setYCounter(0)
         }
-        // if element selected -> move from previous to new position
-        // need previous pointer down point
-        // apply offset to all points
-        // later apply only to target point
-        // should be action not moving!
-        // setSelectedElement(null)
     }
 
 
@@ -2336,6 +2353,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
       className={`bg-transparent top-0 left-0 absolute z-10 outline-none ${selectedElement ? 'select-none' : ''}`}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
       onContextMenu={event => { if (tool === 'scale') event.preventDefault() }}
       />
       {tool === 'scale' && !showPopup && scalePoints.length < 2 && guideLine && (
@@ -2394,7 +2412,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 key={c.element.id}
                 data-testid={`selection-chip-${i}`}
                 onClick={() => {
-                  setSelectedElement({
+                  assignSelection({
                     element: c.element,
                     pointerDown: c.pointerDown,
                   })

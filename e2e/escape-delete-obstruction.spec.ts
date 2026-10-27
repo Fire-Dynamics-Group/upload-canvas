@@ -12,9 +12,8 @@ const FIXTURE = path.join(
 test.use({ viewport: { width: 1440, height: 900 } })
 
 /**
- * Highlighted obstruction + Escape: click (down AND up) then Escape must
- * remove the wall. handlePointerUp used to clear selection on every click,
- * so Escape after highlighting did nothing.
+ * Highlight is hold-to-target: mouse-up drops it (vertices must not follow).
+ * Escape while the button is held removes that wall.
  */
 async function bootstrapSitePlan(page: import('@playwright/test').Page) {
     await page.addInitScript(() => localStorage.setItem('upload-canvas-username', 'Canvas test'))
@@ -72,7 +71,7 @@ function canvasClick(
     return { x: box.x + canvasX * zoom, y: box.y + canvasY * zoom }
 }
 
-test('Escape deletes a highlighted obstruction after mouse-up', async ({ page }) => {
+test('releasing the click drops the highlight so the vertex does not follow the mouse', async ({ page }) => {
     const drawing = await bootstrapSitePlan(page)
 
     await page.evaluate(() => {
@@ -95,11 +94,10 @@ test('Escape deletes a highlighted obstruction after mouse-up', async ({ page })
     const box = await drawing.boundingBox()
     if (!box) throw new Error('drawing canvas has no box')
 
-    // Click the wall body (not a vertex) — the highlight path people actually use.
     mkdirSync(SHOT_DIR, { recursive: true })
     const mid = canvasClick(box, zoom, 400, 300)
-    await page.mouse.click(mid.x, mid.y)
-
+    await page.mouse.move(mid.x, mid.y)
+    await page.mouse.down()
     await expect.poll(async () => {
         return page.evaluate(() => {
             const s = (window as any).__useStore || (window as any).__store
@@ -108,19 +106,74 @@ test('Escape deletes a highlighted obstruction after mouse-up', async ({ page })
     }).toBe(9001)
     await page.screenshot({ path: `${SHOT_DIR}/01-obstruction-highlighted.png` })
 
+    await page.mouse.up()
+    await expect.poll(async () => {
+        return page.evaluate(() => {
+            const s = (window as any).__useStore || (window as any).__store
+            return s.getState().selectedElement
+        })
+    }).toBeNull()
+
+    const afterMove = canvasClick(box, zoom, 520, 300)
+    await page.mouse.move(afterMove.x, afterMove.y)
+    const points = await page.evaluate(() => {
+        const s = (window as any).__useStore || (window as any).__store
+        return s.getState().elements[0].points
+    })
+    expect(points).toEqual([{ x: 400, y: 200 }, { x: 400, y: 400 }])
+})
+
+test('Escape while holding the click deletes the highlighted obstruction', async ({ page }) => {
+    const drawing = await bootstrapSitePlan(page)
+    mkdirSync(SHOT_DIR, { recursive: true })
+    const errors = []
+    page.on('pageerror', (err) => errors.push(String(err)))
+    page.on('console', (msg) => {
+        if (msg.type() === 'error') errors.push(msg.text())
+    })
+
+    await page.evaluate(() => {
+        const s = (window as any).__useStore || (window as any).__store
+        const keep = {
+            id: NaN,
+            type: 'polyline',
+            comments: 'obstruction',
+            points: [{ x: 200, y: 200 }, { x: 200, y: 400 }],
+        }
+        const drop = {
+            id: NaN,
+            type: 'polyline',
+            comments: 'obstruction',
+            points: [{ x: 400, y: 200 }, { x: 400, y: 400 }],
+        }
+        s.setState({
+            pixelsPerMesh: 33.6,
+            currentMode: 'fdsGen',
+            elements: [keep, drop],
+            selectedElement: null,
+        })
+        s.getState().setTool('selection')
+        ;(window as any).__keepWall = keep
+        ;(window as any).__dropWall = drop
+    })
+
+    const zoom = await drawing.evaluate((el: HTMLCanvasElement) => el.getBoundingClientRect().width / el.width)
+    const box = await drawing.boundingBox()
+    if (!box) throw new Error('drawing canvas has no box')
+
+    const mid = canvasClick(box, zoom, 400, 300)
+    await page.mouse.move(mid.x, mid.y)
+    await page.mouse.down()
     await page.keyboard.press('Escape')
+    await page.mouse.up()
+    await page.screenshot({ path: `${SHOT_DIR}/02-obstruction-gone-after-escape.png` })
 
     await expect.poll(async () => {
         return page.evaluate(() => {
             const s = (window as any).__useStore || (window as any).__store
-            return s.getState().elements.map((e: { id: number }) => e.id)
+            return s.getState().elements.map((e: { points: { x: number }[] }) => e.points[0].x)
         })
-    }).toEqual([])
-    await page.screenshot({ path: `${SHOT_DIR}/02-obstruction-gone-after-escape.png` })
+    }).toEqual([200])
 
-    const selected = await page.evaluate(() => {
-        const s = (window as any).__useStore || (window as any).__store
-        return s.getState().selectedElement
-    })
-    expect(selected).toBeNull()
+    expect(errors.filter((e) => !/Download the React DevTools/i.test(e))).toEqual([])
 })
