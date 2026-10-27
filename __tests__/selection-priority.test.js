@@ -137,4 +137,13 @@ describe('collectSelectionCandidates', () => {
         expect(result).toHaveLength(1)
         expect(result[0].pointerDown).toEqual({ x: 500, y: 0 })
     })
+
+    it('selects a long obstruction when the cursor is on the wall body, not only a vertex', () => {
+        const wall = makeWall(1, [{ x: 0, y: 0 }, { x: 500, y: 0 }])
+        const result = collectSelectionCandidates({ x: 250, y: 4 }, [wall], 40)
+        expect(result).toHaveLength(1)
+        expect(result[0].element.id).toBe(1)
+        // pointerDown stays a real vertex so vertex-nudge still has a handle
+        expect(result[0].pointerDown).toEqual({ x: 0, y: 0 })
+    })
 })

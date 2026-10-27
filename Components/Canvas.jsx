@@ -12,7 +12,7 @@ import { computeAutoSprinklerPositions, shouldShowAutoSprinklers } from '@/utils
 import { computeTimeEqLabels } from '@/utils/timeEqLabels'
 import { boundaryDistanceOutward, gridlineStations, buildRequiredBoundaryLine, projectSpanOntoWall, baysCoveredBySpan, polylineLength, splitIntoElevations, pointToPolylineDistance } from '@/utils/efsViewFactor'
 import { getSyncedFloors, transformElementBetweenFloors, mapPointBetweenFloors } from '@/utils/multiFloorFds'
-import { isElementDeleteKey } from '@/utils/elementIds'
+import { canvasKeyAction, shouldCommitSelectionNudge } from '@/utils/elementIds'
 import { get } from 'http'
 
 /**
@@ -53,6 +53,16 @@ const elementConfig = {
 
 function _isMeshEl(el) {
     return !!(el && el.comments && el.comments.toLowerCase().includes('mesh'))
+}
+
+function _distanceToSegment(p, a, b) {
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const len2 = dx * dx + dy * dy
+    if (len2 === 0) return Math.hypot(p.x - a.x, p.y - a.y)
+    let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2
+    t = Math.max(0, Math.min(1, t))
+    return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
 }
 
 function _getRectCornersModule(rectPoints) {
@@ -171,6 +181,23 @@ export function collectSelectionCandidates(pointer, elements, threshold = 40) {
             if (d < bestDistance) {
                 bestDistance = d
                 bestVertex = v
+            }
+        }
+
+        // Polylines (walls, doors, obstructions) are also hittable along the
+        // stroke, not only at vertices — otherwise a long wall never highlights
+        // when you click the body.
+        if (bestDistance > threshold && el.type === 'polyline' && vertices.length >= 2) {
+            for (let i = 0; i < vertices.length - 1; i++) {
+                const a = vertices[i]
+                const b = vertices[i + 1]
+                const d = _distanceToSegment(pointer, a, b)
+                if (d < bestDistance) {
+                    bestDistance = d
+                    const da = Math.hypot(pointer.x - a.x, pointer.y - a.y)
+                    const db = Math.hypot(pointer.x - b.x, pointer.y - b.y)
+                    bestVertex = da <= db ? a : b
+                }
             }
         }
 
@@ -430,27 +457,50 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             if (key == 'Shift') {
                 setIsShiftPressed(true)
             }
-            if (key == 'Escape') {
-                if (tool === 'scale') {
-                    if (!showPopup) {
-                        e.preventDefault()
-                        setScalePoints([])
-                        setIsDrawing(false)
-                        setSnapGuides([])
-                    }
-                    return
+            const typing = !!(e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable))
+            const action = canvasKeyAction({
+                key,
+                tool,
+                showScalePopup: showPopup,
+                selectedElement,
+                currentPoly,
+                currentRect,
+                typing,
+            })
+            if (action.type === 'restartScale') {
+                if (!showPopup) {
+                    e.preventDefault()
+                    setScalePoints([])
+                    setIsDrawing(false)
+                    setSnapGuides([])
                 }
+                return
+            }
+            if (key === 'Escape') {
                 setIsEscapePressed(true)
             }
-            // Highlighted drawing: Delete / Backspace / Escape. Escape-only
-            // left the orange selection on screen when people pressed Delete.
-            const typing = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)
-            if (!typing && isElementDeleteKey(key) && selectedElement && selectedElement["element"] && !(tool === 'scale' && key === 'Escape')) {
+            if (action.type === 'deleteSelection') {
                 e.preventDefault()
-                const selectedEl = selectedElement["element"]
-                removeElement(selectedEl.id ?? selectedEl.element_index)
+                removeElement(action.id)
                 setSelectedElement(null)
                 setCandidateCycleState(null)
+                return
+            }
+            if (action.type === 'cancelPoly') {
+                e.preventDefault()
+                setCurrentPoly([])
+                setIsDrawing(false)
+                setSnapGuides([])
+                setGuideLine(null)
+                return
+            }
+            if (action.type === 'cancelRect') {
+                e.preventDefault()
+                setCurrentRect([])
+                setIsDrawing(false)
+                setSnapGuides([])
+                setGuideLine(null)
+                return
             }
             // "Enter"
             if (key == 'Enter') {
@@ -507,7 +557,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             window.removeEventListener("keyup", handleCtrlRelease)
             window.removeEventListener('blur', clearModifiers)
         }
-    }, [elements, currentPoly, tool, setTool, comment, addElement, selectedElement, currentId, removeElement, returnElementObject, setSelectedElement, undo, redo, showPopup])
+    }, [elements, currentPoly, currentRect, tool, setTool, comment, addElement, selectedElement, currentId, removeElement, returnElementObject, setSelectedElement, undo, redo, showPopup])
 
     // Resolve the ghost floor (floor below if activeFloorIndex > 0, or floor above if on floor 0)
     // and transform its elements into the active floor's pixel coordinate system.
@@ -1948,6 +1998,11 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
     //   TODO: polyline and mark point tools
     function handlePointerDown(event) { // should this be handle mouse down?
         if (event.button !== 0) return
+        // Canvas is not focusable by default, so FloorBar inputs keep keydown
+        // after a click. Take focus so Escape hits the highlighted drawing.
+        if (canvasRef.current && typeof canvasRef.current.focus === 'function') {
+            canvasRef.current.focus({ preventScroll: true })
+        }
         if (tool === 'origin') {
             let newP = canvasPoint(event, canvasRef.current)
             newP = snapVertexWithPointPriority(newP, null, [], isShiftPressed)
@@ -2212,41 +2267,41 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             // TODO: use one cells distance
             let offsetY = 10*yCounter 
             let offsetX = 10*xCounter
-            // let offsetX = pointer.x - startingPointPosition.x
-            // let offsetY = pointer.y - startingPointPosition.y
-            // if rect need to include corners too!
-            if (isRect(el)) {
-                let rectPoints = getRectCorners(el.points) // returns points in order of top left, bottom left, bottom right, top right
-                for (let i = 0; i < rectPoints.length; i++) {
-                    let point = rectPoints[i]
-                    if (point.x == startingPointPosition.x && point.y == startingPointPosition.y) {
-                        // if bottom left -> change top left in x and bottom right in y
-                        // if top right -> change bottom right in x and top left in y
-                        // if top left or bottom right; change only that point
-                        // works when first point is top left
-                        let pointX = point.x + offsetX
-                        let pointY = point.y + offsetY
-                        rectPoints[i].x = pointX
-                        rectPoints[i].y = pointY
-                        rectPoints[((i-1)+4)%4].x += offsetX
-                        rectPoints[((i+1)+4)%4].y += offsetY
-                    }
+            // Click-to-highlight must survive pointerup so Escape can delete.
+            // A zero-offset click used to changeElement + clear selection, which
+            // left the orange overlay gone and the wall still in the store.
+            if (shouldCommitSelectionNudge(offsetX, offsetY)) {
+                if (isRect(el)) {
+                    let rectPoints = getRectCorners(el.points) // returns points in order of top left, bottom left, bottom right, top right
+                    for (let i = 0; i < rectPoints.length; i++) {
+                        let point = rectPoints[i]
+                        if (point.x == startingPointPosition.x && point.y == startingPointPosition.y) {
+                            // if bottom left -> change top left in x and bottom right in y
+                            // if top right -> change bottom right in x and top left in y
+                            // if top left or bottom right; change only that point
+                            // works when first point is top left
+                            let pointX = point.x + offsetX
+                            let pointY = point.y + offsetY
+                            rectPoints[i].x = pointX
+                            rectPoints[i].y = pointY
+                            rectPoints[((i-1)+4)%4].x += offsetX
+                            rectPoints[((i+1)+4)%4].y += offsetY
+                        }
 
-                }
-                el.points = [rectPoints[0], rectPoints[2]]
-            } else {
+                    }
+                    el.points = [rectPoints[0], rectPoints[2]]
+                } else {
 
-                for (let i = 0; i < el.points.length; i++) {
-                    let point = el.points[i]
-                    if (point == startingPointPosition) {
-                        el.points[i].x = point.x + offsetX
-                        el.points[i].y = point.y + offsetY 
+                    for (let i = 0; i < el.points.length; i++) {
+                        let point = el.points[i]
+                        if (point == startingPointPosition) {
+                            el.points[i].x = point.x + offsetX
+                            el.points[i].y = point.y + offsetY 
+                        }
                     }
                 }
+                changeElement(el)
             }
-            changeElement(el)
-            setSelectedElement(null)
-            setCandidateCycleState(null)
             setSnapGuides([])
             setXCounter(0)
             setYCounter(0)
@@ -2277,7 +2332,8 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
       width={canvasWidth} // pass in width and height as props
       height={canvasHeight}
       style={{ width: canvasWidth * zoom, height: canvasHeight * zoom }}
-      className={`bg-transparent top-0 left-0 absolute z-10 ${selectedElement ? 'select-none' : ''}`}
+      tabIndex={0}
+      className={`bg-transparent top-0 left-0 absolute z-10 outline-none ${selectedElement ? 'select-none' : ''}`}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onContextMenu={event => { if (tool === 'scale') event.preventDefault() }}

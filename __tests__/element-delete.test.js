@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import useStore from '../store/useStore'
-import { isElementDeleteKey, elementMatchesSelectionId } from '../utils/elementIds'
+import {
+    isElementDeleteKey,
+    elementMatchesSelectionId,
+    shouldCommitSelectionNudge,
+    canvasKeyAction,
+} from '../utils/elementIds'
 
 const wall = (id, extra = {}) => ({
     id,
@@ -61,5 +66,63 @@ describe('removeElement deletes a highlighted obstruction', () => {
         useStore.getState().addElement(wall(uuid, { element_index: 2 }))
         useStore.getState().removeElement(2)
         expect(useStore.getState().elements).toHaveLength(0)
+    })
+})
+
+describe('shouldCommitSelectionNudge', () => {
+    it('does not rewrite a wall that was only clicked', () => {
+        expect(shouldCommitSelectionNudge(0, 0)).toBe(false)
+    })
+
+    it('commits when WASD actually nudged the vertex', () => {
+        expect(shouldCommitSelectionNudge(10, 0)).toBe(true)
+        expect(shouldCommitSelectionNudge(0, -10)).toBe(true)
+    })
+})
+
+describe('canvasKeyAction: Escape on a highlighted obstruction', () => {
+    const selected = { element: wall(3), pointerDown: { x: 0, y: 0 } }
+
+    it('deletes the highlighted wall on Escape after click-to-select', () => {
+        expect(canvasKeyAction({
+            key: 'Escape',
+            tool: 'selection',
+            selectedElement: selected,
+        })).toEqual({ type: 'deleteSelection', id: 3 })
+    })
+
+    it('still deletes on Escape when a FloorBar input kept focus', () => {
+        expect(canvasKeyAction({
+            key: 'Escape',
+            tool: 'selection',
+            selectedElement: selected,
+            typing: true,
+        })).toEqual({ type: 'deleteSelection', id: 3 })
+    })
+
+    it('does not steal Backspace from a focused text field', () => {
+        expect(canvasKeyAction({
+            key: 'Backspace',
+            tool: 'selection',
+            selectedElement: selected,
+            typing: true,
+        })).toEqual({ type: 'none' })
+    })
+
+    it('cancels an in-progress obstruction if nothing is selected', () => {
+        expect(canvasKeyAction({
+            key: 'Escape',
+            tool: 'polyline',
+            currentPoly: [{ x: 0, y: 0 }, { x: 10, y: 0 }],
+        })).toEqual({ type: 'cancelPoly' })
+    })
+
+    it('restarts scale calibration instead of deleting', () => {
+        expect(canvasKeyAction({
+            key: 'Escape',
+            tool: 'scale',
+            showScalePopup: false,
+            selectedElement: selected,
+        })).toEqual({ type: 'restartScale' })
     })
 })
