@@ -445,7 +445,7 @@ describe('Multi-floor FDS state, coordinate alignment, persistence, and FDS comb
     expect(useStore.getState().elements[0].id).toBe(201)
 
     // Level 1 starts with a blank drafting sheet banner: upload this floor's
-    // PDF (then Scale if it isn't 1:1 with Ground) or reuse Ground's PDF.
+    // PDF (Ground's scale is kept; Scale is optional) or reuse Ground's PDF.
     expect(screen.getByTestId('drafting-sheet-banner')).toBeTruthy()
     expect(screen.getByTestId('banner-upload-floor-pdf-button')).toBeTruthy()
     const reuseBtn = screen.getByTestId('banner-reuse-ground-pdf-button')
@@ -478,6 +478,57 @@ describe('Multi-floor FDS state, coordinate alignment, persistence, and FDS comb
     expect(useStore.getState().elements).toHaveLength(1)
     expect(useStore.getState().elements[0].id).toBe(201)
     expect(useStore.getState().elements[0].comments).toBe('floorOpening')
+  })
+
+  it('keeps Ground scale after a dedicated floor PDF and offers Scale as an option', () => {
+    useStore.setState({
+      currentMode: 'fdsGen',
+      viewMode: '2d',
+      projectId: 'proj-multi',
+      projectName: 'Multi-Storey Tower',
+    })
+    useStore.getState().setPixelsPerMesh(5)
+    useStore.getState().setTool('selection')
+
+    render(
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(AddFloorClusterButton, { onSwitchFloor: vi.fn() }),
+        React.createElement(FloorBar, { onSwitchFloor: vi.fn() })
+      )
+    )
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('add-floor-cluster-button'))
+    })
+
+    expect(useStore.getState().pixelsPerMesh).toBe(5)
+    expect(useStore.getState().tool).not.toBe('scale')
+    expect(screen.getByTestId('banner-upload-floor-pdf-button')).toBeTruthy()
+
+    act(() => {
+      useStore.getState().updateFloorMeta(1, { hasCustomPdf: true, pdfSource: 'custom' })
+    })
+
+    expect(screen.queryByTestId('drafting-sheet-banner')).toBeNull()
+    expect(screen.getByTestId('pdf-scale-option-banner')).toBeTruthy()
+    expect(screen.getByTestId('banner-scale-floor-button')).toBeTruthy()
+    expect(screen.getByTestId('banner-keep-ground-scale-button')).toBeTruthy()
+    expect(useStore.getState().tool).not.toBe('scale')
+    expect(useStore.getState().pixelsPerMesh).toBe(5)
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('banner-scale-floor-button'))
+    })
+    expect(useStore.getState().tool).toBe('scale')
+    expect(useStore.getState().pixelsPerMesh).toBe(5)
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('banner-keep-ground-scale-button'))
+    })
+    expect(screen.queryByTestId('pdf-scale-option-banner')).toBeNull()
+    expect(useStore.getState().pixelsPerMesh).toBe(5)
   })
 
   it('validates mesh existence before calling backend in generateFdsCode', async () => {

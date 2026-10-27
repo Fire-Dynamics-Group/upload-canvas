@@ -215,7 +215,7 @@ export default function FloorBar({ onSwitchFloor, onUploadFloorPdf, onReuseGroun
                     className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-lg bg-amber-950/95 text-amber-200 border border-amber-600/70 shadow-lg backdrop-blur-sm text-xs"
                 >
                     <span>
-                        📝 <strong>{activeFloor.name}</strong>: Blank sheet. Upload this floor's PDF (then Scale if it isn't 1:1 with Ground), reuse Ground's PDF, or trace the Ghost Floor.
+                        📝 <strong>{activeFloor.name}</strong>: Blank sheet. Upload this floor's PDF (Ground's scale is kept — Scale only if this drawing isn't 1:1), reuse Ground's PDF, or trace the Ghost Floor.
                     </span>
                     <span className="flex items-center gap-1.5 shrink-0">
                         <button
@@ -223,7 +223,7 @@ export default function FloorBar({ onSwitchFloor, onUploadFloorPdf, onReuseGroun
                             data-testid="banner-upload-floor-pdf-button"
                             onClick={() => fileInputRef.current?.click()}
                             className="px-2 py-0.5 rounded bg-indigo-700 hover:bg-indigo-600 text-white font-medium text-[11px] whitespace-nowrap transition-colors"
-                            title="Upload this level's floor plan PDF, then calibrate Scale if it differs from Ground"
+                            title="Upload this level's floor plan PDF. Ground's scale is kept unless you choose Scale."
                         >
                             📄 Upload Floor PDF
                         </button>
@@ -238,6 +238,40 @@ export default function FloorBar({ onSwitchFloor, onUploadFloorPdf, onReuseGroun
                                 📋 Use Ground Floor PDF
                             </button>
                         )}
+                    </span>
+                </div>
+            )}
+
+            {activeIdx > 0 && activeFloor.hasCustomPdf && activeFloor.pdfSource === 'custom' && !activeFloor.scalePromptDismissed && (
+                <div
+                    data-testid="pdf-scale-option-banner"
+                    className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-lg bg-indigo-950/95 text-indigo-100 border border-indigo-500/70 shadow-lg backdrop-blur-sm text-xs"
+                >
+                    <span>
+                        📄 <strong>{activeFloor.name}</strong>: Dedicated PDF. Ground's scale is kept. Click Scale only if this drawing isn't 1:1.
+                    </span>
+                    <span className="flex items-center gap-1.5 shrink-0">
+                        <button
+                            type="button"
+                            data-testid="banner-scale-floor-button"
+                            onClick={() => {
+                                setTool('scale')
+                                setComment('')
+                            }}
+                            className="px-2 py-0.5 rounded bg-indigo-700 hover:bg-indigo-600 text-white font-medium text-[11px] whitespace-nowrap transition-colors"
+                            title="Two clicks plus a length in metres. Skip if this plan uses Ground's scale."
+                        >
+                            📏 Scale
+                        </button>
+                        <button
+                            type="button"
+                            data-testid="banner-keep-ground-scale-button"
+                            onClick={() => updateFloorMeta(activeIdx, { scalePromptDismissed: true })}
+                            className="px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-600 font-medium text-[11px] whitespace-nowrap transition-colors"
+                            title="Keep Ground's scale for this PDF"
+                        >
+                            Keep Ground scale
+                        </button>
                     </span>
                 </div>
             )}
@@ -420,15 +454,20 @@ export default function FloorBar({ onSwitchFloor, onUploadFloorPdf, onReuseGroun
                         ⬜ Floor Opening / Void
                     </button>
 
-                    {/* Re-calibrate scale on this floor */}
+                    {/* Optional scale — same drawing scale as Ground is common even on a different plan */}
                     <button
                         type="button"
+                        data-testid="floor-scale-tool-button"
                         onClick={() => {
                             setTool('scale')
                             setComment('')
                         }}
-                        className="px-2.5 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600"
-                        title="Re-calibrate scale for this floor's PDF"
+                        className={`px-2.5 py-1.5 rounded font-medium transition-colors ${
+                            tool === 'scale'
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600'
+                        }`}
+                        title="Calibrate scale for this floor's PDF. Optional if it matches Ground."
                     >
                         📏 Scale
                     </button>

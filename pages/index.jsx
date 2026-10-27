@@ -501,13 +501,13 @@ export default function Home() {
     const targetFloor = synced[floorIndex] || synced[st.activeFloorIndex]
     const floorNum = targetFloor?.floor_number ?? floorIndex ?? 0
 
-    // Dedicated PDF: do not keep the other floor's scale. Run Scale so this
-    // drawing can be calibrated if it isn't 1:1 with Ground. Reuse-ground keeps scale.
-    useStore.getState().setPixelsPerMesh(1)
-    await renderPdf(URL.createObjectURL(file), false, floorNum)
-    useStore.getState().updateFloorMeta(floorIndex, { hasCustomPdf: true, pdfSource: 'custom' })
-    useStore.getState().setTool('scale')
-    useStore.getState().setComment('')
+    // Dedicated PDF can still share Ground's scale. Keep it; Scale is optional.
+    await renderPdf(URL.createObjectURL(file), true, floorNum)
+    useStore.getState().updateFloorMeta(floorIndex, {
+      hasCustomPdf: true,
+      pdfSource: 'custom',
+      scalePromptDismissed: false,
+    })
 
     if (isDbBacked(st.currentMode)) {
       savePdfToIndexedDB(arrayBuffer, floorNum)
