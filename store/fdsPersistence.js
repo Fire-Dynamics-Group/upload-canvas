@@ -1,5 +1,5 @@
 import { defaultDoorTimings } from './defaultDoorTimings'
-import { getSyncedFloors, normalizeFloor } from '../utils/multiFloorFds'
+import { getSyncedFloors, normalizeFloor, toElementIndex } from '../utils/multiFloorFds'
 
 // Per-mode persistence handlers for fdsGen — pure functions registered on the
 // MODE_PERSISTENCE registry (see persistenceModes.js). Onboarding another mode
@@ -33,7 +33,7 @@ export function buildFdsPayload(s) {
                 sliceZHeight: fs.sliceZHeight ?? 2.0,
             },
             elements: (f.elements || []).map((el, i) => ({
-                element_index: el.id ?? i,
+                element_index: toElementIndex(el, i),
                 type: el.type,
                 points: el.points,
                 comments: el.comments,

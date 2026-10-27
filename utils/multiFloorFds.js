@@ -1,6 +1,18 @@
 // Multi-floor state management, cross-floor coordinate alignment, and
 // multi-floor FDS model assembly.
 
+/** Integer element_index for POST /projects/{id}/save (backend ElementIn). */
+export function toElementIndex(el, fallback = 0) {
+    const candidates = [el?.element_index, el?.id, fallback]
+    for (const c of candidates) {
+        if (c === null || c === undefined || c === '') continue
+        const n = Number(c)
+        if (Number.isInteger(n)) return n
+    }
+    const fb = Number(fallback)
+    return Number.isInteger(fb) ? fb : 0
+}
+
 export const DEFAULT_FLOOR_SETTINGS = {
     z_level: 0,
     wall_height: 3,
@@ -32,7 +44,7 @@ export function normalizeFloor(raw = {}, index = 0, fallbackState = {}) {
 
     const rawElements = raw.elements || []
     const normalizedElements = rawElements.map((el, i) => ({
-        id: el.id ?? el.element_index ?? i,
+        id: toElementIndex(el, i),
         type: el.type,
         points: el.points,
         comments: el.comments,
@@ -265,62 +277,103 @@ export function offsetFdsLineXY(line, dx, dy) {
     return out
 }
 
-/**
- * Generate inter-floor slab `&OBST` and `floorOpening` `&HOLE` lines for upper floors
- * (`floor_number > 0` or `z_level > baseZ`).
- */
-export function generateInterFloorSlabLines(floorElementsInBasePx, floor, globalMinX, globalMaxY, basePxPerM, slabThickness = 0.1) {
-    const lines = []
-    const zLevel = Number(floor.z_level) || 0
-    const zBottom = Number((zLevel - slabThickness).toFixed(3))
-    const zTop = Number(zLevel.toFixed(3))
+function snapTenth(value) {
+    return Number((Math.round(Number(value) / 0.1) * 0.1).toFixed(2))
+}
 
-    // Use meshes or walls on this floor to determine the floor slab footprint
-    const meshOrWallEls = floorElementsInBasePx.filter(
-        (el) => el.comments === 'mesh' || el.comments === 'obstruction'
-    )
-    if (meshOrWallEls.length === 0) return lines
-
+function footprintBoundsMetres(elements, globalMinX, globalMaxY, basePxPerM) {
+    const meshEls = (elements || []).filter((el) => el && el.comments === 'mesh')
+    const source = meshEls.length > 0
+        ? meshEls
+        : (elements || []).filter((el) => el && el.comments === 'obstruction')
     const xs = []
     const ys = []
-    for (const el of meshOrWallEls) {
+    for (const el of source) {
         for (const p of el.points || []) {
+            if (!p || !Number.isFinite(Number(p.x)) || !Number.isFinite(Number(p.y))) continue
             xs.push((p.x - globalMinX) / basePxPerM)
             ys.push((globalMaxY - p.y) / basePxPerM)
         }
     }
-    if (xs.length === 0 || ys.length === 0) return lines
-
-    const x1 = Number((Math.round((Math.min(...xs)) / 0.1) * 0.1).toFixed(2))
-    const x2 = Number((Math.round((Math.max(...xs)) / 0.1) * 0.1).toFixed(2))
-    const y1 = Number((Math.round((Math.min(...ys)) / 0.1) * 0.1).toFixed(2))
-    const y2 = Number((Math.round((Math.max(...ys)) / 0.1) * 0.1).toFixed(2))
-
-    if (x2 > x1 && y2 > y1) {
-        const floorLabel = (floor.name || `Floor_${floor.floor_number}`).replace(/'/g, '')
-        lines.push(
-            `&OBST ID='${floorLabel} Slab', XB=${x1},${x2},${y1},${y2},${zBottom},${zTop}, SURF_ID='Plasterboard', RGB=200,200,205, TRANSPARENCY=0.35/`
-        )
+    if (xs.length === 0 || ys.length === 0) return null
+    return {
+        x1: snapTenth(Math.min(...xs)),
+        x2: snapTenth(Math.max(...xs)),
+        y1: snapTenth(Math.min(...ys)),
+        y2: snapTenth(Math.max(...ys)),
     }
+}
 
-    // Punch holes for any floorOpening or stairMesh rects
-    const openingEls = floorElementsInBasePx.filter(
-        (el) => el.comments === 'floorOpening' || el.comments === 'stairMesh'
+function intersectBounds(a, b) {
+    if (!a) return b
+    if (!b) return a
+    return {
+        x1: Math.max(a.x1, b.x1),
+        x2: Math.min(a.x2, b.x2),
+        y1: Math.max(a.y1, b.y1),
+        y2: Math.min(a.y2, b.y2),
+    }
+}
+
+function isStairOrOpening(el) {
+    const c = String(el?.comments || el?.comment || '')
+    return c === 'floorOpening' || c === 'stairMesh'
+}
+
+/**
+ * Generate a 0.2 m concrete slab `&OBST` at the join under this floor, plus
+ * `&HOLE` cuts for stair / floorOpening voids. The slab XY is the overlap of
+ * this floor and the floor below (not a union of the larger footprint).
+ */
+export function generateInterFloorSlabLines(
+    floorElementsInBasePx,
+    floor,
+    globalMinX,
+    globalMaxY,
+    basePxPerM,
+    slabThickness = 0.2,
+    lowerFloorElementsInBasePx = []
+) {
+    const lines = []
+    const thickness = Number.isFinite(Number(slabThickness)) ? Number(slabThickness) : 0.2
+    const zLevel = Number(floor.z_level) || 0
+    const zBottom = Number((zLevel - thickness).toFixed(3))
+    const zTop = Number(zLevel.toFixed(3))
+
+    const upperBounds = footprintBoundsMetres(
+        floorElementsInBasePx, globalMinX, globalMaxY, basePxPerM
     )
+    const lowerBounds = footprintBoundsMetres(
+        lowerFloorElementsInBasePx, globalMinX, globalMaxY, basePxPerM
+    )
+    const join = intersectBounds(upperBounds, lowerBounds)
+    if (!join || !(join.x2 > join.x1 && join.y2 > join.y1)) return lines
+
+    const floorLabel = (floor.name || `Floor_${floor.floor_number}`).replace(/'/g, '')
+    lines.push(
+        `&OBST ID='${floorLabel} Slab', XB=${join.x1},${join.x2},${join.y1},${join.y2},${zBottom},${zTop}, SURF_ID='Concrete', RGB=168,163,155, TRANSPARENCY=0.2/`
+    )
+
+    const openingEls = [
+        ...(floorElementsInBasePx || []),
+        ...(lowerFloorElementsInBasePx || []),
+    ].filter(isStairOrOpening)
+
     openingEls.forEach((el, idx) => {
         const oxs = (el.points || []).map((p) => (p.x - globalMinX) / basePxPerM)
         const oys = (el.points || []).map((p) => (globalMaxY - p.y) / basePxPerM)
-        if (oxs.length >= 2 && oys.length >= 2) {
-            const hx1 = Number((Math.round((Math.min(...oxs)) / 0.1) * 0.1).toFixed(2))
-            const hx2 = Number((Math.round((Math.max(...oxs)) / 0.1) * 0.1).toFixed(2))
-            const hy1 = Number((Math.round((Math.min(...oys)) / 0.1) * 0.1).toFixed(2))
-            const hy2 = Number((Math.round((Math.max(...oys)) / 0.1) * 0.1).toFixed(2))
-            const hz1 = Number((zBottom - 0.05).toFixed(3))
-            const hz2 = Number((zTop + 0.05).toFixed(3))
-            lines.push(
-                `&HOLE ID='Floor Opening ${idx + 1}', XB=${hx1},${hx2},${hy1},${hy2},${hz1},${hz2}/`
-            )
-        }
+        if (oxs.length < 2 || oys.length < 2) return
+        const hx1 = snapTenth(Math.min(...oxs))
+        const hx2 = snapTenth(Math.max(...oxs))
+        const hy1 = snapTenth(Math.min(...oys))
+        const hy2 = snapTenth(Math.max(...oys))
+        if (!(hx2 > hx1 && hy2 > hy1)) return
+        const hz1 = Number((zBottom - 0.05).toFixed(3))
+        const hz2 = Number((zTop + 0.05).toFixed(3))
+        const kind = String(el.comments || el.comment || '') === 'stairMesh' ? 'Stair Opening' : 'Floor Opening'
+        lines.push(
+            `&HOLE ID='${kind} ${idx + 1}', XB=${hx1},${hx2},${hy1},${hy2},${hz1},${hz2}/`
+        )
     })
 
     return lines
@@ -510,7 +563,27 @@ export function combineMultiFloorFds(floorRuns, options = {}) {
     })
 
     combinedLines.push('&TAIL/')
-    const combined = combinedLines.join('\n')
+    const withSurf = ensureConcreteSurf(combinedLines)
+    const combined = withSurf.join('\n')
     if (options.alignStackedMeshes === false) return combined
     return alignStackedMeshesInFds(combined)
+}
+
+const CONCRETE_MATL =
+    "&MATL ID='CONCRETE', SPECIFIC_HEAT=0.88, CONDUCTIVITY=1.4, DENSITY=2300.0/"
+const CONCRETE_SURF =
+    "&SURF ID='Concrete', RGB=168,163,155, MATL_ID='CONCRETE', THICKNESS=0.2/"
+
+function ensureConcreteSurf(lines) {
+    const text = lines.join('\n')
+    if (!/SURF_ID='Concrete'/i.test(text)) return lines
+    const hasSurf = /&SURF\b[\s\S]*?ID='Concrete'/i.test(text)
+    const hasMatl = /&MATL\b[\s\S]*?ID='CONCRETE'/i.test(text)
+    if (hasSurf && hasMatl) return lines
+    const insertAt = lines.findIndex((l) => /^\s*&MESH\b/i.test(l))
+    const idx = insertAt >= 0 ? insertAt : 1
+    const extra = []
+    if (!hasMatl) extra.push(CONCRETE_MATL)
+    if (!hasSurf) extra.push(CONCRETE_SURF)
+    return [...lines.slice(0, idx), ...extra, ...lines.slice(idx)]
 }
