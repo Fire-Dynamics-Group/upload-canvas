@@ -14,6 +14,7 @@ test.use({ viewport: { width: 1440, height: 900 } })
 /**
  * Highlight is hold-to-target: mouse-up drops it (vertices must not follow).
  * Escape while the button is held removes that wall.
+ * These tests fail if click-to-select (highlight after release) comes back.
  */
 async function bootstrapSitePlan(page: import('@playwright/test').Page) {
     await page.addInitScript(() => localStorage.setItem('upload-canvas-username', 'Canvas test'))
@@ -71,24 +72,44 @@ function canvasClick(
     return { x: box.x + canvasX * zoom, y: box.y + canvasY * zoom }
 }
 
-test('releasing the click drops the highlight so the vertex does not follow the mouse', async ({ page }) => {
-    const drawing = await bootstrapSitePlan(page)
+async function storeState(page: import('@playwright/test').Page) {
+    return page.evaluate(() => {
+        const s = (window as any).__useStore || (window as any).__store
+        const st = s.getState()
+        return {
+            selectedId: st.selectedElement?.element?.id ?? null,
+            points: (st.elements || []).map((e: { id: unknown, points: { x: number, y: number }[] }) => ({
+                id: e.id,
+                x0: e.points[0].x,
+                y0: e.points[0].y,
+                x1: e.points[1]?.x,
+                y1: e.points[1]?.y,
+            })),
+        }
+    })
+}
 
-    await page.evaluate(() => {
+async function seedWall(page: import('@playwright/test').Page, id: number, x: number) {
+    await page.evaluate(({ id, x }) => {
         const s = (window as any).__useStore || (window as any).__store
         s.setState({
             pixelsPerMesh: 33.6,
             currentMode: 'fdsGen',
             elements: [{
-                id: 9001,
+                id,
                 type: 'polyline',
                 comments: 'obstruction',
-                points: [{ x: 400, y: 200 }, { x: 400, y: 400 }],
+                points: [{ x, y: 200 }, { x, y: 400 }],
             }],
             selectedElement: null,
         })
         s.getState().setTool('selection')
-    })
+    }, { id, x })
+}
+
+test('releasing the click drops the highlight so the vertex does not follow the mouse', async ({ page }) => {
+    const drawing = await bootstrapSitePlan(page)
+    await seedWall(page, 9001, 400)
 
     const zoom = await drawing.evaluate((el: HTMLCanvasElement) => el.getBoundingClientRect().width / el.width)
     const box = await drawing.boundingBox()
@@ -98,35 +119,44 @@ test('releasing the click drops the highlight so the vertex does not follow the 
     const mid = canvasClick(box, zoom, 400, 300)
     await page.mouse.move(mid.x, mid.y)
     await page.mouse.down()
-    await expect.poll(async () => {
-        return page.evaluate(() => {
-            const s = (window as any).__useStore || (window as any).__store
-            return s.getState().selectedElement?.element?.id ?? null
-        })
-    }).toBe(9001)
+    await expect.poll(async () => (await storeState(page)).selectedId).toBe(9001)
     await page.screenshot({ path: `${SHOT_DIR}/01-obstruction-highlighted.png` })
 
     await page.mouse.up()
-    await expect.poll(async () => {
-        return page.evaluate(() => {
-            const s = (window as any).__useStore || (window as any).__store
-            return s.getState().selectedElement
-        })
-    }).toBeNull()
+    await expect.poll(async () => (await storeState(page)).selectedId).toBeNull()
 
     const afterMove = canvasClick(box, zoom, 520, 300)
-    await page.mouse.move(afterMove.x, afterMove.y)
-    const points = await page.evaluate(() => {
-        const s = (window as any).__useStore || (window as any).__store
-        return s.getState().elements[0].points
-    })
-    expect(points).toEqual([{ x: 400, y: 200 }, { x: 400, y: 400 }])
+    await page.mouse.move(afterMove.x, afterMove.y, { steps: 8 })
+    const after = await storeState(page)
+    expect(after.selectedId).toBeNull()
+    expect(after.points).toEqual([{ id: 9001, x0: 400, y0: 200, x1: 400, y1: 400 }])
+})
+
+test('Escape after mouse-up does not delete — that was the broken click-to-select path', async ({ page }) => {
+    const drawing = await bootstrapSitePlan(page)
+    await seedWall(page, 9001, 400)
+
+    const zoom = await drawing.evaluate((el: HTMLCanvasElement) => el.getBoundingClientRect().width / el.width)
+    const box = await drawing.boundingBox()
+    if (!box) throw new Error('drawing canvas has no box')
+
+    const mid = canvasClick(box, zoom, 400, 300)
+    await page.mouse.move(mid.x, mid.y)
+    await page.mouse.down()
+    await expect.poll(async () => (await storeState(page)).selectedId).toBe(9001)
+    await page.mouse.up()
+    await expect.poll(async () => (await storeState(page)).selectedId).toBeNull()
+
+    await page.keyboard.press('Escape')
+    const after = await storeState(page)
+    expect(after.selectedId).toBeNull()
+    expect(after.points.map((p) => p.id)).toEqual([9001])
 })
 
 test('Escape while holding the click deletes the highlighted obstruction', async ({ page }) => {
     const drawing = await bootstrapSitePlan(page)
     mkdirSync(SHOT_DIR, { recursive: true })
-    const errors = []
+    const errors: string[] = []
     page.on('pageerror', (err) => errors.push(String(err)))
     page.on('console', (msg) => {
         if (msg.type() === 'error') errors.push(msg.text())
@@ -135,13 +165,13 @@ test('Escape while holding the click deletes the highlighted obstruction', async
     await page.evaluate(() => {
         const s = (window as any).__useStore || (window as any).__store
         const keep = {
-            id: NaN,
+            id: 8001,
             type: 'polyline',
             comments: 'obstruction',
             points: [{ x: 200, y: 200 }, { x: 200, y: 400 }],
         }
         const drop = {
-            id: NaN,
+            id: 8002,
             type: 'polyline',
             comments: 'obstruction',
             points: [{ x: 400, y: 200 }, { x: 400, y: 400 }],
@@ -153,8 +183,6 @@ test('Escape while holding the click deletes the highlighted obstruction', async
             selectedElement: null,
         })
         s.getState().setTool('selection')
-        ;(window as any).__keepWall = keep
-        ;(window as any).__dropWall = drop
     })
 
     const zoom = await drawing.evaluate((el: HTMLCanvasElement) => el.getBoundingClientRect().width / el.width)
@@ -164,16 +192,22 @@ test('Escape while holding the click deletes the highlighted obstruction', async
     const mid = canvasClick(box, zoom, 400, 300)
     await page.mouse.move(mid.x, mid.y)
     await page.mouse.down()
-    await page.keyboard.press('Escape')
-    await page.mouse.up()
+    await expect.poll(async () => (await storeState(page)).selectedId).toBe(8002)
+
+    await page.keyboard.down('Escape')
+    await page.keyboard.up('Escape')
+
+    await expect.poll(async () => (await storeState(page)).points.map((p) => p.id)).toEqual([8001])
     await page.screenshot({ path: `${SHOT_DIR}/02-obstruction-gone-after-escape.png` })
 
-    await expect.poll(async () => {
-        return page.evaluate(() => {
-            const s = (window as any).__useStore || (window as any).__store
-            return s.getState().elements.map((e: { points: { x: number }[] }) => e.points[0].x)
-        })
-    }).toEqual([200])
+    await page.mouse.up()
+    await expect.poll(async () => (await storeState(page)).selectedId).toBeNull()
+
+    const afterMove = canvasClick(box, zoom, 520, 300)
+    await page.mouse.move(afterMove.x, afterMove.y, { steps: 8 })
+    const after = await storeState(page)
+    expect(after.selectedId).toBeNull()
+    expect(after.points).toEqual([{ id: 8001, x0: 200, y0: 200, x1: 200, y1: 400 }])
 
     expect(errors.filter((e) => !/Download the React DevTools/i.test(e))).toEqual([])
 })

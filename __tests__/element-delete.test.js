@@ -117,12 +117,22 @@ describe('shouldCommitSelectionNudge', () => {
 describe('canvasKeyAction: Escape on a highlighted obstruction', () => {
     const selected = { element: wall(3), pointerDown: { x: 0, y: 0 } }
 
-    it('deletes the highlighted wall on Escape after click-to-select', () => {
+    it('deletes the wall on Escape only while the click is held', () => {
         expect(canvasKeyAction({
             key: 'Escape',
             tool: 'selection',
             selectedElement: selected,
+            pointerHeld: true,
         })).toEqual({ type: 'deleteSelection', element: selected.element, id: 3 })
+    })
+
+    it('does not delete after mouse-up — highlight is hold-to-target, not click-to-select', () => {
+        expect(canvasKeyAction({
+            key: 'Escape',
+            tool: 'selection',
+            selectedElement: selected,
+            pointerHeld: false,
+        })).toEqual({ type: 'none' })
     })
 
     it('still deletes on Escape when a FloorBar input kept focus', () => {
@@ -131,6 +141,7 @@ describe('canvasKeyAction: Escape on a highlighted obstruction', () => {
             tool: 'selection',
             selectedElement: selected,
             typing: true,
+            pointerHeld: true,
         })).toEqual({ type: 'deleteSelection', element: selected.element, id: 3 })
     })
 
@@ -140,6 +151,7 @@ describe('canvasKeyAction: Escape on a highlighted obstruction', () => {
             key: 'Escape',
             tool: 'selection',
             selectedElement: { element: broken, pointerDown: { x: 0, y: 0 } },
+            pointerHeld: true,
         })
         expect(action.type).toBe('deleteSelection')
         expect(action.element).toBe(broken)

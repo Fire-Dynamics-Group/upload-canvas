@@ -69,7 +69,8 @@ function selectionId(el) {
 }
 
 /**
- * Hold-click highlight + Escape deletes that wall. The key handler reads
+ * Hold-click highlight + Escape deletes that wall. Pointer-up drops the
+ * highlight; Escape after release must not delete. The key handler reads
  * selection from a ref so Escape works before React rebinds the listener.
  * Backspace/Delete still yield when a text field is focused; Escape does not.
  */
@@ -81,13 +82,14 @@ export function canvasKeyAction({
     currentPoly = [],
     currentRect = [],
     typing = false,
+    pointerHeld = false,
 } = {}) {
     if (key === 'Escape' && tool === 'scale' && !showScalePopup) {
         return { type: 'restartScale' }
     }
 
     const hasSelection = !!(selectedElement && selectedElement.element)
-    if (isElementDeleteKey(key) && hasSelection) {
+    if (isElementDeleteKey(key) && hasSelection && pointerHeld) {
         if (typing && (key === 'Backspace' || key === 'Delete')) {
             return { type: 'none' }
         }

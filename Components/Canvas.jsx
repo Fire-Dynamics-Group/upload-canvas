@@ -13,6 +13,7 @@ import { computeTimeEqLabels } from '@/utils/timeEqLabels'
 import { boundaryDistanceOutward, gridlineStations, buildRequiredBoundaryLine, projectSpanOntoWall, baysCoveredBySpan, polylineLength, splitIntoElevations, pointToPolylineDistance } from '@/utils/efsViewFactor'
 import { getSyncedFloors, transformElementBetweenFloors, mapPointBetweenFloors } from '@/utils/multiFloorFds'
 import { canvasKeyAction, shouldCommitSelectionNudge, nextNumericElementId, elementIsHighlighted } from '@/utils/elementIds'
+import { selectionAfterPointerUp, shouldNudgeHeldVertex } from '@/utils/holdToTargetSelection'
 import { get } from 'http'
 
 /**
@@ -467,6 +468,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 currentPoly,
                 currentRect,
                 typing,
+                pointerHeld: pointerHeldRef.current,
             })
             if (action.type === 'restartScale') {
                 if (!showPopup) {
@@ -553,11 +555,25 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             setIsShiftPressed(false)
         }
         window.addEventListener('blur', clearModifiers)
+        // If pointerup misses the canvas, the highlight must still drop.
+        const dropStuckHighlight = (event) => {
+            if (event.button != null && event.button !== 0) return
+            pointerHeldRef.current = false
+            if (!selectedElementRef.current) return
+            assignSelection(selectionAfterPointerUp())
+            setGuideLine(null)
+            setCandidateCycleState(null)
+            setSnapGuides([])
+        }
+        window.addEventListener('pointerup', dropStuckHighlight)
+        window.addEventListener('pointercancel', dropStuckHighlight)
 
         return () => {
             window.removeEventListener("keydown", handleKeyPress, true)
             window.removeEventListener("keyup", handleCtrlRelease)
             window.removeEventListener('blur', clearModifiers)
+            window.removeEventListener('pointerup', dropStuckHighlight)
+            window.removeEventListener('pointercancel', dropStuckHighlight)
         }
     }, [elements, currentPoly, currentRect, tool, setTool, comment, addElement, selectedElement, currentId, removeElement, returnElementObject, setSelectedElement, undo, redo, showPopup])
 
@@ -682,7 +698,10 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                     const { guideLine, snapGuides } = computeScaleHoverFromCursor(raw)
                     setGuideLine(guideLine)
                     setSnapGuides(snapGuides)
-                } else if (selectedElement && (event.buttons & 1)) {
+                } else if (shouldNudgeHeldVertex({
+                    pointerHeld: pointerHeldRef.current,
+                    buttons: event.buttons,
+                })) {
                     // Vertex nudge only while the button is held. After mouse-up
                     // the highlight is cleared; if it weren't, this still must
                     // not drag the wall around under the cursor.
@@ -2274,7 +2293,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             // Escape-while-held already removed this wall. Don't keep mutating it.
             const live = useStore.getState().elements || []
             if (!el || !live.some((item) => elementIsHighlighted(item, el))) {
-                assignSelection(null)
+                assignSelection(selectionAfterPointerUp())
                 setCandidateCycleState(null)
                 setSnapGuides([])
                 setXCounter(0)
@@ -2323,7 +2342,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             }
             // Highlight is hold-to-target, not click-to-select. Releasing the
             // button must drop it so the vertex does not follow the cursor.
-            assignSelection(null)
+            assignSelection(selectionAfterPointerUp())
             setCandidateCycleState(null)
             setSnapGuides([])
             setXCounter(0)
