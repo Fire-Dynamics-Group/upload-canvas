@@ -1,5 +1,6 @@
 import { defaultDoorTimings } from './defaultDoorTimings'
 import { getSyncedFloors, normalizeFloor, toElementIndex } from '../utils/multiFloorFds'
+import { floorPdfSettingsPatch, payloadPdfS3Key } from '../utils/floorPdfPersistence'
 
 // Per-mode persistence handlers for fdsGen — pure functions registered on the
 // MODE_PERSISTENCE registry (see persistenceModes.js). Onboarding another mode
@@ -18,6 +19,11 @@ export function buildFdsPayload(s) {
             canvas_dimensions: f.canvas_dimensions || {},
             pixels_per_mesh: f.pixels_per_mesh || 1,
             origin_pixels: f.origin_pixels ?? null,
+            // FloorSavePayload has no pdf_s3_key field today (Pydantic ignores it).
+            // Still send a real key so a later schema addition keeps the plan.
+            // Never send uploaded_N placeholders. hasCustomPdf/pdfSource stay in
+            // settings (a free dict) rather than as extra top-level fields.
+            pdf_s3_key: payloadPdfS3Key(f),
             settings: {
                 z_level: f.z_level ?? fs.z_level ?? 0,
                 wall_height: f.wall_height ?? fs.wall_height ?? Number(s.wallHeight) ?? 3,
@@ -31,6 +37,7 @@ export function buildFdsPayload(s) {
                 inletConfig: fs.inletConfig ?? {},
                 zoneConfig: fs.zoneConfig ?? {},
                 sliceZHeight: fs.sliceZHeight ?? 2.0,
+                ...floorPdfSettingsPatch(f),
             },
             elements: (f.elements || []).map((el, i) => ({
                 element_index: toElementIndex(el, i),
@@ -175,6 +182,9 @@ export function fdsAutosaveSnapshot(s) {
             wall_height: f.wall_height,
             pixels_per_mesh: f.pixels_per_mesh,
             origin_pixels: f.origin_pixels,
+            pdf_s3_key: payloadPdfS3Key(f),
+            hasCustomPdf: Boolean(f.hasCustomPdf || payloadPdfS3Key(f)),
+            pdfSource: f.pdfSource || null,
             elements: f.elements,
             settings: f.settings,
         })),
