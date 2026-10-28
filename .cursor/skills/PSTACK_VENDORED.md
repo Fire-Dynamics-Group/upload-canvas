@@ -19,6 +19,8 @@ Subagent definitions from pstack's `agents/` are copied to `.cursor/agents/` (`p
 
 Hooks and pstack automations (Benny) are **not** vendored: they do not run in cloud agents.
 
+pstack's own unit tests (`*.test.ts`, bun:test) are **not** copied. This repo's `vitest run` collects `**/*.test.ts`; those files would fail here (they are not part of the app suite). Skills, playbooks, and non-test scripts stay complete.
+
 Project overrides (not from upstream):
 
 - `.cursor/settings.json` — `plugins.pstack.enabled`
@@ -34,5 +36,5 @@ Project overrides (not from upstream):
 3. Replace `.cursor/skills/` with `pstack/skills/`, then restore this file (`PSTACK_VENDORED.md`) and keep `LICENSE`.
 4. Replace `.cursor/agents/*.md` with `pstack/agents/*.md`, keep `LICENSE`.
 5. Do **not** overwrite `.cursor/rules/`, `.cursor/settings.json`, `.cursor/scripts/`, or the owner section in `AGENTS.md`.
-6. Skip `hooks/` and `automations/` as before.
+6. Skip `hooks/` and `automations/` as before. Skip pstack `*.test.ts` (bun:test) so this repo's vitest does not collect them.
 7. Run `.cursor/scripts/check-pstack.sh` and the repo test/build command.
