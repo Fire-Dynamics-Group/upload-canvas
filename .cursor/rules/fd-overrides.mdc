@@ -1,0 +1,37 @@
+---
+description: Owner overrides to vendored pstack / poteto-mode for this repository.
+alwaysApply: true
+---
+# Fire Dynamics owner overrides to pstack
+
+These beat pstack defaults, including **never-block-on-the-human**, **autopilot-full**, and the shipping playbook's landing step.
+
+## Shipping is human-gated
+
+- Never auto-merge. Never land overnight. Never deploy.
+- `autopilot-full` is off.
+- The shipping playbook's landing step is off. Stop at verified PRs.
+- Use **autopilot-stack**: build and verify PRs; the human lands them.
+
+## Never-block-on-the-human does not apply here
+
+Ignore **never-block-on-the-human** for merges, deploys, secrets, and paid changes. Pause and wait for the owner.
+
+## Bug fixes
+
+- Play the gesture back first (in your own words: what the human did, what they saw).
+- Reproduce and verify on the matching surface where the human saw it (their tab, device, or prod URL).
+- A pass on another surface (for example headless Playwright) is a proxy, not a pass.
+- After two failed fixes on the same gate, write down the premise and test it before a third attempt (**attack-the-premise**).
+- Never repeat a "hard refresh and try again" handback.
+
+## Quality gates
+
+- Red-green TDD.
+- Production typecheck/build gate (`tsc` / `next build` for TS/Next).
+- E2E of post-push integration.
+- Before/after evidence (screenshots or equivalent) in the PR.
+
+## PR shape
+
+- One PR per concern. Stack if needed.
