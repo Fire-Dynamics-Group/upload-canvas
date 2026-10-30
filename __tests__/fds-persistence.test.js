@@ -43,6 +43,23 @@ describe('buildFdsPayload', () => {
         expect(buildFdsPayload({ ...sampleState, projectName: null }).name)
             .toBe('Untitled Project')
     })
+
+    it('sends an integer element_index when the live element id is a UUID', () => {
+        // Open Plan Test (and other DB-loaded floors) keep a UUID `id` plus
+        // integer `element_index`. POST /save requires element_index: int.
+        const p = buildFdsPayload({
+            ...sampleState,
+            elements: [{
+                id: '6218074b-0081-45bc-a127-54356a173611',
+                element_index: 0,
+                type: 'rect',
+                points: [{ x: 568, y: 271 }, { x: 1144, y: 729 }],
+                comments: 'mesh',
+            }],
+        })
+        expect(p.floors[0].elements[0].element_index).toBe(0)
+        expect(typeof p.floors[0].elements[0].element_index).toBe('number')
+    })
 })
 
 describe('hydrateFdsState', () => {
@@ -73,6 +90,22 @@ describe('hydrateFdsState', () => {
         ])
         expect(r.elementsByMode.fdsGen).toEqual(r.elements)
         expect(r.elementsByMode.radiation).toEqual([])
+    })
+
+    it('hydrates a UUID server id using integer element_index so save stays valid', () => {
+        const r = hydrateFdsState(project, {
+            ...floorDetail,
+            elements: [{
+                id: '6218074b-0081-45bc-a127-54356a173611',
+                element_index: 0,
+                type: 'rect',
+                points: [{ x: 1, y: 2 }],
+                comments: 'mesh',
+            }],
+        }, base)
+        expect(r.elements[0].id).toBe(0)
+        const again = buildFdsPayload({ ...sampleState, ...r, floors: undefined })
+        expect(again.floors[0].elements[0].element_index).toBe(0)
     })
 })
 

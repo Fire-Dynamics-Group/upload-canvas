@@ -1,4 +1,5 @@
 import { defaultDoorTimings } from './defaultDoorTimings'
+import { toElementIndex } from '../utils/elementIndex'
 
 // Per-mode persistence handlers for fdsGen — pure functions registered on the
 // MODE_PERSISTENCE registry (see persistenceModes.js). Onboarding another mode
@@ -62,7 +63,7 @@ export function buildFdsPayload(s) {
                     sliceZHeight: s.sliceZHeight,
                 },
                 elements: s.elements.map((el, i) => ({
-                    element_index: el.id ?? i,
+                    element_index: toElementIndex(el, i),
                     type: el.type,
                     points: el.points,
                     comments: el.comments,
@@ -79,8 +80,8 @@ export function buildFdsPayload(s) {
 export function hydrateFdsState(project, floorDetail, state) {
     const ps = project.settings || {}
     const fs = floorDetail.settings || {}
-    const loadedElements = (floorDetail.elements || []).map(el => ({
-        id: el.element_index,
+    const loadedElements = (floorDetail.elements || []).map((el, i) => ({
+        id: toElementIndex(el, i),
         type: el.type,
         points: el.points,
         comments: el.comments,
