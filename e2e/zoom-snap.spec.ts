@@ -6,7 +6,7 @@ const FIXTURE = path.join(
     process.cwd(),
     'e2e/fixtures/24369-UMC-01SI-ZZ-DR-A-0611-C01-Site_Plan.pdf',
 )
-const SHOT_DIR = '/cursor/stores/bc-ba8cf0f9-ea7f-5db3-ae81-ac8a639e9b4d/media/canvas-snap-regression'
+const SHOT_DIR = '/cursor/stores/bc-ba8cf0f9-ea7f-5db3-ae81-ac8a639e9b4d/media/kevin-snap-pr'
 
 test.use({ viewport: { width: 1440, height: 900 } })
 
@@ -169,4 +169,49 @@ test('mesh edge snaps at zoom-out 30 canvas px off an existing mesh', async ({ p
     expect(newMesh?.comments).toBe('mesh')
     expect(newMesh?.points?.[0]?.x).toBe(300)
     await page.screenshot({ path: `${SHOT_DIR}/03-mesh-snapped-zoomed-out.png` })
+})
+
+test('EFS wall stays freehand at zoom-out 30 canvas px off an existing wall', async ({ page }) => {
+    const drawing = await bootstrapSitePlan(page)
+
+    await page.evaluate(() => {
+        const s = (window as any).__useStore || (window as any).__store
+        s.setState({
+            tool: 'polyline',
+            comment: 'efsWall',
+            pixelsPerMesh: 33.6,
+            currentMode: 'efs',
+            elements: [{
+                id: 9003,
+                type: 'polyline',
+                comments: 'efsWall',
+                points: [{ x: 400, y: 200 }, { x: 400, y: 400 }],
+            }],
+        })
+        s.getState().setTool('polyline')
+        s.getState().setComment('efsWall')
+    })
+
+    await zoomOutToMin(page, drawing)
+    const zoom = await drawing.evaluate((el: HTMLCanvasElement) => el.getBoundingClientRect().width / el.width)
+    const box = await drawing.boundingBox()
+    if (!box) throw new Error('drawing canvas has no box')
+
+    const first = canvasClick(box, zoom, 430, 550)
+    const second = canvasClick(box, zoom, 620, 550)
+    await page.mouse.move(first.x, first.y)
+    await page.screenshot({ path: `${SHOT_DIR}/04-efs-wall-hover-freehand.png` })
+    await page.mouse.click(first.x, first.y)
+    await page.mouse.click(second.x, second.y)
+    await page.keyboard.press('Enter')
+
+    const newWall = await page.evaluate(() => {
+        const s = (window as any).__useStore || (window as any).__store
+        return s.getState().elements.filter((e: { id: number }) => e.id !== 9003).at(-1)
+    })
+    expect(newWall?.comments).toBe('efsWall')
+    // Freehand: 30 canvas px off X=400 must NOT magnetise to 400.
+    expect(newWall?.points?.[0]?.x).not.toBe(400)
+    expect(newWall?.points?.[0]?.x).toBeCloseTo(430, 0)
+    await page.screenshot({ path: `${SHOT_DIR}/05-efs-wall-stays-freehand.png` })
 })

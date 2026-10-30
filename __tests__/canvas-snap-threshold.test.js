@@ -67,10 +67,13 @@ describe('polylineSkipsAlignment', () => {
         expect(polylineSkipsAlignment('obstruction')).toBe(false)
     })
 
-    it('does not skip doors, inlets, or extracts', () => {
+    it('does not skip doors, inlets, extracts, stairs, or floor openings', () => {
         expect(polylineSkipsAlignment('door')).toBe(false)
         expect(polylineSkipsAlignment('inlet')).toBe(false)
         expect(polylineSkipsAlignment('extract')).toBe(false)
+        expect(polylineSkipsAlignment('stairObstruction')).toBe(false)
+        expect(polylineSkipsAlignment('landing')).toBe(false)
+        expect(polylineSkipsAlignment('opening')).toBe(false)
     })
 
     it('leaves EFS wall/boundary freehand (Kevin EFS UX)', () => {
