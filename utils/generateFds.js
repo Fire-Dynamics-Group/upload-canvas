@@ -2,6 +2,41 @@ import { sendFdsData } from '../Components/ApiCalls'
 import { computeAutoSprinklerPositions } from './autoSprinklers'
 import useStore from '../store/useStore'
 
+export function quantizePointToGrid(point, pixelsPerMesh) {
+    const step = Number(pixelsPerMesh)
+    const g = Number.isFinite(step) && step > 0 ? step : 1
+    return {
+        x: Math.round(Number(point.x) / g) * g,
+        y: Math.round(Number(point.y) / g) * g,
+    }
+}
+
+function collapseDuplicatePoints(points) {
+    if (!Array.isArray(points) || points.length === 0) return []
+    const out = [points[0]]
+    for (let i = 1; i < points.length; i++) {
+        const prev = out[out.length - 1]
+        const p = points[i]
+        if (p.x !== prev.x || p.y !== prev.y) out.push(p)
+    }
+    return out
+}
+
+/** Snap drawing vertices onto the mesh grid before POST /fds so a 0.086 px
+ * off-vertical wall does not become a zero-thickness OBST (Railway 500). */
+export function prepareElementsForFloor(rawElements, pixelsPerMesh, _isSprinklered) {
+    return (rawElements || [])
+        .filter((el) => el && Array.isArray(el.points))
+        .map((el) => {
+            const quantized = el.points.map((p) => quantizePointToGrid(p, pixelsPerMesh))
+            const points = el.type === 'point' ? quantized : collapseDuplicatePoints(quantized)
+            if (el.type !== 'point' && points.length < 2) return null
+            if (el.type === 'point' && points.length === 0) return null
+            return { ...el, points }
+        })
+        .filter(Boolean)
+}
+
 // Single source of truth for "generate the FDS file from the current drawing".
 // Reads everything off the store (all FDS inputs live there), posts to the
 // backend, and captures the returned text into the store so the 3D and
@@ -31,6 +66,8 @@ export async function generateFdsCode({ download = true } = {}) {
             elementsToSend = [...freshElements, ...sprinklerEls]
         }
     }
+
+    elementsToSend = prepareElementsForFloor(elementsToSend, s.pixelsPerMesh, s.isSprinklered)
 
     const text = await sendFdsData(
         elementsToSend,
