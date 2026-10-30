@@ -9,7 +9,10 @@ export default defineConfig({
     },
     webServer: {
         command: 'npm run dev -- -p 3003',
-        env: { NEXT_DIST_DIR: '.next-e2e' },
+        env: {
+            NEXT_DIST_DIR: '.next-e2e',
+            NEXT_PUBLIC_AUTH_DISABLED: 'true',
+        },
         port: 3003,
         reuseExistingServer: true,
         timeout: 180000,

@@ -53,7 +53,7 @@ function Gridlines({pixelsPerMesh, dimensions, hasScale, zoom = 1}) {
       width={canvasWidth}
       height={canvasHeight}
       style={{ width: canvasWidth * zoom, height: canvasHeight * zoom }}
-      className='bg-transparent top-0 left-0 absolute z-5'
+      className='bg-transparent top-0 left-0 absolute z-[5] pointer-events-none'
       />
   </>
   )
