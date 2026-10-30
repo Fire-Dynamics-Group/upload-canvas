@@ -59,6 +59,8 @@ function getRectCorners(rectPoints) {
     return [topLeft, bottomLeft, bottomRight, topRight]
 }
 
+// Zoom=1 baseline: 15 canvas px == 15 screen px. At zoom ≠ 1, Canvas.jsx
+// uses canvasSnapThreshold(15, zoom) instead (see canvas-snap-threshold.test.js).
 const MESH_SNAP_THRESHOLD = 15
 
 function collectMeshEdgeCoordinates(elements, excludeId = null) {
