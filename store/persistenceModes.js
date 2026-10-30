@@ -82,6 +82,8 @@ export function migratePersistedState(persisted, fromVersion) {
 // is DB-backed.
 const DB_BACKED_ONLY_FIELDS = [
     'elements',
+    'floors',
+    'activeFloorIndex',
     'tool',
     'pixelsPerMesh',
     'canvasDimensions',

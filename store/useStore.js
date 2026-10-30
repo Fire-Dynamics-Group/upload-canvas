@@ -5,6 +5,8 @@ import { clearPdfFromIndexedDB } from '../utils/pdfStorage'
 import { defaultDoorTimings } from './defaultDoorTimings'
 import { isDbBacked, MODE_PERSISTENCE, PERSIST_VERSION, migratePersistedState, mergePersistedState, partializeState } from './persistenceModes'
 import { fdsElementSignature } from '../utils/fdsSignature'
+import { getSyncedFloors, normalizeFloor, checkoutFloorToState } from '../utils/multiFloorFds'
+import { elementMatchesSelectionId } from '../utils/elementIds'
 
 const useStore = create(persist((set, get) => {
     const defaultStairObject = {"fire_floor": 0, "total_floors": 5, "stair_roof_z": 25, "top_storey_height": 21}
@@ -12,10 +14,21 @@ const useStore = create(persist((set, get) => {
     // Write the active mode's geometry: update the live `elements` array AND keep
     // the active mode's bucket (elementsByMode[currentMode]) in sync. The bucket
     // is the source of truth across reloads; `elements` is its live checkout.
-    const writeElements = (state, nextElements) => ({
-        elements: nextElements,
-        elementsByMode: { ...state.elementsByMode, [state.currentMode]: nextElements },
-    })
+    // Also keeps `floors[activeFloorIndex].elements` synced when in fdsGen mode.
+    const writeElements = (state, nextElements) => {
+        const nextFloors = Array.isArray(state.floors) && state.floors.length > 0
+            ? state.floors.map((f, idx) =>
+                idx === (state.activeFloorIndex ?? 0)
+                    ? { ...f, elements: nextElements }
+                    : f
+              )
+            : state.floors
+        return {
+            elements: nextElements,
+            elementsByMode: { ...state.elementsByMode, [state.currentMode]: nextElements },
+            ...(state.currentMode === 'fdsGen' && nextFloors ? { floors: nextFloors } : {}),
+        }
+    }
 
     // Undo/redo history depth (number of committed-element snapshots kept).
     const HISTORY_LIMIT = 50
@@ -37,6 +50,11 @@ const useStore = create(persist((set, get) => {
         floorId: null,
         projectName: null,
         saveStatus: null, // null | "saving" | "saved" | "error"
+
+        // Multi-floor state (fdsGen)
+        floors: [],
+        activeFloorIndex: 0,
+        showGhostFloorBelow: true,
 
         // Time-equivalence popup inputs + last Monte Carlo result. Lifted out
         // of the popup's local state so they save with the project
@@ -250,7 +268,7 @@ const useStore = create(persist((set, get) => {
         )),
         removeElement: (selectedID) => set((state) => commitElements(
             state,
-            state.elements.filter(element => element.id !== selectedID)
+            state.elements.filter((element) => !elementMatchesSelectionId(element, selectedID))
         )),
         // change tool to incoming
         // if tool not selection; set selection to null
@@ -301,6 +319,8 @@ const useStore = create(persist((set, get) => {
                 projectId: null,
                 floorId: null,
                 projectName: null,
+                floors: [],
+                activeFloorIndex: 0,
                 saveStatus: null,
                 pdfData: null,
                 pdfIsGreyscale: false,
@@ -316,12 +336,176 @@ const useStore = create(persist((set, get) => {
         setComment: (newComment) => set(() => ({
             comment: newComment
         })),
-        setCanvasDimensions: (dimensions) => set(() => ({
-            canvasDimensions: dimensions
-        })),
-        setPixelsPerMesh: (pxPerMesh) => set(() => ({
-            pixelsPerMesh: pxPerMesh
-        })),
+        setCanvasDimensions: (dimensions) => set((state) => {
+            const nextFloors = Array.isArray(state.floors) && state.floors.length > 0
+                ? state.floors.map((f, idx) =>
+                    idx === (state.activeFloorIndex ?? 0)
+                        ? { ...f, canvas_dimensions: dimensions }
+                        : f
+                  )
+                : state.floors
+            return {
+                canvasDimensions: dimensions,
+                ...(nextFloors ? { floors: nextFloors } : {}),
+            }
+        }),
+        setPixelsPerMesh: (pxPerMesh) => set((state) => {
+            const nextFloors = Array.isArray(state.floors) && state.floors.length > 0
+                ? state.floors.map((f, idx) =>
+                    idx === (state.activeFloorIndex ?? 0)
+                        ? { ...f, pixels_per_mesh: pxPerMesh }
+                        : f
+                  )
+                : state.floors
+            return {
+                pixelsPerMesh: pxPerMesh,
+                ...(nextFloors ? { floors: nextFloors } : {}),
+            }
+        }),
+        setOriginPixels: (originPt) => set((state) => {
+            const synced = getSyncedFloors(state)
+            const activeIdx = state.activeFloorIndex ?? 0
+            const nextFloors = synced.map((f, idx) =>
+                idx === activeIdx ? { ...f, origin_pixels: originPt } : f
+            )
+            return {
+                originPixels: originPt,
+                floors: nextFloors,
+            }
+        }),
+        setShowGhostFloorBelow: (v) => set(() => ({ showGhostFloorBelow: Boolean(v) })),
+
+        // --- Multi-Floor Management Actions ---
+        addFloor: (opts = {}) => set((state) => {
+            const synced = getSyncedFloors(state)
+            const maxFloorNum = Math.max(-1, ...synced.map((f) => f.floor_number ?? 0))
+            const nextFloorNum = maxFloorNum + 1
+            const topPrevFloor = synced.reduce((best, f) => {
+                const top = (Number(f.z_level) || 0) + (Number(f.wall_height) || 3)
+                return top > best ? top : best
+            }, 0)
+
+            const zLevel = opts.z_level !== undefined
+                ? Number(opts.z_level)
+                : Number(topPrevFloor.toFixed(2))
+            const wallHeight = opts.wall_height !== undefined
+                ? Number(opts.wall_height)
+                : Number(state.wallHeight) || 3
+            const name = opts.name || (nextFloorNum === 0 ? 'Ground Floor' : `Level ${nextFloorNum}`)
+
+            const newFloor = normalizeFloor(
+                {
+                    id: null,
+                    floor_number: nextFloorNum,
+                    name,
+                    z_level: zLevel,
+                    wall_height: wallHeight,
+                    canvas_dimensions: state.canvasDimensions || {},
+                    pixels_per_mesh: state.pixelsPerMesh || 1,
+                    origin_pixels: state.originPixels ?? null,
+                    pdf_s3_key: null,
+                    elements: [],
+                    settings: {
+                        z_level: zLevel,
+                        wall_height: wallHeight,
+                        stairStyle: state.stairStyle || 'individual',
+                    },
+                },
+                synced.length,
+                state
+            )
+
+            const nextFloors = [...synced, newFloor]
+            const nextIndex = nextFloors.length - 1
+            return {
+                floors: nextFloors,
+                ...checkoutFloorToState(newFloor, state, nextIndex),
+            }
+        }),
+
+        setActiveFloor: (index) => set((state) => {
+            const synced = getSyncedFloors(state)
+            if (index < 0 || index >= synced.length) return {}
+            if (index === (state.activeFloorIndex ?? 0) && state.floors.length > 0) return {}
+            const target = synced[index]
+            return {
+                floors: synced,
+                ...checkoutFloorToState(target, state, index),
+            }
+        }),
+
+        updateFloorMeta: (index, patch = {}) => set((state) => {
+            const synced = getSyncedFloors(state)
+            if (index < 0 || index >= synced.length) return {}
+            const nextFloors = synced.map((f, idx) => {
+                if (idx !== index) return f
+                const nextZ = patch.z_level !== undefined ? Number(patch.z_level) : f.z_level
+                const nextH = patch.wall_height !== undefined ? Number(patch.wall_height) : f.wall_height
+                return {
+                    ...f,
+                    ...patch,
+                    z_level: Number.isFinite(nextZ) ? nextZ : f.z_level,
+                    wall_height: Number.isFinite(nextH) && nextH > 0 ? nextH : f.wall_height,
+                    settings: {
+                        ...(f.settings || {}),
+                        ...(patch.settings || {}),
+                        z_level: Number.isFinite(nextZ) ? nextZ : f.z_level,
+                        wall_height: Number.isFinite(nextH) && nextH > 0 ? nextH : f.wall_height,
+                    },
+                }
+            })
+            const activeIdx = state.activeFloorIndex ?? 0
+            const activeFloor = nextFloors[activeIdx]
+            return {
+                floors: nextFloors,
+                ...(index === activeIdx && activeFloor
+                    ? {
+                        floorId: activeFloor.id ?? state.floorId,
+                        fireFloorZ: activeFloor.z_level,
+                        wallHeight: activeFloor.wall_height,
+                        originPixels: activeFloor.origin_pixels ?? state.originPixels,
+                        pixelsPerMesh: activeFloor.pixels_per_mesh || state.pixelsPerMesh,
+                    }
+                    : {}),
+            }
+        }),
+
+        removeFloor: (index) => set((state) => {
+            const synced = getSyncedFloors(state)
+            if (synced.length <= 1 || index < 0 || index >= synced.length) return {}
+            const remaining = synced.filter((_, idx) => idx !== index)
+            const curActive = state.activeFloorIndex ?? 0
+            const nextIndex = index < curActive
+                ? curActive - 1
+                : Math.min(curActive, remaining.length - 1)
+            const target = remaining[nextIndex]
+            return {
+                floors: remaining,
+                ...checkoutFloorToState(target, state, nextIndex),
+            }
+        }),
+
+        // Reconcile server-assigned floor IDs and pdf_s3_key after saveProjectToServer
+        syncServerFloors: (serverFloors = []) => set((state) => {
+            if (!Array.isArray(serverFloors) || serverFloors.length === 0) return {}
+            const byNumber = Object.fromEntries(serverFloors.map((sf) => [sf.floor_number, sf]))
+            const synced = getSyncedFloors(state)
+            const nextFloors = synced.map((f) => {
+                const match = byNumber[f.floor_number]
+                if (!match) return f
+                return {
+                    ...f,
+                    id: match.id ?? f.id,
+                    pdf_s3_key: match.pdf_s3_key ?? f.pdf_s3_key,
+                }
+            })
+            const activeFloor = nextFloors[state.activeFloorIndex ?? 0]
+            return {
+                floors: nextFloors,
+                ...(activeFloor?.id ? { floorId: activeFloor.id } : {}),
+            }
+        }),
+
         // Changing the column spacing re-lays the bays, so any protected-bay
         // selection (indexed by bay) no longer maps — clear it for all faces.
         setEfsColumnSpacing: (v) => set(() => ({ efsColumnSpacing: v, efsProtectedByElev: {}, efsRequiredByElev: {} })),
@@ -417,21 +601,40 @@ const useStore = create(persist((set, get) => {
         setShowTimeEqPopup: (newBool) => set(() => ({
             showTimeEqPopup: newBool
         })),
-        setFireFloorZ: (newVal) => set(() => ({
-            fireFloorZ: newVal
-        })),
-        // setFireFloorZ: (newVal) => set(() => ({
-        //     fireFloorZ: newVal
-        // })),
+        setFireFloorZ: (newVal) => set((state) => {
+            const zNum = Number(newVal)
+            const nextFloors = Array.isArray(state.floors) && state.floors.length > 0
+                ? state.floors.map((f, idx) =>
+                    idx === (state.activeFloorIndex ?? 0)
+                        ? { ...f, z_level: Number.isFinite(zNum) ? zNum : 0, settings: { ...(f.settings || {}), z_level: Number.isFinite(zNum) ? zNum : 0 } }
+                        : f
+                  )
+                : state.floors
+            return {
+                fireFloorZ: newVal,
+                ...(nextFloors ? { floors: nextFloors } : {}),
+            }
+        }),
         setFireFloorNumber: (newVal) => set(() => ({
             fireFloorNumber: newVal
         })),
         setTotalFloors: (newVal) => set(() => ({
             totalFloors: newVal
         })),
-        setWallHeight: (newVal) => set(() => ({
-            wallHeight: newVal
-        })),
+        setWallHeight: (newVal) => set((state) => {
+            const hNum = Number(newVal)
+            const nextFloors = Array.isArray(state.floors) && state.floors.length > 0
+                ? state.floors.map((f, idx) =>
+                    idx === (state.activeFloorIndex ?? 0)
+                        ? { ...f, wall_height: Number.isFinite(hNum) && hNum > 0 ? hNum : 3, settings: { ...(f.settings || {}), wall_height: Number.isFinite(hNum) && hNum > 0 ? hNum : 3 } }
+                        : f
+                  )
+                : state.floors
+            return {
+                wallHeight: newVal,
+                ...(nextFloors ? { floors: nextFloors } : {}),
+            }
+        }),
         setStairRoofZ: (newVal) => set(() => ({
             stairRoofZ: newVal
         })),
@@ -542,19 +745,35 @@ const useStore = create(persist((set, get) => {
         setViewMode: (newVal) => set(() => ({ viewMode: newVal })),
         // Store the FDS text the backend returned, tagging it with the current
         // element signature so the 3D/FDS views know when they've gone stale.
-        captureFds: (text) => set((state) => ({
-            fdsCode: typeof text === 'string' ? text : '',
-            fdsGenSig: fdsElementSignature(state.elements),
-        })),
+        captureFds: (text) => set((state) => {
+            const syncedFloors = getSyncedFloors(state)
+            return {
+                fdsCode: typeof text === 'string' ? text : '',
+                fdsGenSig: fdsElementSignature(state.elements, syncedFloors),
+            }
+        }),
         // True once fdsCode exists and the drawing has changed since it was made.
         isFdsStale: () => {
             const s = get()
-            return Boolean(s.fdsCode) && fdsElementSignature(s.elements) !== s.fdsGenSig
+            const syncedFloors = getSyncedFloors(s)
+            return Boolean(s.fdsCode) && fdsElementSignature(s.elements, syncedFloors) !== s.fdsGenSig
         },
 
         // Project persistence setters
         setProjectId: (newVal) => set(() => ({ projectId: newVal })),
-        setFloorId: (newVal) => set(() => ({ floorId: newVal })),
+        setFloorId: (newVal) => set((state) => {
+            const nextFloors = Array.isArray(state.floors) && state.floors.length > 0
+                ? state.floors.map((f, idx) =>
+                    idx === (state.activeFloorIndex ?? 0)
+                        ? { ...f, id: newVal }
+                        : f
+                  )
+                : state.floors
+            return {
+                floorId: newVal,
+                ...(nextFloors ? { floors: nextFloors } : {}),
+            }
+        }),
         setProjectName: (newVal) => set(() => ({ projectName: newVal })),
         setSaveStatus: (newVal) => set(() => ({ saveStatus: newVal })),
 
@@ -591,10 +810,15 @@ const useStore = create(persist((set, get) => {
                 projectId: null,
                 floorId: null,
                 projectName: null,
+                floors: [],
+                activeFloorIndex: 0,
+                showGhostFloorBelow: true,
                 saveStatus: null,
                 timeEqInputs: {},
                 timeEqResult: null,
                 elements: [],
+                elementsHistory: [],
+                elementsFuture: [],
                 elementsByMode: { fdsGen: [], radiation: [], timeEq: [], efs: [] },
                 viewMode: '2d',
                 fdsCode: '',

@@ -56,7 +56,7 @@ When a 0.1m mesh abuts a 0.2m mesh, the interface coordinate must be on a 0.2m m
 
 - **Meshes align only to other meshes. Full stop.** Mesh rect drawing uses `snapVertexWithMeshPriority` → `snapToMeshEdges` → `collectMeshEdgeCoordinates`. The candidate source is strictly `isMesh(el)` elements. Walls, stair landings, sensors, and other non-mesh elements are invisible to mesh-drawing snap.
 - **Why the isolation matters.** Mesh alignment is tied to the integer cell-ratio and cell-size-multiple rules above — it has to be tight and deterministic. Letting meshes snap to arbitrary element edges would pull them off cell boundaries and produce invalid `align_meshes()` input. This is a deliberate hard rule, not a convenience default.
-- **Threshold and visual.** 15 px screen threshold, magenta dashed full-canvas guide line.
+- **Threshold and visual.** 15 px **screen** threshold (`canvasSnapThreshold` converts with `/ zoom` so the magnet stays 15 screen px when the canvas is zoomed), magenta dashed full-canvas guide line.
 - **Grid fallback.** If no mesh edge is within threshold on an axis, that axis falls back to `pixelsPerMesh` grid (0.1 m equivalent).
 
 #### Everything-else alignment (waterfall)
@@ -72,7 +72,7 @@ Waterfall in priority order:
 User overrides:
 
 - **Shift held** during the action suppresses the alignment layer entirely: goes straight to grid snap. Use this to place a point near an existing edge without magnetising to it.
-- The waterfall does not require flushness — if the cursor is outside the 15 px threshold from any candidate, the element lands on the nearest grid cell. Users can therefore draw near but not on existing elements without fighting the snap.
+- The waterfall does not require flushness — if the cursor is outside the 15 screen-px threshold from any candidate, the element lands on the nearest grid cell. Users can therefore draw near but not on existing elements without fighting the snap.
 
 #### Summary: which source sees what
 
@@ -109,6 +109,16 @@ Run FDS with these two lines added to the input file to check alignment without 
 ```
 
 If FDS exits without error, the mesh configuration is valid.
+
+## Stacked floors (multi-floor generate)
+
+Meshes stay **floor-by-floor**. The combiner does not draw or generate a mesh that spans two floors.
+
+Floors may have **different XY extents**. Alignment applies only where they overlap:
+
+- Snap each stacked MESH onto the lowest floor's cell grid so overlap bounds land on cell faces.
+- Recompute I and J so cell size matches the reference floor. Z and K stay per-floor.
+- Extra mesh on the larger floor may stick out. The smaller floor is **not** expanded to match the larger footprint.
 
 ## References
 

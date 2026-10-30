@@ -18,43 +18,72 @@ function MockProvider({ children }) {
   return <AuthContext.Provider value={{ account: MOCK_USER, ready: true }}>{children}</AuthContext.Provider>
 }
 
-function MicrosoftProvider({ children }) {
-  const [account, setAccount] = useState(null)
-  const [error, setError] = useState(null)
+let inflightSignIn = null
 
-  useEffect(() => {
-    let cancelled = false
-    const signIn = async () => {
+function runMsalSignIn() {
+  if (!inflightSignIn) {
+    inflightSignIn = (async () => {
       const { PublicClientApplication } = await import('@azure/msal-browser')
       const client = new PublicClientApplication({
         auth: { clientId: entraConfig.clientId, authority, redirectUri: window.location.origin },
         cache: { cacheLocation: 'sessionStorage' },
       })
       await client.initialize()
-      const redirectResult = await client.handleRedirectPromise()
+      let redirectResult = null
+      try {
+        redirectResult = await client.handleRedirectPromise()
+      } catch (err) {
+        if (err?.errorCode === 'state_mismatch') {
+          if (typeof window !== 'undefined' && window.location.hash) {
+            window.history.replaceState(null, '', window.location.pathname + window.location.search)
+          }
+          if (typeof window !== 'undefined' && window.sessionStorage) {
+            window.sessionStorage.clear()
+          }
+        } else {
+          throw err
+        }
+      }
       const signedIn = client.getActiveAccount() || client.getAllAccounts()[0]
       if (!signedIn) {
         await client.loginRedirect({ scopes: apiScope ? [apiScope] : identityScopes })
-        return
+        return null
       }
       client.setActiveAccount(signedIn)
-      if (cancelled) return
-      setTokenProvider(async () => {
-        if (apiScope) {
-          const result = await client.acquireTokenSilent({ account: signedIn, scopes: [apiScope] })
-          return result.accessToken
-        }
-        if (redirectResult?.idToken) return redirectResult.idToken
-        const result = await client.acquireTokenSilent({ account: signedIn, scopes: identityScopes })
-        return result.idToken
+      return { client, signedIn, redirectResult }
+    })().finally(() => {
+      inflightSignIn = null
+    })
+  }
+  return inflightSignIn
+}
+
+function MicrosoftProvider({ children }) {
+  const [account, setAccount] = useState(null)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    runMsalSignIn()
+      .then((res) => {
+        if (cancelled || !res) return
+        const { client, signedIn, redirectResult } = res
+        setTokenProvider(async () => {
+          if (apiScope) {
+            const result = await client.acquireTokenSilent({ account: signedIn, scopes: [apiScope] })
+            return result.accessToken
+          }
+          if (redirectResult?.idToken) return redirectResult.idToken
+          const result = await client.acquireTokenSilent({ account: signedIn, scopes: identityScopes })
+          return result.idToken
+        })
+        setAccount({
+          oid: signedIn.idTokenClaims?.oid,
+          name: signedIn.name || signedIn.username,
+          username: signedIn.username,
+        })
       })
-      setAccount({
-        oid: signedIn.idTokenClaims?.oid,
-        name: signedIn.name || signedIn.username,
-        username: signedIn.username,
-      })
-    }
-    signIn().catch((reason) => !cancelled && setError(reason))
+      .catch((reason) => !cancelled && setError(reason))
     return () => {
       cancelled = true
       setTokenProvider(async () => null)
@@ -69,5 +98,17 @@ function MicrosoftProvider({ children }) {
 }
 
 export default function AuthGate({ children }) {
-  return canUseMockAuth() ? <MockProvider>{children}</MockProvider> : <MicrosoftProvider>{children}</MicrosoftProvider>
+  // Decide mock vs Microsoft only after mount. SSR has no `window`, so a
+  // same-tick check always picks MicrosoftProvider and its useEffect starts
+  // loginRedirect before localhost mock-auth can take over.
+  const [mode, setMode] = useState(null)
+
+  useEffect(() => {
+    setMode(canUseMockAuth() ? 'mock' : 'microsoft')
+  }, [])
+
+  if (mode === null) {
+    return <main className="min-h-screen bg-gray-900 text-white flex items-center justify-center">Loading…</main>
+  }
+  return mode === 'mock' ? <MockProvider>{children}</MockProvider> : <MicrosoftProvider>{children}</MicrosoftProvider>
 }
