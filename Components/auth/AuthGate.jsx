@@ -69,5 +69,17 @@ function MicrosoftProvider({ children }) {
 }
 
 export default function AuthGate({ children }) {
-  return canUseMockAuth() ? <MockProvider>{children}</MockProvider> : <MicrosoftProvider>{children}</MicrosoftProvider>
+  // Decide mock vs Microsoft only after mount. SSR has no `window`, so a
+  // same-tick check always picks MicrosoftProvider and its useEffect starts
+  // loginRedirect before localhost mock-auth can take over.
+  const [mode, setMode] = useState(null)
+
+  useEffect(() => {
+    setMode(canUseMockAuth() ? 'mock' : 'microsoft')
+  }, [])
+
+  if (mode === null) {
+    return <main className="min-h-screen bg-gray-900 text-white flex items-center justify-center">Loading…</main>
+  }
+  return mode === 'mock' ? <MockProvider>{children}</MockProvider> : <MicrosoftProvider>{children}</MicrosoftProvider>
 }
