@@ -199,7 +199,7 @@ export default function Home() {
         useStore.getState().setCurrentMode('timeEq')
         const handoff = await getHandoff(handoffParam)
         if (handoff?.run) {
-          useStore.getState().setHandoffId(handoff.id)
+          useStore.getState().setHandoffId(handoff.handoff_id || handoff.id || handoffParam)
           const currentInputs = useStore.getState().timeEqInputs
           const updated = applyMacsRunToInputs(handoff.run, currentInputs)
           useStore.getState().setTimeEqInputs(updated)
