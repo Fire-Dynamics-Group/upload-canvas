@@ -29,6 +29,10 @@ export const TIME_EQ_INPUT_DEFAULTS = {
     criticalTemp: RELIABILITY_DEFAULTS.criticalTemp,
     customBValue: '',                   // blank => derive from materials
     memberProtection: 'protected',      // 'protected' | 'unprotected'
+    section: '',
+    exposure: '',
+    governingSide: '',
+    macsRunId: null,
 }
 
 const sized = (candidate, length, fill) =>

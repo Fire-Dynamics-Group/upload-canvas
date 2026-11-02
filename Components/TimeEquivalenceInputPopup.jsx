@@ -1,6 +1,8 @@
 import useStore from '@/store/useStore';
 import { useState, useEffect } from 'react';
 import { sendTimeEqData, sendTimeEqReliabilityData } from './ApiCalls'
+import MacsBanner from './MacsBanner'
+import MacsRunHistory from './MacsRunHistory'
 import { resolveTimeEqInputs } from '@/store/timeEqPersistence'
 import {
     OCCUPANCY_DISTRIBUTIONS,
@@ -107,23 +109,36 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
     const [ reliabilityError, setReliabilityError ] = useState(null)
     const [ isRunning, setIsRunning ] = useState(false)
     const [ memberProtection, setMemberProtection ] = useState(initial.memberProtection)  // 'protected' | 'unprotected'
+    const [ section, setSection ] = useState(initial.section || '')
+    const [ exposure, setExposure ] = useState(initial.exposure || '')
     const isUnprotected = calcType === 'reliability' && memberProtection === 'unprotected'
 
     // Write every input change back to the store so the debounced project
     // autosave (index.jsx) picks it up. Replaces the whole object: the store
     // slice is exactly what the popup shows.
+
+    // Sync external input changes (e.g. from MACs run history or banner)
+    useEffect(() => {
+        if (!savedInputs) return
+        if (savedInputs.criticalTemp !== undefined && savedInputs.criticalTemp !== criticalTemp) setCriticalTemp(savedInputs.criticalTemp)
+        if (savedInputs.sectionFactor !== undefined && savedInputs.sectionFactor !== sectionFactor) setSectionFactor(savedInputs.sectionFactor)
+        if (savedInputs.section !== undefined && savedInputs.section !== section) setSection(savedInputs.section)
+        if (savedInputs.exposure !== undefined && savedInputs.exposure !== exposure) setExposure(savedInputs.exposure)
+        if (savedInputs.memberProtection !== undefined && savedInputs.memberProtection !== memberProtection) setMemberProtection(savedInputs.memberProtection)
+        if (savedInputs.calcType !== undefined && savedInputs.calcType !== calcType) setCalcType(savedInputs.calcType)
+    }, [savedInputs])
     useEffect(() => {
         setTimeEqInputs({
             calcType, fireResistancePeriod, compartmentHeight, isSprinklered, use,
             wallProperties, openingHeights, floorAndCeilingMaterials,
             mcOccupancy, nSim, growthRate, combustionFactor, sprinklerFactor,
-            sectionFactor, criticalTemp, customBValue, openableWidths, memberProtection,
+            sectionFactor, criticalTemp, customBValue, openableWidths, memberProtection, section, exposure,
         })
     }, [
         calcType, fireResistancePeriod, compartmentHeight, isSprinklered, use,
         wallProperties, openingHeights, floorAndCeilingMaterials,
         mcOccupancy, nSim, growthRate, combustionFactor, sprinklerFactor,
-        sectionFactor, criticalTemp, customBValue, openableWidths, memberProtection,
+        sectionFactor, criticalTemp, customBValue, openableWidths, memberProtection, section, exposure,
         setTimeEqInputs,
     ])
 
@@ -218,6 +233,9 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
             >
               &times;
             </button>
+            <div className="mb-2">
+              <MacsBanner />
+            </div>
             <div className="flex gap-6 mb-3 pr-6">
                 <label className="flex items-center gap-1">
                     <input type="radio" name="calcType" checked={calcType === 'deterministic'} onChange={() => setCalcType('deterministic')} />
@@ -402,6 +420,13 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
                 </label>
               </div>
 
+              {(section || exposure) && (
+                <div className="mb-3 p-2 bg-gray-50 border border-gray-200 rounded text-sm flex gap-4">
+                  {section && <div><span className="font-semibold">Section:</span> {section}</div>}
+                  {exposure && <div><span className="font-semibold">Exposure:</span> {exposure}</div>}
+                </div>
+              )}
+
               {memberProtection === 'unprotected' && (
                 <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-md">
                   <label className="font-semibold">Critical steel temperature (°C) — required:</label>
@@ -478,6 +503,8 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
               </button>
             </div>
           )}
+
+          <MacsRunHistory />
 
           {calcType === 'reliability' ? (
             <button className="px-4 py-2 bg-blue-500 text-white rounded-lg mt-2 disabled:opacity-50" onClick={handleReliabilityClick} disabled={isRunning || (memberProtection === 'unprotected' && !hasCriticalTemp(criticalTemp))}>

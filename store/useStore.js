@@ -44,6 +44,9 @@ const useStore = create(persist((set, get) => {
         // (settings.timeEqInputs / settings.timeEqResult, see timeEqPersistence).
         timeEqInputs: {},
         timeEqResult: null,
+        handoffId: null,
+        macsRuns: [],
+        macsNotice: null,
 
         elements: [],
         // Undo/redo stacks of committed-element snapshots (see commitElements).
@@ -399,6 +402,9 @@ const useStore = create(persist((set, get) => {
         // per-wall arrays must never be left half-updated from a previous draw.
         setTimeEqInputs: (inputs) => set(() => ({ timeEqInputs: inputs || {} })),
         setTimeEqResult: (result) => set(() => ({ timeEqResult: result ?? null })),
+        setHandoffId: (id) => set(() => ({ handoffId: id ?? null })),
+        setMacsRuns: (runs) => set(() => ({ macsRuns: Array.isArray(runs) ? runs : [] })),
+        setMacsNotice: (notice) => set(() => ({ macsNotice: notice ?? null })),
         setTotalHeatFlux: (newVal) => set(() => ({
             totalHeatFlux: newVal
         })),
@@ -595,6 +601,9 @@ const useStore = create(persist((set, get) => {
                 saveStatus: null,
                 timeEqInputs: {},
                 timeEqResult: null,
+                handoffId: null,
+                macsRuns: [],
+                macsNotice: null,
                 elements: [],
                 elementsByMode: { fdsGen: [], radiation: [], timeEq: [], efs: [] },
                 viewMode: '2d',

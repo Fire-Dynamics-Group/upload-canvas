@@ -16,13 +16,57 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || server_urls.localhost
 
 // `mode` is the canvas mode that owns the project (fdsGen / timeEq). Each
 // DB-backed mode has its own dashboard; see store/persistenceModes.js.
-export const createProject = async (name = "Untitled Project", createdBy = null, mode = "fdsGen") => {
+export const createProject = async (name = "Untitled Project", createdBy = null, mode = "fdsGen", handoffId = null) => {
+    const payload = { name, mode, settings: {}, created_by: createdBy }
+    if (handoffId) payload.handoff_id = handoffId
     const resp = await authedFetch(`${API_BASE}/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, mode, settings: {}, created_by: createdBy }),
+        body: JSON.stringify(payload),
     })
     if (!resp.ok) throw new Error(`Failed to create project: ${resp.status}`)
+    return resp.json()
+}
+
+export const getHandoff = async (handoffId) => {
+    const resp = await authedFetch(`${API_BASE}/handoffs/${encodeURIComponent(handoffId)}`, { method: 'GET' })
+    if (!resp.ok) {
+        let errData = null
+        try {
+            errData = await resp.json()
+        } catch (_) {}
+        const detail = errData?.detail
+        const message = typeof detail === 'string' ? detail : detail?.message || `Failed to fetch handoff: ${resp.status}`
+        const error = new Error(message)
+        error.status = resp.status
+        if (detail?.claimed_by_project_id) {
+            error.claimedByProjectId = detail.claimed_by_project_id
+        }
+        throw error
+    }
+    return resp.json()
+}
+
+export const claimHandoff = async (projectId, handoffId) => {
+    const resp = await authedFetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/macs-handoffs/${encodeURIComponent(handoffId)}/claim`, {
+        method: 'POST',
+    })
+    if (!resp.ok) {
+        let errData = null
+        try {
+            errData = await resp.json()
+        } catch (_) {}
+        const message = typeof errData?.detail === 'string' ? errData.detail : `Failed to claim handoff: ${resp.status}`
+        const error = new Error(message)
+        error.status = resp.status
+        throw error
+    }
+    return resp.json()
+}
+
+export const getMacsRuns = async (projectId) => {
+    const resp = await authedFetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/macs-runs`, { method: 'GET' })
+    if (!resp.ok) throw new Error(`Failed to fetch MACs runs: ${resp.status}`)
     return resp.json()
 }
 

@@ -18,8 +18,13 @@ import useCanvasPan from '../hooks/useCanvasPan'
 import { isDbBacked, autosaveSnapshot } from '../store/persistenceModes'
 import { savePdfToIndexedDB, loadPdfFromIndexedDB } from '../utils/pdfStorage'
 import { computeFramingScroll, elementPixelBox } from '../utils/viewportFraming'
+import { useRouter } from 'next/router'
+import MacsBanner from '../Components/MacsBanner'
+import { applyMacsRunToInputs } from '../utils/macsHandoff'
 import {
   createProject,
+  getHandoff,
+  getMacsRuns,
   saveProjectToServer,
   loadProject,
   loadFloorDetail,
@@ -181,7 +186,62 @@ export default function Home() {
   const buildSavePayload = useStore((state) => state.buildSavePayload)
   const hydrateFromServer = useStore((state) => state.hydrateFromServer)
 
-  // --- Clear stale legacy localStorage (elements exist but no projectId) ---
+
+  // --- Consume MACs handoff from query (?handoff=<id>) ---
+  const hasProcessedHandoff = useRef(false)
+  useEffect(() => {
+    const handoffParam = router.query?.handoff || (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('handoff') : null)
+    if (!handoffParam || hasProcessedHandoff.current) return
+    hasProcessedHandoff.current = true
+
+    async function processHandoff() {
+      try {
+        useStore.getState().setCurrentMode('timeEq')
+        const handoff = await getHandoff(handoffParam)
+        if (handoff?.run) {
+          useStore.getState().setHandoffId(handoff.id)
+          const currentInputs = useStore.getState().timeEqInputs
+          const updated = applyMacsRunToInputs(handoff.run, currentInputs)
+          useStore.getState().setTimeEqInputs(updated)
+          useStore.getState().setMacsRuns([handoff.run])
+          setShowUploadScreen(true)
+          if (handoff.run.label) {
+            setProjectName(handoff.run.label)
+          }
+          useStore.getState().setMacsNotice({
+            type: 'success',
+            message: `Loaded MACs run for ${handoff.run.section || 'steel section'} (${handoff.run.critical_temp}°C, Ap/V ${handoff.run.section_factor}). Upload a plan PDF to create the project.`,
+          })
+        }
+      } catch (err) {
+        if (err.status === 409 && err.claimedByProjectId) {
+          useStore.getState().setMacsNotice({
+            type: 'info',
+            message: 'This handoff was already claimed. Opening the linked project…',
+          })
+          handleSelectProject(err.claimedByProjectId)
+        } else if (err.status === 404) {
+          useStore.getState().setMacsNotice({
+            type: 'error',
+            message: 'MACS handoff not found.',
+          })
+        } else if (err.status === 410) {
+          useStore.getState().setMacsNotice({
+            type: 'error',
+            message: 'MACS handoff has expired. Please run MACs in i-macs and send again.',
+          })
+        } else {
+          useStore.getState().setMacsNotice({
+            type: 'error',
+            message: err.message || 'Failed to process MACs handoff.',
+          })
+        }
+      }
+    }
+    processHandoff()
+  }, [router.query])
+
+    // --- Clear stale legacy localStorage (elements exist but no projectId) ---
   const hasCheckedLegacy = useRef(false)
   useEffect(() => {
     if (hasCheckedLegacy.current) return
@@ -342,8 +402,12 @@ export default function Home() {
       if (!currentProjectId) {
         try {
           const name = useStore.getState().projectName || "Untitled Project"
-          const project = await createProject(name, userId, mode)
+          const handoffId = useStore.getState().handoffId
+          const project = await createProject(name, userId, mode, handoffId)
           currentProjectId = project.id
+          if (handoffId) {
+            useStore.getState().setHandoffId(null)
+          }
           // Do an initial save to create floor 0
           const saved = await saveProjectToServer(currentProjectId, {
             name,
@@ -354,6 +418,12 @@ export default function Home() {
           setProjectId(currentProjectId)
           setFloorId(currentFloorId)
           setProjectName(name)
+          if (mode === 'timeEq') {
+            try {
+              const runs = await getMacsRuns(currentProjectId)
+              useStore.getState().setMacsRuns(runs)
+            } catch (_) {}
+          }
         } catch (err) {
           console.error('Failed to create project:', err)
           // Surface it: without a projectId autosave never arms, so the user
@@ -457,6 +527,13 @@ export default function Home() {
       // wipe the loaded floor.
       lastSavedRef.current = JSON.stringify(useStore.getState().buildSavePayload())
 
+      if (project.mode === 'timeEq') {
+        try {
+          const runs = await getMacsRuns(projectId)
+          useStore.getState().setMacsRuns(runs)
+        } catch (_) {}
+      }
+
       if (floor.pdf_s3_key) {
         const { url } = await getFloorPdfUrl(projectId, floor.id)
         await renderPdf(url, true)
@@ -531,6 +608,7 @@ export default function Home() {
         {viewMode === 'results' && <ReliabilityResultsView />}
       </>)}
       {showModePopup && <ModePopup setToggleShowPopup={setShowModePopup} onModeSelected={handleModeSelected}/>}
+      {currentMode === 'timeEq' && <MacsBanner />}
       <div
         ref={stageRef}
         className={selectedFile ? `relative ${currentMode === 'efs' && tool !== 'scale' && viewMode === '2d' ? 'efs-canvas-stage' : ''}` : undefined}
