@@ -95,6 +95,7 @@ const loadPdfDocument = async (pdfjs, source, maxAttempts = 3) => {
 }
 
 export default function Home() {
+  const router = useRouter()
   let dev_mode = true
   const [hasMounted, setHasMounted] = useState(false)
   const stageRef = useRef(null)
