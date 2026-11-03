@@ -563,7 +563,8 @@ export default function Home() {
 
       if (floor.pdf_s3_key) {
         const { url } = await getFloorPdfUrl(projectId, floor.id)
-        await renderPdf(url, true)
+        const hasCalibratedScale = typeof floorDetail?.pixels_per_mesh === 'number' && floorDetail.pixels_per_mesh > 0 && floorDetail.pixels_per_mesh !== 1.0
+        await renderPdf(url, hasCalibratedScale)
       } else {
         // No PDF yet - go to upload screen
         setIsContinuing(true)
@@ -620,7 +621,7 @@ export default function Home() {
       {/* Toolbar belongs to the canvas — only show it when a plan is open, not
           on the dashboard / upload / loading screens (it's a fixed overlay now).
           Hidden in the 3D / FDS views, which are read-only. */}
-      {selectedFile && tool != "scale" && viewMode === '2d' ? (<>
+      {selectedFile && viewMode === '2d' ? (<>
       {menuOverlay}
       </>
       )
@@ -638,8 +639,8 @@ export default function Home() {
       {currentMode === 'timeEq' && <MacsBanner />}
       <div
         ref={stageRef}
-        className={selectedFile ? `relative bg-white ${currentMode === 'efs' && tool !== 'scale' && viewMode === '2d' ? 'efs-canvas-stage' : ''}` : undefined}
-        style={selectedFile ? { width: canvasDimensions.width * canvasZoom, height: canvasDimensions.height * canvasZoom, backgroundColor: '#ffffff' } : undefined}
+        className={selectedFile ? `relative ${currentMode === 'efs' && tool !== 'scale' && viewMode === '2d' ? 'efs-canvas-stage' : ''}` : undefined}
+        style={selectedFile ? { width: canvasDimensions.width * canvasZoom, height: canvasDimensions.height * canvasZoom } : undefined}
       >
         { isLoadingFromServer ? (
           <div className="flex flex-col items-center justify-center min-h-screen gap-4">
@@ -683,7 +684,7 @@ export default function Home() {
             behind the dashboard and the user has to scroll past it. */}
         <canvas
         ref={pdfCanvasRef}
-        style={selectedFile ? { width: canvasDimensions.width * canvasZoom, height: canvasDimensions.height * canvasZoom, backgroundColor: '#ffffff' } : undefined}
+        style={selectedFile ? { width: canvasDimensions.width * canvasZoom, height: canvasDimensions.height * canvasZoom } : undefined}
         className={selectedFile ? 'absolute top-0 left-0 z-0 block pointer-events-none' : 'hidden'}
         />
       </div>

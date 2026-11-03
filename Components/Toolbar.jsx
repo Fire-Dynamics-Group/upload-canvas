@@ -122,6 +122,8 @@ const [errorList, setErrorList] = useState(defaultErrorList)
           if (elements.length === 0) {
             if (currentMode === 'efs') {
               setErrorList(["please draw a wall line"])
+            } else if (currentMode === 'timeEq') {
+              setErrorList(["please draw a compartment obstruction"])
             } else {
               // below for radiation mode
               // should access error object dependant on mode
@@ -469,6 +471,16 @@ const [errorList, setErrorList] = useState(defaultErrorList)
             }}
           />
           <label htmlFor="selection">Selection</label>
+          <input
+            type="radio"
+            id="scale"
+            checked={tool === "scale"}
+            onChange={() => {
+              setTool("scale")
+              setComment("scale")
+            }}
+          />
+          <label htmlFor="scale">Scale</label>
           {/* non stair obstructions — not an EFS concept (a wall is drawn with the Wall tool) */}
           { currentMode !== 'efs' && <>
           <input type="radio" id="line"
