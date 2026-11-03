@@ -355,17 +355,43 @@ export default function Home() {
     canvas.width = viewport.width
     setCanvasDimensions({ width: canvas.width, height: canvas.height })
 
+    // Ensure solid white background before rendering PDF
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+
     await page.render({ canvasContext: context, viewport }).promise
     console.log('Page rendered')
 
     const colouredImageData = context.getImageData(0, 0, canvas.width, canvas.height)
+    const cdata = colouredImageData.data
+    for (let i = 0; i < cdata.length; i += 4) {
+      const a = cdata[i + 3]
+      if (a < 255) {
+        const alpha = a / 255
+        cdata[i] = Math.round(cdata[i] * alpha + 255 * (1 - alpha))
+        cdata[i + 1] = Math.round(cdata[i + 1] * alpha + 255 * (1 - alpha))
+        cdata[i + 2] = Math.round(cdata[i + 2] * alpha + 255 * (1 - alpha))
+        cdata[i + 3] = 255
+      }
+    }
     const greyScaledImageData = context.getImageData(0, 0, canvas.width, canvas.height)
     const data = greyScaledImageData.data
     for (let i = 0; i < data.length; i += 4) {
-      const avg = (data[i] + data[i + 1] + data[i + 2]) / 3
+      const a = data[i + 3]
+      let r = data[i]
+      let g = data[i + 1]
+      let b = data[i + 2]
+      if (a < 255) {
+        const alpha = a / 255
+        r = Math.round(r * alpha + 255 * (1 - alpha))
+        g = Math.round(g * alpha + 255 * (1 - alpha))
+        b = Math.round(b * alpha + 255 * (1 - alpha))
+      }
+      const avg = (r + g + b) / 3
       data[i] = avg
       data[i + 1] = avg
       data[i + 2] = avg
+      data[i + 3] = 255
     }
     context.putImageData(greyScaledImageData, 0, 0)
     toggleIsPdfGreyscale(true)
@@ -612,8 +638,8 @@ export default function Home() {
       {currentMode === 'timeEq' && <MacsBanner />}
       <div
         ref={stageRef}
-        className={selectedFile ? `relative ${currentMode === 'efs' && tool !== 'scale' && viewMode === '2d' ? 'efs-canvas-stage' : ''}` : undefined}
-        style={selectedFile ? { width: canvasDimensions.width * canvasZoom, height: canvasDimensions.height * canvasZoom } : undefined}
+        className={selectedFile ? `relative bg-white ${currentMode === 'efs' && tool !== 'scale' && viewMode === '2d' ? 'efs-canvas-stage' : ''}` : undefined}
+        style={selectedFile ? { width: canvasDimensions.width * canvasZoom, height: canvasDimensions.height * canvasZoom, backgroundColor: '#ffffff' } : undefined}
       >
         { isLoadingFromServer ? (
           <div className="flex flex-col items-center justify-center min-h-screen gap-4">
@@ -657,7 +683,7 @@ export default function Home() {
             behind the dashboard and the user has to scroll past it. */}
         <canvas
         ref={pdfCanvasRef}
-        style={selectedFile ? { width: canvasDimensions.width * canvasZoom, height: canvasDimensions.height * canvasZoom } : undefined}
+        style={selectedFile ? { width: canvasDimensions.width * canvasZoom, height: canvasDimensions.height * canvasZoom, backgroundColor: '#ffffff' } : undefined}
         className={selectedFile ? 'absolute top-0 left-0 z-0 block pointer-events-none' : 'hidden'}
         />
       </div>
