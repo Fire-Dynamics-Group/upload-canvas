@@ -242,6 +242,22 @@ export default function Home() {
     processHandoff()
   }, [router.query])
 
+  // --- Consume project deep-link from query (?project=<id> or ?projectId=<id>) ---
+  const hasProcessedProject = useRef(false)
+  useEffect(() => {
+    const projectParam = router.query?.project || router.query?.projectId ||
+      (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('project') || new URLSearchParams(window.location.search).get('projectId') : null)
+    if (!projectParam || hasProcessedProject.current) return
+    hasProcessedProject.current = true
+
+    async function processProjectDeepLink() {
+      useStore.getState().setCurrentMode('timeEq')
+      await handleSelectProject(projectParam)
+    }
+    processProjectDeepLink()
+  }, [router.query])
+
+
     // --- Clear stale legacy localStorage (elements exist but no projectId) ---
   const hasCheckedLegacy = useRef(false)
   useEffect(() => {
@@ -544,6 +560,10 @@ export default function Home() {
       const project = await loadProject(projectId)
       const floor = project.floors?.[0]
       if (!floor) throw new Error("No floors in project")
+
+      if (project.mode) {
+        useStore.getState().setCurrentMode(project.mode)
+      }
 
       const floorDetail = await loadFloorDetail(projectId, floor.id)
       hydrateFromServer(project, floorDetail)

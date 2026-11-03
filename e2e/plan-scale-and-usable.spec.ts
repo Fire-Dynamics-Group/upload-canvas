@@ -255,4 +255,78 @@ test.describe('Plan visibility, scale tool availability and usability', () => {
             })
         }).toBe('scale')
     })
+
+    test('deep-link ?project=<id> directly opens the project in timeEq mode', async ({ page }) => {
+        await page.route('**/projects**', async (route) => {
+            const url = route.request().url()
+            const method = route.request().method()
+            if (url.includes('/macs-runs')) {
+                await route.fulfill({ json: [] })
+                return
+            }
+            if (url.includes('/floors/') && url.endsWith('/pdf')) {
+                await route.fulfill({ json: { url: 'blob:test' } })
+                return
+            }
+            if (url.includes('/floors/')) {
+                await route.fulfill({
+                    json: {
+                        id: 'floor-p1',
+                        floor_number: 0,
+                        name: 'Compartment',
+                        canvas_dimensions: { width: 3576, height: 2526 },
+                        pixels_per_mesh: 50.0,
+                        elements: [],
+                        settings: {},
+                    },
+                })
+                return
+            }
+            if (url.includes('/projects/proj-direct')) {
+                await route.fulfill({
+                    json: {
+                        id: 'proj-direct',
+                        name: 'Direct Opened Project',
+                        mode: 'timeEq',
+                        floors: [{ id: 'floor-p1', floor_number: 0, name: 'Compartment', pdf_s3_key: 'pdf-key' }],
+                        settings: {},
+                    },
+                })
+                return
+            }
+            if (method === 'GET') {
+                await route.fulfill({
+                    json: [
+                        {
+                            id: 'proj-direct',
+                            name: 'Direct Opened Project',
+                            mode: 'timeEq',
+                            floors: [{ id: 'floor-p1', floor_number: 0, name: 'Compartment' }],
+                            settings: {},
+                        },
+                    ],
+                })
+                return
+            }
+            await route.fulfill({ json: {} })
+        })
+
+        await page.goto('/?project=proj-direct')
+
+        // Must switch to timeEq mode and load the project
+        await expect.poll(async () => {
+            return await page.evaluate(() => {
+                const store = (window as any).__useStore || (window as any).__store
+                return {
+                    projectId: store?.getState().projectId,
+                    projectName: store?.getState().projectName,
+                    currentMode: store?.getState().currentMode,
+                }
+            })
+        }, { timeout: 5000 }).toEqual({
+            projectId: 'proj-direct',
+            projectName: 'Direct Opened Project',
+            currentMode: 'timeEq',
+        })
+    })
 })
