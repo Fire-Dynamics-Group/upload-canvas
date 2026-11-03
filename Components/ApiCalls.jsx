@@ -64,7 +64,20 @@ export const claimHandoff = async (projectId, handoffId) => {
     return resp.json()
 }
 
+export const getAllMacsRuns = async (limit = 50, offset = 0) => {
+    const resp = await authedFetch(`${API_BASE}/projects/macs-runs?limit=${limit}&offset=${offset}`, { method: 'GET' })
+    if (!resp.ok) throw new Error(`Failed to fetch all MACs runs: ${resp.status}`)
+    return resp.json()
+}
+
+export const getMacsRunDetail = async (runId) => {
+    const resp = await authedFetch(`${API_BASE}/projects/macs-runs/${encodeURIComponent(runId)}`, { method: 'GET' })
+    if (!resp.ok) throw new Error(`Failed to fetch MACs run detail: ${resp.status}`)
+    return resp.json()
+}
+
 export const getMacsRuns = async (projectId) => {
+    if (!projectId) return []
     const resp = await authedFetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/macs-runs`, { method: 'GET' })
     if (!resp.ok) throw new Error(`Failed to fetch MACs runs: ${resp.status}`)
     return resp.json()
