@@ -83,6 +83,7 @@ export function buildTimeEqPayload(s) {
             timeEqInputs: s.timeEqInputs || {},
             timeEqResult: s.timeEqResult ?? null,
             thumbnail: s.thumbnail ?? null,
+            ...(s.macsBatch ? { macsBatch: s.macsBatch } : {}),
         },
         floors: [
             {
@@ -109,6 +110,7 @@ export function hydrateTimeEqState(project, floorDetail, state) {
         floorId: floorDetail.id,
         timeEqInputs: ps.timeEqInputs ?? {},
         timeEqResult: ps.timeEqResult ?? null,
+        macsBatch: ps.macsBatch ?? null,
         canvasDimensions: floorDetail.canvas_dimensions || {},
         pixelsPerMesh: floorDetail.pixels_per_mesh || 1,
         originPixels: floorDetail.origin_pixels || null,
@@ -126,5 +128,6 @@ export function timeEqAutosaveSnapshot(s) {
         originPixels: s.originPixels,
         timeEqInputs: s.timeEqInputs,
         timeEqResult: s.timeEqResult,
+        macsBatch: s.macsBatch,
     }
 }

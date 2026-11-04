@@ -3,6 +3,7 @@ import { listProjects, renameProject, deleteProject } from './ApiCalls'
 import { deleteConfirmationMatches } from '../utils/projectActions'
 import FDRobot from './FDRobot'
 import useStore from '../store/useStore'
+import Link from 'next/link'
 import { isDbBacked } from '../store/persistenceModes'
 
 function timeAgo(dateStr) {
@@ -191,6 +192,15 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
             {m.label}
           </button>
         ))}
+        {currentMode === 'timeEq' && (
+          <Link
+            href="/structural-fire"
+            className="ml-auto bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors"
+          >
+            <span>🏗️</span>
+            <span>Open SFE Studio</span>
+          </Link>
+        )}
       </div>
 
       {/* Header */}

@@ -1,6 +1,6 @@
 import useStore from '@/store/useStore';
 import { useState, useEffect } from 'react';
-import { sendTimeEqData, sendTimeEqReliabilityData } from './ApiCalls'
+import { sendTimeEqData, sendTimeEqReliabilityChartsData, saveProjectToServer, downloadReliabilityCharts } from './ApiCalls'
 import MacsBanner from './MacsBanner'
 import MacsRunHistory from './MacsRunHistory'
 import { resolveTimeEqInputs } from '@/store/timeEqPersistence'
@@ -104,7 +104,7 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
     const [ criticalTemp, setCriticalTemp ] = useState(initial.criticalTemp)
     const [ customBValue, setCustomBValue ] = useState(initial.customBValue)  // blank => derive from materials
     const [ openableWidths, setOpenableWidths ] = useState(initial.openableWidths)
-    // Last run shown again on reopen / project reload; charts are not persisted.
+    // Last run shown again on reopen / project reload, including saved charts.
     const [ reliabilityResult, setReliabilityResult ] = useState(savedResult ?? null)
     const [ reliabilityError, setReliabilityError ] = useState(null)
     const [ isRunning, setIsRunning ] = useState(false)
@@ -192,9 +192,8 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
         setIsRunning(true)
         try {
             const tempData = mockData || convertedPoints
-            // Shared mapping with the Results tab, so its full-results rerun
-            // can never drift from the run shown here.
-            const result = await sendTimeEqReliabilityData(tempData, reliabilityRequestOptionsFromInputs({
+            // Runs Monte Carlo simulation AND generates report charts
+            const result = await sendTimeEqReliabilityChartsData(tempData, reliabilityRequestOptionsFromInputs({
                 fireResistancePeriod, compartmentHeight, isSprinklered,
                 wallProperties, floorAndCeilingMaterials, mcOccupancy, nSim,
                 growthRate, combustionFactor, sprinklerFactor, sectionFactor,
@@ -202,6 +201,15 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
             }))
             setReliabilityResult(result)
             setTimeEqResult(result)
+
+            // Immediately save full results and charts to the backend project database
+            const state = useStore.getState()
+            if (state.projectId) {
+                const payload = state.buildSavePayload()
+                if (payload) {
+                    saveProjectToServer(state.projectId, payload).catch((err) => console.error('Save failed:', err))
+                }
+            }
         } catch (err) {
             setReliabilityError(err.message || 'Reliability calculation failed')
         } finally {
@@ -493,14 +501,48 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
               {reliabilityResultLines(reliabilityResult).map((line, i) => (
                 <p key={i} className={i === 0 ? 'text-xl font-bold' : undefined}>{line}</p>
               ))}
-              {/* Charts + the per-sample QA table live in the Results tab —
-                  a full-screen view, too big for this popup. */}
-              <button
-                className="px-4 py-2 bg-blue-500 text-white rounded-lg mt-2"
-                onClick={() => { setViewMode('results'); handleClose() }}
-              >
-                Open Results (charts + QA table)
-              </button>
+              {reliabilityResult.charts && (
+                <div className="grid grid-cols-2 gap-2 mt-3">
+                  {reliabilityResult.charts.steelTempSpaghetti && (
+                    <div>
+                      <span className="text-xs font-semibold text-gray-700 block mb-1">Steel Temperature Spaghetti</span>
+                      <img
+                        src={`data:image/png;base64,${reliabilityResult.charts.steelTempSpaghetti}`}
+                        alt="Steel Temperature Spaghetti"
+                        className="w-full rounded border bg-white"
+                      />
+                    </div>
+                  )}
+                  {reliabilityResult.charts.passFailScatter && (
+                    <div>
+                      <span className="text-xs font-semibold text-gray-700 block mb-1">Pass / Fail Scatter</span>
+                      <img
+                        src={`data:image/png;base64,${reliabilityResult.charts.passFailScatter}`}
+                        alt="Pass Fail Scatter"
+                        className="w-full rounded border bg-white"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2 mt-3">
+                <button
+                  type="button"
+                  className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm"
+                  onClick={() => { setViewMode('results'); handleClose() }}
+                >
+                  Open Results (charts + QA table)
+                </button>
+                {reliabilityResult.charts && (
+                  <button
+                    type="button"
+                    className="px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white rounded-lg text-sm"
+                    onClick={() => downloadReliabilityCharts(reliabilityResult.charts, reliabilityResult.seed)}
+                  >
+                    Download Charts
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

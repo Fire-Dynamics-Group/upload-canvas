@@ -562,3 +562,68 @@ export const downloadEfsReport = async (elevations, isCommercial = true) => {
     const blob = await resp.blob()
     saveAs(blob, 'EFS_Report.docx')
 }
+
+
+export const getMacsBatchSummary = async (projectId, batchId) => {
+    const resp = await authedFetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/macs-batch/${encodeURIComponent(batchId)}`, { method: 'GET' })
+    if (!resp.ok) throw new Error(`Failed to fetch MACS batch summary: ${resp.status}`)
+    return resp.json()
+}
+
+export const getMacsBatchDistribution = async (projectId, batchId, column, spaghettiN = 300) => {
+    const resp = await authedFetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/macs-batch/${encodeURIComponent(batchId)}/distribution?column=${encodeURIComponent(column)}&spaghetti_n=${spaghettiN}`, { method: 'GET' })
+    if (!resp.ok) throw new Error(`Failed to fetch MACS batch distribution: ${resp.status}`)
+    return resp.json()
+}
+
+export const getMacsBatchRuns = async (projectId, batchId, params = {}) => {
+    const query = new URLSearchParams()
+    if (params.page) query.set('page', params.page)
+    if (params.limit) query.set('limit', params.limit)
+    if (params.search) query.set('search', params.search)
+    if (params.status) query.set('status', params.status)
+    if (params.sortBy) query.set('sort_by', params.sortBy)
+    if (params.sortOrder) query.set('sort_order', params.sortOrder)
+    const resp = await authedFetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/macs-batch/${encodeURIComponent(batchId)}/runs?${query.toString()}`, { method: 'GET' })
+    if (!resp.ok) throw new Error(`Failed to fetch MACS batch runs: ${resp.status}`)
+    return resp.json()
+}
+
+export const getMacsBatchRunDetail = async (projectId, batchId, runId) => {
+    const resp = await authedFetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/macs-batch/${encodeURIComponent(batchId)}/runs/${encodeURIComponent(runId)}`, { method: 'GET' })
+    if (!resp.ok) throw new Error(`Failed to fetch MACS batch run detail: ${resp.status}`)
+    return resp.json()
+}
+
+const MACS_BATCH_CHART_FILENAMES = {
+    scatter: 'macs-fireload-glazing-scatter',
+    totalCapacity: 'macs-total-slab-capacity',
+    beamTemp: 'macs-unprotected-beam-temperature',
+    meshTemp: 'macs-reinforcement-mesh-temperature',
+}
+
+export const downloadMacsBatchCharts = (charts, batchId = null) => {
+    const suffix = batchId ? `-${String(batchId).slice(0, 8)}` : ''
+    for (const [key, stem] of Object.entries(MACS_BATCH_CHART_FILENAMES)) {
+        if (charts?.[key]) {
+            let b64 = charts[key]
+            if (b64.includes('base64,')) b64 = b64.split('base64,')[1]
+            saveAs(base64ToPngBlob(b64), `${stem}${suffix}.png`)
+        }
+    }
+}
+
+export const downloadStructuralFireReport = async (projectId, projectName = 'Project') => {
+    const resp = await authedFetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/structural-fire-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+    })
+    if (!resp.ok) {
+        let detail = ''
+        try { detail = (await resp.json()).detail } catch (_) {}
+        throw new Error(detail || `Failed to generate structural fire report: ${resp.status}`)
+    }
+    const blob = await resp.blob()
+    const cleanName = (projectName || 'Project').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_')
+    saveAs(blob, `Structural_Fire_Report_${cleanName}.docx`)
+}

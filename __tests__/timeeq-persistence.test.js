@@ -107,6 +107,19 @@ describe('buildTimeEqPayload', () => {
         ])
     })
 
+    it('preserves macsBatch when present in store state', () => {
+        const stateWithMacs = {
+            ...sampleState,
+            macsBatch: { batch_id: 'batch-abc-123', run_count: 10000, reliability_percent: 99.99 },
+        }
+        const p = buildTimeEqPayload(stateWithMacs)
+        expect(p.settings.macsBatch).toEqual({
+            batch_id: 'batch-abc-123',
+            run_count: 10000,
+            reliability_percent: 99.99,
+        })
+    })
+
     it('defaults the name and tolerates a fresh store', () => {
         const p = buildTimeEqPayload({ elements: [], elementsByMode: {} })
         expect(p.name).toBe('Untitled Project')
@@ -128,12 +141,17 @@ describe('hydrateTimeEqState', () => {
     }
 
     it('restores project meta, inputs, result, scale and geometry into the timeEq bucket', () => {
-        const next = hydrateTimeEqState(project, floorDetail, sampleState)
+        const projectWithMacs = {
+            ...project,
+            settings: { ...project.settings, macsBatch: { batch_id: 'batch-abc-123' } },
+        }
+        const next = hydrateTimeEqState(projectWithMacs, floorDetail, sampleState)
         expect(next.projectId).toBe('p1')
         expect(next.projectName).toBe('Loaded TEQ')
         expect(next.floorId).toBe('f1')
         expect(next.timeEqInputs).toEqual({ use: 'Library' })
         expect(next.timeEqResult).toEqual({ reliability: 0.5 })
+        expect(next.macsBatch).toEqual({ batch_id: 'batch-abc-123' })
         expect(next.pixelsPerMesh).toBe(3)
         expect(next.canvasDimensions).toEqual({ width: 1, height: 2 })
         expect(next.originPixels).toEqual({ x: 1, y: 1 })

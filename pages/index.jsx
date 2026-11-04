@@ -19,6 +19,7 @@ import { isDbBacked, autosaveSnapshot } from '../store/persistenceModes'
 import { savePdfToIndexedDB, loadPdfFromIndexedDB } from '../utils/pdfStorage'
 import { computeFramingScroll, elementPixelBox } from '../utils/viewportFraming'
 import { useRouter } from 'next/router'
+import Link from 'next/link'
 import MacsBanner from '../Components/MacsBanner'
 import { applyMacsRunToInputs } from '../utils/macsHandoff'
 import {
@@ -620,7 +621,16 @@ export default function Home() {
         <div className="fixed top-2 right-2 z-50 flex gap-2">
           {isDbBacked(currentMode) && (
             <>
-              <button
+              {(router.query?.returnTo === 'structural-fire' || currentMode === 'timeEq') && projectId && (
+            <Link
+              href={`/structural-fire?project=${projectId}`}
+              className="text-white bg-indigo-600 hover:bg-indigo-700 font-medium rounded-lg text-sm px-4 py-2 flex items-center gap-1.5"
+            >
+              <span>🏗️</span>
+              <span>SFE Studio</span>
+            </Link>
+          )}
+          <button
                 onClick={handleBackToDashboard}
                 className="text-white bg-gray-700 hover:bg-gray-600 font-medium rounded-lg text-sm px-4 py-2"
                 type="button"

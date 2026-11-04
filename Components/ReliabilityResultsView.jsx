@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import useStore from '../store/useStore'
-import { sendTimeEqReliabilityChartsData, downloadReliabilityCharts } from './ApiCalls'
+import { sendTimeEqReliabilityChartsData, downloadReliabilityCharts, saveProjectToServer } from './ApiCalls'
 import { downloadReliabilityResultsCsv } from '../utils/reliabilityResults'
 import {
     reliabilityRequestOptionsFromInputs,
@@ -39,6 +39,14 @@ export default function ReliabilityResultsView() {
             })
             setResults(body)
             setPage(0)
+            const state = useStore.getState()
+            if (state.setTimeEqResult) state.setTimeEqResult(body)
+            if (state.projectId) {
+                const payload = state.buildSavePayload()
+                if (payload) {
+                    saveProjectToServer(state.projectId, payload).catch((err) => console.error('Save failed:', err))
+                }
+            }
         } catch (e) {
             setError(e?.message || 'Full results failed')
         } finally {
