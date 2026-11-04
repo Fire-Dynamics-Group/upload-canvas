@@ -1,11 +1,7 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import MacsSetupPanel from './MacsSetupPanel'
-import PlotlyScatterChart from './PlotlyScatterChart'
-import PlotlyDistributionChart from './PlotlyDistributionChart'
 import {
     getMacsBatchSummary,
-    getMacsBatchRuns,
-    getMacsBatchRunDetail,
     downloadMacsBatchCharts,
     downloadStructuralFireReport,
 } from '../ApiCalls'
@@ -13,31 +9,16 @@ import {
 export default function MacsBatchOverview({
     projectId = null,
     batch = null,
-    runs = [],
     selectedRun = null,
-    onSelectRun = null,
-    onViewRunDetail = null,
     onApplyToTimeEq = null,
     onBack = null,
 }) {
     // Effective batch ID
-    const batchId = batch?.batch_id || 'd78c51f88cc9432da40b6e42dd3104b3'
+    const batchId = batch?.batch_id || selectedRun?.batch_id || selectedRun?.inputs?.batch_id || null
 
     // Local loaded batch data if not fully passed in props
     const [batchData, setBatchData] = useState(batch)
     const [isLoadingBatch, setIsLoadingBatch] = useState(false)
-
-    // Table pagination, search, sorting
-    const [tableRuns, setTableRuns] = useState(runs || [])
-    const [totalRunsCount, setTotalRunsCount] = useState(10000)
-    const [page, setPage] = useState(1)
-    const [totalPages, setTotalPages] = useState(200)
-    const [pageSize, setPageSize] = useState(50)
-    const [search, setSearch] = useState('')
-    const [statusFilter, setStatusFilter] = useState('')
-    const [sortBy, setSortBy] = useState('id')
-    const [sortOrder, setSortOrder] = useState('asc')
-    const [isLoadingRuns, setIsLoadingRuns] = useState(false)
 
     // Rename state
     const [isRenaming, setIsRenaming] = useState(false)
@@ -45,28 +26,29 @@ export default function MacsBatchOverview({
     const [activeModalChart, setActiveModalChart] = useState(null)
     const [isDownloadingReport, setIsDownloadingReport] = useState(false)
 
-    // Sync batch & runs from props when updated
+    // Sync batch from props when updated
     useEffect(() => {
-        if (batch) setBatchData(batch)
+        setBatchData(batch ?? null)
+        setIsLoadingBatch(false)
     }, [batch])
-
-    useEffect(() => {
-        if (runs && runs.length > 0) {
-            setTableRuns(runs)
-            setTotalRunsCount(runs.length)
-        }
-    }, [runs])
 
     // Fetch batch summary if needed
     useEffect(() => {
-        if (!projectId || !batchId) return
+        if (!projectId || !batchId) {
+            setIsLoadingBatch(false)
+            return
+        }
+        if (batch && (batch.charts || batch.setup || batch.run_count)) {
+            setIsLoadingBatch(false)
+            return
+        }
         let active = true
         setIsLoadingBatch(true)
 
         getMacsBatchSummary(projectId, batchId)
             .then((data) => {
-                if (!active || !data) return
-                setBatchData(data)
+                if (!active) return
+                if (data) setBatchData(data)
                 setIsLoadingBatch(false)
             })
             .catch(() => {
@@ -76,48 +58,25 @@ export default function MacsBatchOverview({
         return () => { active = false }
     }, [projectId, batchId])
 
-    // Fetch paginated runs for the table
-    useEffect(() => {
-        if (!projectId || !batchId) return
-        let active = true
-        setIsLoadingRuns(true)
-
-        getMacsBatchRuns(projectId, batchId, {
-            page,
-            limit: pageSize,
-            search,
-            status: statusFilter,
-            sortBy,
-            sortOrder,
-        })
-            .then((res) => {
-                if (!active) return
-                setTableRuns(res.runs || [])
-                setTotalRunsCount(res.total || 0)
-                setTotalPages(res.total_pages || 1)
-                setIsLoadingRuns(false)
-            })
-            .catch(() => {
-                if (active) setIsLoadingRuns(false)
-            })
-
-        return () => { active = false }
-    }, [projectId, batchId, page, pageSize, search, statusFilter, sortBy, sortOrder])
-
     const activeBatch = batchData || batch || {}
-    const shortId = (activeBatch.batch_id || batchId).slice(0, 8)
-    const displayName = customName || activeBatch.name || shortId
-    const totalRuns = activeBatch.run_count || activeBatch.total_expected || 10000
-    const passCount = activeBatch.pass_count ?? 9999
-    const failCount = activeBatch.fail_count ?? 1
-    const errorCount = activeBatch.error_count ?? 0
+    const rawBatchId = activeBatch.batch_id || batchId || ''
+    const shortId = rawBatchId ? String(rawBatchId).slice(0, 8) : ''
+    const displayName = customName || activeBatch.name || (shortId ? `Batch ${shortId}` : 'MACS+ Assessment')
+    const totalRuns = activeBatch.run_count || activeBatch.summary?.total_runs || activeBatch.total_expected || 0
+    const passCount = activeBatch.pass_count ?? activeBatch.summary?.pass_count ?? 0
+    const failCount = activeBatch.fail_count ?? activeBatch.summary?.fail_count ?? 0
+    const errorCount = activeBatch.error_count ?? activeBatch.summary?.error_count ?? 0
     const shearCheck = activeBatch.shear_check || {}
     const subLimitRuns = shearCheck.sub_limit_runs || []
     const charts = activeBatch.charts || {}
     const hasMatplotlibCharts = Boolean(charts.scatter || charts.totalCapacity || charts.beamTemp || charts.meshTemp)
     const reliabilityPct = activeBatch.reliability_percent !== undefined
         ? activeBatch.reliability_percent
-        : totalRuns > 0 ? Number(((passCount / totalRuns) * 100).toFixed(2)) : 100
+        : activeBatch.summary?.reliability_percent !== undefined
+            ? activeBatch.summary.reliability_percent
+            : totalRuns > 0
+                ? Number(((passCount / totalRuns) * 100).toFixed(2))
+                : null
 
     const handleDownloadReport = async () => {
         if (!projectId) {
@@ -134,31 +93,44 @@ export default function MacsBatchOverview({
         }
     }
 
-    const handleRunClick = async (runRow) => {
-        if (!onSelectRun) return
-        try {
-            // Fetch full run detail including time-series curves
-            const fullRun = await getMacsBatchRunDetail(projectId, batchId, runRow.id)
-            onSelectRun(fullRun || runRow)
-        } catch (_) {
-            onSelectRun(runRow)
-        }
-        if (onViewRunDetail) onViewRunDetail()
+    if (isLoadingBatch && !batchData && !batch) {
+        return (
+            <div className="mx-auto max-w-4xl p-10 text-center bg-white rounded-lg border border-slate-200 shadow-xs space-y-4 my-8">
+                <div className="text-sm text-slate-500">Loading MACS batch data…</div>
+            </div>
+        )
+    }
+
+    if (!rawBatchId && !hasMatplotlibCharts && totalRuns === 0) {
+        return (
+            <div className="mx-auto max-w-4xl p-10 text-center bg-white rounded-lg border border-slate-200 shadow-xs space-y-4 my-8">
+                <div className="text-4xl">🏢🔥</div>
+                <h2 className="text-lg font-bold text-slate-800">No MACS+ Simulation Batch Linked</h2>
+                <p className="text-sm text-slate-600 max-w-lg mx-auto">
+                    This project does not have a linked MACS+ composite slab simulation batch yet. Run a 10,000-run Monte Carlo batch in the <span className="font-semibold text-slate-700">i-macs</span> desktop application and link it to transfer the 4 assessment charts and governing beam temperatures.
+                </p>
+                <p className="text-xs text-slate-400">
+                    Once linked, the 4 Matplotlib batch charts, bay setup parameters, and failure probability envelopes will display here.
+                </p>
+            </div>
+        )
     }
 
     return (
         <div className="mx-auto max-w-6xl p-6 space-y-5">
             {/* 1. Back link */}
-            <div>
-                <button
-                    type="button"
-                    onClick={() => onBack ? onBack() : null}
-                    className="text-xs text-blue-700 hover:underline inline-flex items-center gap-1"
-                >
-                    <span>←</span>
-                    <span>Back to history</span>
-                </button>
-            </div>
+            {onBack && (
+                <div>
+                    <button
+                        type="button"
+                        onClick={onBack}
+                        className="text-xs text-blue-700 hover:underline inline-flex items-center gap-1"
+                    >
+                        <span>←</span>
+                        <span>Back</span>
+                    </button>
+                </div>
+            )}
 
             {/* 2. Top Header Bar */}
             <header className="flex flex-wrap items-baseline justify-between gap-3">
@@ -204,50 +176,29 @@ export default function MacsBatchOverview({
                                 >
                                     Rename
                                 </button>
-                                <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
-                                    {reliabilityPct}% Reliability
-                                </span>
+                                {reliabilityPct !== null && (
+                                    <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
+                                        {reliabilityPct}% Reliability
+                                    </span>
+                                )}
                             </>
                         )}
                     </div>
-                    <p className="mt-0.5 text-xs text-slate-500 font-mono">
-                        {activeBatch.batch_id || batchId}
-                    </p>
+                    {rawBatchId && (
+                        <p className="mt-0.5 text-xs text-slate-500 font-mono">
+                            {rawBatchId}
+                        </p>
+                    )}
                     <p className="mt-1 text-xs text-slate-500">
                         {totalRuns.toLocaleString()} runs ·{' '}
                         <span className="text-emerald-700 font-medium">{passCount.toLocaleString()} pass</span> ·{' '}
                         <span className="text-amber-700 font-medium">{failCount} fail</span> ·{' '}
                         <span className="text-rose-700 font-medium">{errorCount} error</span>
                     </p>
-                    <div className="mt-2">
-                        <button
-                            type="button"
-                            className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 shadow-2xs"
-                        >
-                            MACS+ PDF evidence
-                        </button>
-                    </div>
                 </div>
 
                 {/* Right Top Actions */}
                 <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex items-stretch overflow-hidden rounded-md bg-slate-200">
-                        <select
-                            defaultValue="data"
-                            className="border-r border-slate-300 bg-slate-200 px-2 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-300"
-                        >
-                            <option value="data">Data (CSV)</option>
-                            <option value="charts">Charts (PNG)</option>
-                            <option value="both">Data + charts</option>
-                        </select>
-                        <button
-                            type="button"
-                            className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-300"
-                        >
-                            Download
-                        </button>
-                    </div>
-
                     <button
                         type="button"
                         onClick={handleDownloadReport}
@@ -255,14 +206,7 @@ export default function MacsBatchOverview({
                         className="rounded-md bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-300 disabled:opacity-50 flex items-center gap-1.5"
                     >
                         <span>📄</span>
-                        <span>{isDownloadingReport ? 'Downloading…' : 'Download report'}</span>
-                    </button>
-
-                    <button
-                        type="button"
-                        className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500"
-                    >
-                        Rerun batch
+                        <span>{isDownloadingReport ? 'Downloading…' : 'Download report (.docx)'}</span>
                     </button>
 
                     {onApplyToTimeEq && selectedRun && (
@@ -278,7 +222,7 @@ export default function MacsBatchOverview({
                 </div>
             </header>
 
-            {/* 3. SETUP shared across 10000 runs */}
+            {/* 3. SETUP shared across runs */}
             {activeBatch.setup && (
                 <MacsSetupPanel
                     setup={activeBatch.setup}
@@ -293,33 +237,20 @@ export default function MacsBatchOverview({
                     <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
                         UPLOAD CANVAS LINK
                     </span>
-                    <div className="text-xs text-blue-700 space-x-2">
-                        <button type="button" className="hover:underline">Relink</button>
-                        <span>|</span>
-                        <button type="button" className="hover:underline text-slate-500">Unlink</button>
-                    </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                     <div>
                         <span className="text-slate-500 block">Linked Project</span>
-                        <span className="font-semibold text-slate-800">MACS Run</span>
+                        <span className="font-semibold text-slate-800">{projectId || '—'}</span>
                     </div>
                     <div>
                         <span className="text-slate-500 block">Last Sent</span>
-                        <span className="font-mono text-slate-700">11/3/2026, 10:35:40 AM</span>
+                        <span className="font-mono text-slate-700">{activeBatch.updated_at || activeBatch.created_at || '—'}</span>
                     </div>
                     <div>
                         <span className="text-slate-500 block">Latest Time-Eq Outcome</span>
-                        <span className="text-slate-600">No time-eq run yet</span>
+                        <span className="text-slate-600">{activeBatch.time_eq_outcome || '—'}</span>
                     </div>
-                </div>
-                <div className="mt-3 pt-2">
-                    <button
-                        type="button"
-                        className="rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 shadow-2xs"
-                    >
-                        Open project
-                    </button>
                 </div>
             </div>
 
@@ -337,7 +268,7 @@ export default function MacsBatchOverview({
                 </div>
             )}
 
-            {/* 6. Four Plotly or Matplotlib Distribution and Scatter Charts (2x2 grid) */}
+            {/* 6. Four Matplotlib Distribution and Scatter Charts (2x2 grid) */}
             {hasMatplotlibCharts ? (
                 <section className="space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -499,221 +430,9 @@ export default function MacsBatchOverview({
                     </div>
                 </section>
             ) : (
-                <section className="grid gap-4 md:grid-cols-2">
-                    <PlotlyScatterChart runs={tableRuns} />
-
-                    <PlotlyDistributionChart
-                        projectId={projectId}
-                        batchId={batchId}
-                        column="total_plate_capacity"
-                        title="TOTAL CAPACITY DISTRIBUTION"
-                        yLabel="Total Slab Capacity (kN/m²)"
-                    />
-
-                    <PlotlyDistributionChart
-                        projectId={projectId}
-                        batchId={batchId}
-                        column="lofl_temp"
-                        title="UNPROTECTED BEAM TEMPERATURE DISTRIBUTION"
-                        yLabel="Temperature (°C)"
-                    />
-
-                    <PlotlyDistributionChart
-                        projectId={projectId}
-                        batchId={batchId}
-                        column="mesh_temp"
-                        title="REINFORCEMENT BAR TEMPERATURE DISTRIBUTION"
-                        yLabel="Temperature (°C)"
-                    />
-                </section>
-            )}
-
-            {/* 7. RUNS Table (mirrors BatchRunsTable) */}
-            {tableRuns && tableRuns.length > 0 && (
-                <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-xs">
-                <div className="border-b border-slate-100 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                        <h2 className="text-xs font-bold uppercase tracking-wide text-slate-700">
-                            RUNS
-                        </h2>
-                        <span className="text-xs text-slate-500 font-mono">
-                            {totalRunsCount.toLocaleString()} total
-                        </span>
-                    </div>
-
-                    {/* Filter and Search controls */}
-                    <div className="flex items-center gap-2">
-                        <input
-                            type="text"
-                            value={search}
-                            onChange={(e) => {
-                                setSearch(e.target.value)
-                                setPage(1)
-                            }}
-                            placeholder="Filter by run #..."
-                            className="border border-slate-300 rounded px-2.5 py-1 text-xs w-36 outline-none focus:border-blue-500"
-                        />
-                        <select
-                            value={statusFilter}
-                            onChange={(e) => {
-                                setStatusFilter(e.target.value)
-                                setPage(1)
-                            }}
-                            className="border border-slate-300 rounded px-2 py-1 text-xs text-slate-700 bg-white"
-                        >
-                            <option value="">All Statuses</option>
-                            <option value="pass">Pass</option>
-                            <option value="fail">Fail</option>
-                        </select>
-                    </div>
+                <div className="rounded-md border border-slate-200 bg-white p-8 text-center text-xs text-slate-500 shadow-2xs">
+                    Charts will appear here once a simulation batch is run in i-macs and pushed to this project.
                 </div>
-
-                <div className="max-h-[30rem] overflow-auto">
-                    <table className="w-full text-xs">
-                        <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 z-10">
-                            <tr>
-                                <th
-                                    className="px-4 py-2 text-left font-medium text-slate-700 cursor-pointer select-none"
-                                    onClick={() => {
-                                        setSortBy('id')
-                                        setSortOrder(sortBy === 'id' && sortOrder === 'asc' ? 'desc' : 'asc')
-                                    }}
-                                >
-                                    Run {sortBy === 'id' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}
-                                </th>
-                                <th
-                                    className="px-4 py-2 text-left font-medium text-slate-700 cursor-pointer select-none"
-                                    onClick={() => {
-                                        setSortBy('qf')
-                                        setSortOrder(sortBy === 'qf' && sortOrder === 'asc' ? 'desc' : 'asc')
-                                    }}
-                                >
-                                    qf {sortBy === 'qf' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}
-                                </th>
-                                <th
-                                    className="px-4 py-2 text-left font-medium text-slate-700 cursor-pointer select-none"
-                                    onClick={() => {
-                                        setSortBy('window_percent')
-                                        setSortOrder(sortBy === 'window_percent' && sortOrder === 'asc' ? 'desc' : 'asc')
-                                    }}
-                                >
-                                    window_percent {sortBy === 'window_percent' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}
-                                </th>
-                                <th
-                                    className="px-4 py-2 text-left font-medium text-slate-700 cursor-pointer select-none"
-                                    onClick={() => {
-                                        setSortBy('uf_max')
-                                        setSortOrder(sortBy === 'uf_max' && sortOrder === 'asc' ? 'desc' : 'asc')
-                                    }}
-                                >
-                                    UF max {sortBy === 'uf_max' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}
-                                </th>
-                                <th
-                                    className="px-4 py-2 text-left font-medium text-slate-700 cursor-pointer select-none"
-                                    onClick={() => {
-                                        setSortBy('crit_temp')
-                                        setSortOrder(sortBy === 'crit_temp' && sortOrder === 'asc' ? 'desc' : 'asc')
-                                    }}
-                                    title="Governing perimeter-beam critical temperature (side in brackets)"
-                                >
-                                    Crit. temp (°C) {sortBy === 'crit_temp' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}
-                                </th>
-                                <th className="px-4 py-2 text-left font-medium text-slate-700">
-                                    Status
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {isLoadingRuns ? (
-                                <tr>
-                                    <td colSpan={6} className="text-center py-8 text-slate-400">
-                                        Loading runs…
-                                    </td>
-                                </tr>
-                            ) : tableRuns.length === 0 ? (
-                                <tr>
-                                    <td colSpan={6} className="text-center py-8 text-slate-400">
-                                        No runs found matching filters.
-                                    </td>
-                                </tr>
-                            ) : (
-                                tableRuns.map((r) => {
-                                    const isSelected = selectedRun && (selectedRun.id === r.id || selectedRun.run_id === r.id)
-                                    return (
-                                        <tr
-                                            key={r.id}
-                                            onClick={() => handleRunClick(r)}
-                                            className={`cursor-pointer transition-colors ${
-                                                isSelected
-                                                    ? 'bg-blue-50 font-medium'
-                                                    : r.error || !r.pass
-                                                    ? 'hover:bg-rose-50/60'
-                                                    : 'hover:bg-slate-50/80'
-                                            }`}
-                                        >
-                                            <td className="px-4 py-1.5 text-blue-700 hover:underline font-mono">
-                                                #{r.id}
-                                            </td>
-                                            <td className="px-4 py-1.5 tabular-nums text-slate-700">
-                                                {r.qf != null ? r.qf : '—'}
-                                            </td>
-                                            <td className="px-4 py-1.5 tabular-nums text-slate-700">
-                                                {r.window_percent != null ? r.window_percent : '—'}
-                                            </td>
-                                            <td className="px-4 py-1.5 tabular-nums text-slate-700 font-mono">
-                                                {r.uf_max != null ? Number(r.uf_max).toFixed(3) : '—'}
-                                            </td>
-                                            <td className="px-4 py-1.5 tabular-nums text-slate-800 font-mono">
-                                                {r.governing_temp != null
-                                                    ? `${Math.round(r.governing_temp)} (${r.governing_side || 'A'})`
-                                                    : '—'}
-                                            </td>
-                                            <td className="px-4 py-1.5">
-                                                {r.error ? (
-                                                    <span className="text-rose-700 font-medium">Error</span>
-                                                ) : r.pass ? (
-                                                    <span className="text-emerald-700 font-medium">Pass</span>
-                                                ) : (
-                                                    <span className="text-amber-700 font-medium">Fail</span>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    )
-                                })
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Pagination footer */}
-                <div className="border-t border-slate-100 px-4 py-2 flex items-center justify-between text-xs text-slate-500 bg-slate-50">
-                    <div>
-                        Showing {Math.min((page - 1) * pageSize + 1, totalRunsCount)}–
-                        {Math.min(page * pageSize, totalRunsCount)} of {totalRunsCount.toLocaleString()}
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            type="button"
-                            disabled={page <= 1}
-                            onClick={() => setPage((p) => Math.max(1, p - 1))}
-                            className="px-2.5 py-1 rounded border border-slate-200 bg-white text-slate-700 disabled:opacity-40"
-                        >
-                            Previous
-                        </button>
-                        <span>
-                            Page {page} of {totalPages}
-                        </span>
-                        <button
-                            type="button"
-                            disabled={page >= totalPages}
-                            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                            className="px-2.5 py-1 rounded border border-slate-200 bg-white text-slate-700 disabled:opacity-40"
-                        >
-                            Next
-                        </button>
-                    </div>
-                </div>
-            </section>
             )}
 
             {/* Chart Lightbox Modal */}
@@ -731,12 +450,12 @@ export default function MacsBatchOverview({
                             <button
                                 type="button"
                                 onClick={() => setActiveModalChart(null)}
-                                className="text-gray-500 hover:text-gray-800 font-bold text-lg px-2"
+                                className="text-gray-400 hover:text-gray-700 font-bold px-2 py-1 text-sm rounded hover:bg-gray-200"
                             >
                                 ✕
                             </button>
                         </div>
-                        <div className="p-4 overflow-auto flex items-center justify-center bg-slate-100">
+                        <div className="p-4 overflow-auto flex items-center justify-center bg-slate-50">
                             <img
                                 src={activeModalChart.src}
                                 alt={activeModalChart.title}

@@ -1,3 +1,4 @@
+import StructuralFirePage from '../pages/structural-fire'
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -9,6 +10,12 @@ import MacsBatchOverview from '../Components/StructuralFire/MacsBatchOverview'
 import TimeEqWorkspace from '../Components/StructuralFire/TimeEqWorkspace'
 import { getAllMacsRuns, getMacsRunDetail } from '../Components/ApiCalls'
 
+vi.mock('next/router', () => ({
+    useRouter: () => ({
+        query: {},
+        push: vi.fn(),
+    }),
+}))
 vi.mock('file-saver', () => ({ saveAs: vi.fn() }))
 
 const SAMPLE_RUN = {
@@ -148,6 +155,23 @@ describe('Structural Fire Engineering: Studio Components & APIs', () => {
             fireEvent.change(searchInput, { target: { value: '457' } })
             expect(screen.getByText('UB 457x191x82')).toBeInTheDocument()
             expect(screen.queryByText('UB 305x127x42')).not.toBeInTheDocument()
+        })
+
+        it('renders batch metrics dynamically with 25 runs and not hardcoded 10,000', () => {
+            const batch25 = {
+                batch_id: '17664d75cd434fa0b1f44743d65a4134',
+                name: 'CSV import test (25 of 10k)',
+                run_count: 25,
+                pass_count: 4,
+                fail_count: 21,
+                reliability_percent: 16.0,
+            }
+            render(<MacsRunsFeed runs={[SAMPLE_RUN]} batch={batch25} />)
+
+            expect(screen.getByText('CSV import test (25 of 10k)')).toBeInTheDocument()
+            expect(screen.getByText('16% Rel.')).toBeInTheDocument()
+            expect(screen.getByText(/25 runs · 4 pass · 21 fail/i)).toBeInTheDocument()
+            expect(screen.queryByText(/10,000 runs · 9,999 pass · 1 fail/i)).not.toBeInTheDocument()
         })
     })
 
@@ -441,6 +465,31 @@ describe('Structural Fire Engineering: Studio Components & APIs', () => {
                 expect(call).toBeTruthy()
                 expect(call[1].method).toBe('POST')
             })
+        })
+
+        it('renders StructuralFirePage without crashing when initial projects list is empty', async () => {
+            globalThis.fetch.mockResolvedValue({
+                ok: true,
+                status: 200,
+                json: async () => [],
+            })
+            render(<StructuralFirePage />)
+            expect(screen.getByText('MACS Batch & Report Charts')).toBeInTheDocument()
+            expect(screen.getByText('Time Equivalence & Reliability')).toBeInTheDocument()
+            expect(screen.getByText('Side-by-Side View')).toBeInTheDocument()
+            await waitFor(() => {
+                expect(screen.getByText('No MACS+ Simulation Batch Linked')).toBeInTheDocument()
+            })
+        })
+
+        it('renders empty state gracefully when batch is null or undefined without throwing slice error', () => {
+            const { unmount } = render(<MacsBatchOverview batch={null} />)
+            expect(screen.getByText('No MACS+ Simulation Batch Linked')).toBeInTheDocument()
+            expect(screen.getByText(/Run a 10,000-run Monte Carlo batch in the/i)).toBeInTheDocument()
+            unmount()
+
+            render(<MacsBatchOverview />)
+            expect(screen.getByText('No MACS+ Simulation Batch Linked')).toBeInTheDocument()
         })
     })
 })

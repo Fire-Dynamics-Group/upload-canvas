@@ -18,7 +18,7 @@ function withUnit(valStr, unit) {
 export default function MacsSetupPanel({
     setup = null,
     defaultOpen = true,
-    runCount = 10000,
+    runCount = null,
     title = 'SETUP',
     subtitle = null,
 }) {
@@ -43,9 +43,11 @@ export default function MacsSetupPanel({
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
                         SETUP
                     </span>
-                    <span className="text-xs text-slate-400 font-normal">
-                        shared across {totalRuns.toLocaleString()} runs
-                    </span>
+                    {totalRuns ? (
+                        <span className="text-xs text-slate-400 font-normal">
+                            shared across {totalRuns.toLocaleString()} runs
+                        </span>
+                    ) : null}
                 </div>
                 <span className="text-slate-400 text-xs select-none">
                     {isOpen ? '▾' : '▸'}

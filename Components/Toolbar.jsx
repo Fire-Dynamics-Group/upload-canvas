@@ -263,7 +263,7 @@ const [errorList, setErrorList] = useState(defaultErrorList)
       }
 
       function handleGreyscaleButtonClick() {
-        if (pdfCanvasRef.current) {
+        if (pdfCanvasRef?.current) {
           const canvas = pdfCanvasRef.current;
           const context = canvas.getContext('2d');
           let imageData

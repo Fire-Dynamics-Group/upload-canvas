@@ -105,12 +105,18 @@ export default function MacsRunsFeed({
                         <span className="text-xs font-extrabold text-blue-950 font-mono tracking-tight">
                             {batch.name || `Batch ${batch.batch_id?.slice(0, 8)}`}
                         </span>
-                        <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-100 border border-emerald-200 px-1.5 py-0.2 rounded">
-                            {batch.reliability_percent || 99.99}% Rel.
-                        </span>
+                        {(batch.reliability_percent !== undefined || batch.summary?.reliability_percent !== undefined) && (
+                            <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-100 border border-emerald-200 px-1.5 py-0.2 rounded">
+                                {batch.reliability_percent !== undefined ? batch.reliability_percent : batch.summary?.reliability_percent}% Rel.
+                            </span>
+                        )}
                     </div>
                     <div className="text-[10px] text-blue-800/80 mt-0.5 font-mono flex items-center justify-between">
-                        <span>10,000 runs · 9,999 pass · 1 fail</span>
+                        <span>
+                            {(batch.run_count || batch.summary?.total_runs || 0).toLocaleString()} runs ·{' '}
+                            {(batch.pass_count ?? batch.summary?.pass_count ?? 0).toLocaleString()} pass ·{' '}
+                            {(batch.fail_count ?? batch.summary?.fail_count ?? 0).toLocaleString()} fail
+                        </span>
                         {onViewBatchOverview && (
                             <button
                                 type="button"

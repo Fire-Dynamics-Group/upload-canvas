@@ -121,7 +121,7 @@ export default function Home() {
   const viewMode = useStore((state) => state.viewMode)
   useCanvasPan(stageRef, Boolean(selectedFile) && viewMode === '2d')
   const setPdfCanvasRef = useStore((state) => state.setPdfCanvasRef)
-  const pdfCanvasRefLocal = useRef()
+  const pdfCanvasRefLocal = useRef(null)
   useEffect(() => { setPdfCanvasRef(pdfCanvasRefLocal) }, [setPdfCanvasRef])
 
   const pdfCanvasRef = useStore((state) => state.pdfCanvasRef)
@@ -355,7 +355,6 @@ export default function Home() {
 
   // Shared function to render a PDF onto the canvas from any source
   const renderPdf = async (pdfSource, skipScale = false) => {
-    if (!pdfCanvasRef.current) return
     const pdfjs = await import('pdfjs-dist/build/pdf')
 
     // pdfjs accepts a URL string or {data: ArrayBuffer}
@@ -363,7 +362,18 @@ export default function Home() {
     const pdf = await loadPdfDocument(pdfjs, source)
     const page = await pdf.getPage(1)
 
-    const canvas = pdfCanvasRef.current
+    const getCanvas = () => pdfCanvasRefLocal.current || pdfCanvasRef?.current || useStore.getState().pdfCanvasRef?.current
+    let canvas = getCanvas()
+    if (!canvas) {
+      for (let i = 0; i < 20 && !getCanvas(); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      canvas = getCanvas()
+    }
+    if (!canvas) {
+      console.warn('pdfCanvasRef is not mounted yet; skipping canvas render')
+      return
+    }
     const context = canvas.getContext('2d')
     const scale = 1.5
     const viewport = page.getViewport({ scale })
@@ -713,7 +723,7 @@ export default function Home() {
             no project is open — otherwise the previous project's PDF lingers
             behind the dashboard and the user has to scroll past it. */}
         <canvas
-        ref={pdfCanvasRef}
+        ref={pdfCanvasRefLocal}
         style={selectedFile ? { width: canvasDimensions.width * canvasZoom, height: canvasDimensions.height * canvasZoom } : undefined}
         className={selectedFile ? 'absolute top-0 left-0 z-0 block pointer-events-none' : 'hidden'}
         />

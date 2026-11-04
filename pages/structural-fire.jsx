@@ -6,13 +6,9 @@ import {
     loadProject,
     loadFloorDetail,
     createProject,
-    getAllMacsRuns,
     getMacsRuns,
-    getMacsRunDetail,
     claimHandoff,
 } from '../Components/ApiCalls'
-import MacsRunsFeed from '../Components/StructuralFire/MacsRunsFeed'
-import MacsRunDetail from '../Components/StructuralFire/MacsRunDetail'
 import MacsBatchOverview from '../Components/StructuralFire/MacsBatchOverview'
 import TimeEqWorkspace from '../Components/StructuralFire/TimeEqWorkspace'
 
@@ -26,42 +22,27 @@ export default function StructuralFirePage() {
     const [selectedFloor, setSelectedFloor] = useState(null)
     const [isLoadingProject, setIsLoadingProject] = useState(false)
 
-    // MACS Runs
-    const [allRuns, setAllRuns] = useState([])
+    // MACS Batch & Governing Run
     const [selectedRun, setSelectedRun] = useState(null)
-    const [activeTab, setActiveTab] = useState('timeEq') // 'timeEq' | 'macsRun' | 'split'
+    const [activeTab, setActiveTab] = useState('macsBatch') // 'macsBatch' | 'timeEq' | 'split'
     const [isClaiming, setIsClaiming] = useState(false)
     const [error, setError] = useState(null)
 
-    // Initial load: projects & all cloud MACS runs
+    // Initial load: projects only (raw 10k run data stays on desktop results.db)
     useEffect(() => {
         let active = true
         async function fetchInitialData() {
             try {
-                const [projList, runsList] = await Promise.all([
-                    listProjects('timeEq').catch(() => []),
-                    getAllMacsRuns(50, 0).catch(() => []),
-                ])
+                const projList = await listProjects('timeEq').catch(() => [])
                 if (!active) return
                 setProjects(projList)
-                setAllRuns(runsList)
-
-                // If runId specified in URL, load it
-                if (queryRunId) {
-                    try {
-                        const runDetail = await getMacsRunDetail(queryRunId)
-                        if (active) setSelectedRun(runDetail)
-                    } catch (_) {}
-                } else if (runsList.length > 0) {
-                    setSelectedRun(runsList[0])
-                }
             } catch (err) {
-                if (active) setError(err.message || 'Failed to load initial data')
+                if (active) setError(err.message || 'Failed to load projects')
             }
         }
         fetchInitialData()
         return () => { active = false }
-    }, [queryRunId])
+    }, [])
 
     // Load active project whenever queryProjectId or selectedProject changes
     const selectProjectById = useCallback(async (pid) => {
@@ -72,6 +53,7 @@ export default function StructuralFirePage() {
         }
         setIsLoadingProject(true)
         setError(null)
+        setSelectedRun(null)
         try {
             const p = await loadProject(pid)
             setSelectedProject(p)
@@ -82,16 +64,9 @@ export default function StructuralFirePage() {
                 setSelectedFloor(null)
             }
 
-            // Also refresh runs associated with this project
+            // Load governing run if present for critical temp handoff
             const projRuns = await getMacsRuns(pid).catch(() => [])
-            if (projRuns.length > 0) {
-                // Prepend or merge into allRuns
-                setAllRuns((prev) => {
-                    const ids = new Set(projRuns.map((r) => r.id))
-                    return [...projRuns, ...prev.filter((r) => !ids.has(r.id))]
-                })
-                setSelectedRun(projRuns[0])
-            }
+            setSelectedRun(projRuns && projRuns.length > 0 ? projRuns[0] : null)
         } catch (err) {
             setError(`Failed to load project: ${err.message}`)
         } finally {
@@ -121,22 +96,6 @@ export default function StructuralFirePage() {
         }
     }
 
-    // Handle claim handoff
-    const handleClaimHandoff = async (handoffId) => {
-        if (!selectedProject?.id) {
-            throw new Error('Please select or create a project first to claim this handoff.')
-        }
-        setIsClaiming(true)
-        try {
-            const claimedRun = await claimHandoff(selectedProject.id, handoffId)
-            const updatedRuns = await getMacsRuns(selectedProject.id)
-            setAllRuns((prev) => [claimedRun, ...prev.filter((r) => r.id !== claimedRun.id)])
-            setSelectedRun(claimedRun)
-        } finally {
-            setIsClaiming(false)
-        }
-    }
-
     const effectiveBatch = selectedProject?.settings?.macsBatch || selectedRun?.outputs?.macs_batch || null
 
     return (
@@ -144,7 +103,7 @@ export default function StructuralFirePage() {
             {/* Top Navigation Bar */}
             <header className="bg-slate-900 text-white px-6 py-3 shadow-md flex flex-wrap items-center justify-between gap-4 sticky top-0 z-50">
                 <div className="flex items-center gap-3">
-                    <span className="text-2xl">🏗️</span>
+                    <span className="text-2xl">🔥🏢</span>
                     <div>
                         <h1 className="text-lg font-bold tracking-tight leading-none">
                             Structural Fire Engineering
@@ -191,7 +150,7 @@ export default function StructuralFirePage() {
                             href={`/?project=${selectedProject.id}&returnTo=structural-fire`}
                             className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold px-3 py-1.5 rounded shadow transition-colors flex items-center gap-1.5"
                         >
-                            <span>🎨</span>
+                            <span>📐</span>
                             <span>Open on Canvas</span>
                         </Link>
                     )}
@@ -209,13 +168,24 @@ export default function StructuralFirePage() {
             {error && (
                 <div className="bg-red-500 text-white text-xs px-4 py-2 font-medium flex items-center justify-between">
                     <span>{error}</span>
-                    <button type="button" onClick={() => setError(null)} className="font-bold">×</button>
+                    <button type="button" onClick={() => setError(null)} className="font-bold">✕</button>
                 </div>
             )}
 
             {/* Sub-header / View Tabs */}
             <div className="bg-white border-b border-gray-200 px-6 py-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('macsBatch')}
+                        className={`text-xs font-bold px-3 py-1.5 rounded transition-colors ${
+                            activeTab === 'macsBatch'
+                                ? 'bg-blue-600 text-white'
+                                : 'text-gray-700 hover:bg-gray-100'
+                        }`}
+                    >
+                        MACS Batch & Report Charts
+                    </button>
                     <button
                         type="button"
                         onClick={() => setActiveTab('timeEq')}
@@ -226,28 +196,6 @@ export default function StructuralFirePage() {
                         }`}
                     >
                         Time Equivalence & Reliability
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setActiveTab('macsBatch')}
-                        className={`text-xs font-bold px-3 py-1.5 rounded transition-colors ${
-                            activeTab === 'macsBatch'
-                                ? 'bg-blue-600 text-white'
-                                : 'text-gray-700 hover:bg-gray-100'
-                        }`}
-                    >
-                        MACS 10,000-Sweep & Setup
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setActiveTab('macsRun')}
-                        className={`text-xs font-bold px-3 py-1.5 rounded transition-colors ${
-                            activeTab === 'macsRun'
-                                ? 'bg-blue-600 text-white'
-                                : 'text-gray-700 hover:bg-gray-100'
-                        }`}
-                    >
-                        Single Run Curves & Detail
                     </button>
                     <button
                         type="button"
@@ -263,96 +211,80 @@ export default function StructuralFirePage() {
                 </div>
 
                 <div className="text-xs text-gray-500 flex items-center gap-2">
-                    {selectedRun && (
+                    {effectiveBatch ? (
                         <span>
-                            Active MACS Run: <strong className="text-gray-800">{selectedRun.section || selectedRun.label}</strong> ({Math.round(selectedRun.critical_temp)}°C)
+                            Linked MACS Batch: <strong className="text-gray-800">{effectiveBatch.name || 'Batch Overview'}</strong> ({Number(effectiveBatch.run_count || 0).toLocaleString()} runs)
                         </span>
+                    ) : (
+                        <span className="italic text-gray-400">No MACS batch linked to this project yet</span>
                     )}
                 </div>
             </div>
 
-            {/* Main Application Grid */}
-            <div className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-[1700px] w-full mx-auto">
-                {/* Left 3 Cols: Runs Feed */}
-                <div className="lg:col-span-3">
-                    <MacsRunsFeed
-                        runs={allRuns}
-                        batch={effectiveBatch}
-                        selectedProjectId={selectedProject?.id}
-                        projects={projects}
-                        selectedRunId={selectedRun?.id || selectedRun?.run_id}
-                        onSelectRun={(r) => setSelectedRun(r)}
-                        onClaimHandoff={handleClaimHandoff}
-                        isClaiming={isClaiming}
-                        activeTimeEqInputs={selectedProject?.settings?.timeEqInputs}
-                        onViewBatchOverview={() => setActiveTab('macsBatch')}
-                    />
-                </div>
+            {/* Main Application Workspace (Full-width clean layout) */}
+            <main className="flex-1 p-6 max-w-[1700px] w-full mx-auto">
+                {isLoadingProject ? (
+                    <div className="p-12 text-center text-sm text-gray-500 bg-white rounded-lg border border-gray-200">
+                        Loading project data…
+                    </div>
+                ) : (
+                    <>
+                        {activeTab === 'macsBatch' && (
+                            <MacsBatchOverview
+                                projectId={selectedProject?.id || projects[0]?.id}
+                                batch={effectiveBatch}
+                                selectedRun={selectedRun}
+                                onApplyToTimeEq={(r) => {
+                                    setSelectedRun(r)
+                                    setActiveTab('timeEq')
+                                }}
+                            />
+                        )}
 
-                {/* Right 9 Cols: Main Workspace */}
-                <div className="lg:col-span-9 space-y-6">
-                    {isLoadingProject ? (
-                        <div className="p-12 text-center text-sm text-gray-500 bg-white rounded-lg border border-gray-200">
-                            Loading project data…
-                        </div>
-                    ) : (
-                        <>
-                            {activeTab === 'timeEq' && (
-                                <TimeEqWorkspace
-                                    project={selectedProject}
-                                    floorDetail={selectedFloor}
-                                    selectedMacsRun={selectedRun}
-                                    onProjectUpdated={(p) => setSelectedProject(p)}
-                                />
-                            )}
+                        {activeTab === 'timeEq' && (
+                            <TimeEqWorkspace
+                                project={selectedProject}
+                                floorDetail={selectedFloor}
+                                selectedMacsRun={selectedRun}
+                                onProjectUpdated={(p) => setSelectedProject(p)}
+                            />
+                        )}
 
-                            {activeTab === 'macsBatch' && (
-                                <MacsBatchOverview
-                                    projectId={selectedProject?.id || projects[0]?.id}
-                                    batch={effectiveBatch}
-                                    runs={allRuns}
-                                    selectedRun={selectedRun}
-                                    onSelectRun={(r) => setSelectedRun(r)}
-                                    onViewRunDetail={() => setActiveTab('macsRun')}
-                                    onApplyToTimeEq={(r) => {
-                                        setSelectedRun(r)
-                                        setActiveTab('timeEq')
-                                    }}
-                                    onBack={() => setActiveTab('timeEq')}
-                                />
-                            )}
-
-                            {activeTab === 'macsRun' && (
-                                <MacsRunDetail
-                                    run={selectedRun}
-                                    batchSetup={effectiveBatch?.setup}
-                                    onApplyToTimeEq={(r) => {
-                                        setActiveTab('timeEq')
-                                    }}
-                                />
-                            )}
-
-                            {activeTab === 'split' && (
-                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                        {activeTab === 'split' && (
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+                                <div className="space-y-4">
+                                    <div className="bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded flex items-center justify-between">
+                                        <span>MACS+ Composite Slab & Batch Charts</span>
+                                        <span className="text-[11px] text-slate-300 font-normal">
+                                            {effectiveBatch ? `${Number(effectiveBatch.run_count || 0).toLocaleString()} runs` : 'Not linked'}
+                                        </span>
+                                    </div>
+                                    <MacsBatchOverview
+                                        projectId={selectedProject?.id || projects[0]?.id}
+                                        batch={effectiveBatch}
+                                        selectedRun={selectedRun}
+                                        onApplyToTimeEq={(r) => {
+                                            setSelectedRun(r)
+                                        }}
+                                    />
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="bg-blue-900 text-white text-xs font-bold px-3 py-1.5 rounded flex items-center justify-between">
+                                        <span>Monte Carlo Time Equivalence</span>
+                                        <span className="text-[11px] text-blue-200 font-normal">Reliability Analysis</span>
+                                    </div>
                                     <TimeEqWorkspace
                                         project={selectedProject}
                                         floorDetail={selectedFloor}
                                         selectedMacsRun={selectedRun}
                                         onProjectUpdated={(p) => setSelectedProject(p)}
                                     />
-                                    <MacsRunDetail
-                                        run={selectedRun}
-                                        batchSetup={effectiveBatch?.setup}
-                                        onApplyToTimeEq={(r) => {
-                                            setActiveTab('timeEq')
-                                        }}
-                                    />
                                 </div>
-                            )}
-                        </>
-                    )}
-                </div>
-            </div>
+                            </div>
+                        )}
+                    </>
+                )}
+            </main>
         </div>
     )
 }
