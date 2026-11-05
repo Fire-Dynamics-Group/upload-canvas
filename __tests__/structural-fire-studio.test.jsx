@@ -8,6 +8,7 @@ import MacsRunsFeed from '../Components/StructuralFire/MacsRunsFeed'
 import MacsSetupPanel from '../Components/StructuralFire/MacsSetupPanel'
 import MacsBatchOverview from '../Components/StructuralFire/MacsBatchOverview'
 import TimeEqWorkspace from '../Components/StructuralFire/TimeEqWorkspace'
+import CompartmentMiniMap from '../Components/StructuralFire/CompartmentMiniMap'
 import { getAllMacsRuns, getMacsRunDetail } from '../Components/ApiCalls'
 
 vi.mock('next/router', () => ({
@@ -520,6 +521,94 @@ describe('Structural Fire Engineering: Studio Components & APIs', () => {
             // Filter input and shortcuts are shown
             expect(screen.getByPlaceholderText('Filter assessments...')).toBeInTheDocument()
             expect(screen.getByText('+ New Assessment')).toBeInTheDocument()
+        })
+
+        it('consumes ?handoff query parameter, creates project and loads it into StructuralFirePage', async () => {
+            const handoffRun = {
+                section: 'UB 406x178x74',
+                critical_temp: 590,
+                section_factor: 155,
+                label: 'Test Handoff Project',
+            }
+            const handoffResponse = {
+                handoff_id: 'handoff-uuid-1',
+                run: handoffRun,
+            }
+            const createdProject = {
+                id: 'created-proj-1',
+                name: 'Test Handoff Project',
+                mode: 'timeEq',
+                settings: {},
+                floors: [],
+            }
+
+            globalThis.fetch.mockImplementation(async (url, opts) => {
+                const u = String(url)
+                if (u.includes('/handoffs/')) {
+                    return { ok: true, status: 200, json: async () => handoffResponse }
+                }
+                if (u.endsWith('/projects') && opts?.method === 'POST') {
+                    return { ok: true, status: 201, json: async () => createdProject }
+                }
+                if (u.includes('/projects/created-proj-1')) {
+                    return { ok: true, status: 200, json: async () => createdProject }
+                }
+                if (u.includes('/projects?mode=timeEq')) {
+                    return { ok: true, status: 200, json: async () => [] }
+                }
+                return { ok: true, status: 200, json: async () => [] }
+            })
+
+            const originalSearch = window.location.search
+            window.history.pushState({}, '', '/structural-fire?handoff=handoff-uuid-1')
+
+            try {
+                render(<StructuralFirePage />)
+                await waitFor(() => {
+                    expect(screen.getByText('Test Handoff Project')).toBeInTheDocument()
+                })
+            } finally {
+                window.history.pushState({}, '', originalSearch || '/')
+            }
+        })
+    })
+
+    describe('CompartmentMiniMap', () => {
+        it('renders walls and boundary assignments without Side A dotted line or Side A badge', () => {
+            const geoPoints = [
+                {
+                    comments: 'obstruction',
+                    finalPoints: [
+                        { x: 0, y: 0 },
+                        { x: 10, y: 0 },
+                        { x: 10, y: 6 },
+                        { x: 0, y: 6 },
+                        { x: 0, y: 0 },
+                    ],
+                },
+                {
+                    comments: 'opening',
+                    finalPoints: [
+                        { x: 2, y: 0 },
+                        { x: 4, y: 0 },
+                    ],
+                },
+            ]
+            render(
+                <CompartmentMiniMap
+                    geoPoints={geoPoints}
+                    inputs={{ compartmentHeight: 3.15 }}
+                    selectedMacsRun={SAMPLE_RUN}
+                />
+            )
+
+            // Should show Wall 1 and Opening 1
+            expect(screen.getByText(/Wall 1/i)).toBeInTheDocument()
+            expect(screen.getByText(/Opening 1/i)).toBeInTheDocument()
+
+            // Should NOT show Side A anywhere in the interactive image or boundary assignments
+            expect(screen.queryByText(/Side A/i)).not.toBeInTheDocument()
+            expect(screen.queryByText(/MACS Gov/i)).not.toBeInTheDocument()
         })
     })
 })

@@ -7,6 +7,7 @@ import {
     loadFloorDetail,
     createProject,
     getMacsRuns,
+    getHandoff,
     claimHandoff,
 } from '../Components/ApiCalls'
 import MacsBatchOverview from '../Components/StructuralFire/MacsBatchOverview'
@@ -15,7 +16,7 @@ import { getStructuralCardMetrics } from '../Components/StructuralProjectCard'
 
 export default function StructuralFirePage() {
     const router = useRouter()
-    const { project: queryProjectId, run: queryRunId } = router.query
+    const { project: queryProjectId, run: queryRunId, handoff: queryHandoffId } = router.query
 
     // Projects list
     const [projects, setProjects] = useState([])
@@ -93,10 +94,40 @@ export default function StructuralFirePage() {
     useEffect(() => {
         if (queryProjectId && selectedProject?.id !== queryProjectId) {
             selectProjectById(queryProjectId)
-        } else if (!queryProjectId && projects.length > 0 && !selectedProject) {
+        } else if (!queryProjectId && projects.length > 0 && !selectedProject && !queryHandoffId) {
             selectProjectById(projects[0].id)
         }
-    }, [queryProjectId, projects, selectProjectById, selectedProject?.id])
+    }, [queryProjectId, projects, selectProjectById, selectedProject?.id, queryHandoffId])
+
+    // Consume direct MACS handoff from query (?handoff=<id>)
+    const hasProcessedHandoff = useRef(false)
+    useEffect(() => {
+        const handoffParam = queryHandoffId || (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('handoff') : null)
+        if (!handoffParam || hasProcessedHandoff.current) return
+        hasProcessedHandoff.current = true
+
+        async function processHandoff() {
+            try {
+                const handoff = await getHandoff(handoffParam)
+                if (handoff?.run) {
+                    const run = handoff.run
+                    const defaultName = run.label || (run.section ? `Structural Fire - ${run.section}` : 'Structural Fire Assessment')
+                    const created = await createProject(defaultName, null, 'timeEq', handoffParam)
+                    setProjects((prev) => [created, ...prev])
+                    router.replace(`/structural-fire?project=${created.id}`, undefined, { shallow: true })
+                    selectProjectById(created.id)
+                }
+            } catch (err) {
+                if (err.status === 409 && err.claimedByProjectId) {
+                    router.replace(`/structural-fire?project=${err.claimedByProjectId}`, undefined, { shallow: true })
+                    selectProjectById(err.claimedByProjectId)
+                } else {
+                    setError(`Failed to process MACS handoff: ${err.message}`)
+                }
+            }
+        }
+        processHandoff()
+    }, [queryHandoffId, selectProjectById, router])
 
     // Handle project creation
     const handleNewProject = async () => {

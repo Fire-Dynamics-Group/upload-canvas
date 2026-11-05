@@ -201,27 +201,16 @@ export default function Home() {
         useStore.getState().setCurrentMode('timeEq')
         const handoff = await getHandoff(handoffParam)
         if (handoff?.run) {
-          useStore.getState().setHandoffId(handoff.handoff_id || handoff.id || handoffParam)
-          const currentInputs = useStore.getState().timeEqInputs
-          const updated = applyMacsRunToInputs(handoff.run, currentInputs)
-          useStore.getState().setTimeEqInputs(updated)
-          useStore.getState().setMacsRuns([handoff.run])
-          setShowUploadScreen(true)
-          if (handoff.run.label) {
-            setProjectName(handoff.run.label)
-          }
-          useStore.getState().setMacsNotice({
-            type: 'success',
-            message: `Loaded MACs run for ${handoff.run.section || 'steel section'} (${handoff.run.critical_temp}°C, Ap/V ${handoff.run.section_factor}). Upload a plan PDF to create the project.`,
-          })
+          const run = handoff.run
+          const defaultName = run.label || (run.section ? `Structural Fire - ${run.section}` : 'Structural Fire Assessment')
+          const created = await createProject(defaultName, userId, 'timeEq', handoffParam)
+          router.replace(`/structural-fire?project=${created.id}`)
+          return
         }
       } catch (err) {
         if (err.status === 409 && err.claimedByProjectId) {
-          useStore.getState().setMacsNotice({
-            type: 'info',
-            message: 'This handoff was already claimed. Opening the linked project…',
-          })
-          handleSelectProject(err.claimedByProjectId)
+          router.replace(`/structural-fire?project=${err.claimedByProjectId}`)
+          return
         } else if (err.status === 404) {
           useStore.getState().setMacsNotice({
             type: 'error',
