@@ -570,10 +570,31 @@ export default function Home() {
     try {
       const project = await loadProject(projectId)
       const floor = project.floors?.[0]
-      if (!floor) throw new Error("No floors in project")
 
       if (project.mode) {
         useStore.getState().setCurrentMode(project.mode)
+      }
+
+      if (!floor) {
+        // Project exists (e.g. from MACS handoff) but has no floor or drawing yet.
+        // Wipe stale canvas state from previous project and show upload screen.
+        useStore.getState().setProjectId(projectId)
+        useStore.getState().setFloorId(null)
+        useStore.getState().setProjectName(project.name)
+        useStore.getState().setElements([])
+        useStore.getState().setFloorDimensions(null)
+        useStore.getState().setPixelsPerMesh(1)
+        useStore.getState().setOriginPixels(null)
+        setSelectedFile(null)
+        setIsContinuing(true)
+        setShowUploadScreen(true)
+        if (project.mode === 'timeEq') {
+          try {
+            const runs = await getMacsRuns(projectId)
+            useStore.getState().setMacsRuns(runs)
+          } catch (_) {}
+        }
+        return
       }
 
       const floorDetail = await loadFloorDetail(projectId, floor.id)

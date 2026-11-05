@@ -468,6 +468,32 @@ describe('Structural Fire Engineering: Studio Components & APIs', () => {
             })
         })
 
+        it('renders honest empty state when floorDetail has no drawn elements', () => {
+            const projectWithoutFloors = {
+                id: 'p-empty',
+                name: 'Empty Project',
+                mode: 'timeEq',
+                settings: {},
+                floors: [],
+            }
+            render(
+                <TimeEqWorkspace
+                    project={projectWithoutFloors}
+                    floorDetail={{ elements: [] }}
+                />
+            )
+
+            expect(screen.getAllByText('No compartment drawn yet').length).toBe(2)
+            expect(screen.getByText(/To run a Time Equivalence & Reliability assessment, open the 2D CAD canvas/i)).toBeInTheDocument()
+            expect(screen.getByRole('button', { name: /Open 2D Canvas/i })).toBeInTheDocument()
+
+            const recalcBtn = screen.getByRole('button', { name: /Recalculate Time Eq/i })
+            expect(recalcBtn).toBeDisabled()
+
+            expect(screen.queryByText(/BOUNDARY ASSIGNMENTS/i)).not.toBeInTheDocument()
+            expect(screen.queryByText(/Interactive Plan & Boundary HUD/i)).not.toBeInTheDocument()
+        })
+
         it('renders StructuralFirePage without crashing when initial projects list is empty', async () => {
             globalThis.fetch.mockResolvedValue({
                 ok: true,

@@ -121,28 +121,8 @@ export default function TimeEqWorkspace({
             } catch (_) {}
         }
 
-        // Standard default rectangular room: 10m x 6m with a window
-        return [
-            {
-                id: 0,
-                comments: 'obstruction',
-                finalPoints: [
-                    { x: 0, y: 0 },
-                    { x: 10, y: 0 },
-                    { x: 10, y: 6 },
-                    { x: 0, y: 6 },
-                    { x: 0, y: 0 },
-                ],
-            },
-            {
-                id: 1,
-                comments: 'opening',
-                finalPoints: [
-                    { x: 2, y: 0 },
-                    { x: 6, y: 0 },
-                ],
-            },
-        ]
+        // Return empty array when no compartment elements have been drawn yet
+        return []
     }
 
     // Build complete request options with geometry parity guards
@@ -166,6 +146,7 @@ export default function TimeEqWorkspace({
     useEffect(() => {
         // Wait until floorDetail geometry is loaded if project has floors
         if (project?.floors?.length > 0 && !floorDetail) return
+        if (!hasDrawnElements) return
 
         const hasSeed = result?.seed !== undefined
         const hasCharts = Boolean(result?.charts?.steelTempSpaghetti || chartsData?.steelTempSpaghetti)
@@ -214,6 +195,11 @@ export default function TimeEqWorkspace({
     const handleRecalculate = async () => {
         setErrorMessage(null)
         setSaveNotice(null)
+
+        if (!hasDrawnElements) {
+            setErrorMessage("Cannot calculate Time Equivalence without a compartment. Please draw the compartment on the 2D Canvas first.")
+            return
+        }
 
         const isUnprotected = inputs.memberProtection === 'unprotected'
         if (isUnprotected && !hasCriticalTemp(inputs.criticalTemp)) {
@@ -327,7 +313,7 @@ export default function TimeEqWorkspace({
                         <span className="text-xs text-gray-500 block">
                             {hasDrawnElements
                                 ? `${floorDetail.elements.length} compartment elements drawn on plan`
-                                : 'No compartment drawn yet (using standard reference room)'}
+                                : 'No compartment drawn yet'}
                         </span>
                     </div>
 
@@ -338,7 +324,7 @@ export default function TimeEqWorkspace({
                             className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-3 py-1.5 rounded shadow-sm transition-colors flex items-center gap-1.5"
                         >
                             <span>📐</span>
-                            <span>Edit Geometry on Canvas</span>
+                            <span>{hasDrawnElements ? 'Edit Geometry on Canvas' : 'Draw on Canvas'}</span>
                         </button>
                         <button
                             type="button"
@@ -352,14 +338,34 @@ export default function TimeEqWorkspace({
                     </div>
                 </div>
 
-                {/* Interactive Compartment Mini-Map & Boundary Assignments (Option 1) */}
-                <CompartmentMiniMap
-                    geoPoints={getGeometryPoints()}
-                    inputs={inputs}
-                    onInputsChange={updateField}
-                    selectedMacsRun={selectedMacsRun}
-                    onOpenCanvas={handleOpenCanvas}
-                />
+                {/* Interactive Compartment Mini-Map or Honest Empty State */}
+                {!hasDrawnElements ? (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/75 p-8 text-center my-4 flex flex-col items-center justify-center">
+                        <div className="w-12 h-12 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-2xl mb-3">
+                            📐
+                        </div>
+                        <h3 className="text-base font-semibold text-slate-800">No compartment drawn yet</h3>
+                        <p className="text-xs text-slate-500 max-w-md mt-1 mb-4">
+                            To run a Time Equivalence &amp; Reliability assessment, open the 2D CAD canvas to upload a floor plan drawing or draw the compartment boundary and ventilation openings.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={handleOpenCanvas}
+                            className="inline-flex items-center gap-2 rounded-md bg-purple-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-purple-700 transition-colors"
+                        >
+                            <span>📐</span>
+                            <span>Open 2D Canvas</span>
+                        </button>
+                    </div>
+                ) : (
+                    <CompartmentMiniMap
+                        geoPoints={getGeometryPoints()}
+                        inputs={inputs}
+                        onInputsChange={updateField}
+                        selectedMacsRun={selectedMacsRun}
+                        onOpenCanvas={handleOpenCanvas}
+                    />
+                )}
             </div>
 
             {/* Error or Notice messages */}
@@ -395,7 +401,8 @@ export default function TimeEqWorkspace({
                     <button
                         type="button"
                         onClick={handleRecalculate}
-                        disabled={isCalculating}
+                        disabled={isCalculating || !hasDrawnElements}
+                        title={!hasDrawnElements ? "Draw a compartment on the 2D canvas first" : undefined}
                         className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded shadow-sm transition-colors disabled:opacity-50 flex items-center gap-1.5"
                     >
                         <span>⚡</span>
@@ -461,7 +468,9 @@ export default function TimeEqWorkspace({
                     </div>
                 ) : (
                     <div className="p-6 text-center text-xs text-gray-500 italic bg-gray-50 rounded-lg border border-gray-100">
-                        No calculation results saved yet. Click &quot;Recalculate Time Eq&quot; to run a Monte Carlo study.
+                        {hasDrawnElements
+                            ? 'No calculation results saved yet. Click "Recalculate Time Eq" to run a Monte Carlo study.'
+                            : 'No calculation results saved yet. Draw a compartment on the 2D canvas to calculate Time Equivalence.'}
                     </div>
                 )}
 
