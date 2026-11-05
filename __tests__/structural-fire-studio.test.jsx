@@ -9,6 +9,7 @@ import MacsSetupPanel from '../Components/StructuralFire/MacsSetupPanel'
 import MacsBatchOverview from '../Components/StructuralFire/MacsBatchOverview'
 import TimeEqWorkspace from '../Components/StructuralFire/TimeEqWorkspace'
 import CompartmentMiniMap from '../Components/StructuralFire/CompartmentMiniMap'
+import StructuralProjectCard, { getStructuralCardMetrics } from '../Components/StructuralProjectCard'
 import { getAllMacsRuns, getMacsRunDetail } from '../Components/ApiCalls'
 
 vi.mock('next/router', () => ({
@@ -635,6 +636,87 @@ describe('Structural Fire Engineering: Studio Components & APIs', () => {
             // Should NOT show Side A anywhere in the interactive image or boundary assignments
             expect(screen.queryByText(/Side A/i)).not.toBeInTheDocument()
             expect(screen.queryByText(/MACS Gov/i)).not.toBeInTheDocument()
+        })
+    })
+
+    describe('StructuralProjectCard & Status Badges', () => {
+        it('displays governing section, critical temp, and dual status badges before Time Eq runs', () => {
+            const project = {
+                id: 'p-test-card',
+                name: 'California Drive Second Floor',
+                created_by: 'Ian',
+                updated_at: new Date().toISOString(),
+                settings: {
+                    macsBatch: {
+                        name: 'Batch 1',
+                        project_name: 'California Drive Second Floor',
+                        run_count: 10000,
+                        pass_count: 9990,
+                        fail_count: 10,
+                        reliability_percent: 99.9,
+                        governing_section: 'UB_406x140x39',
+                        critical_temp: 533,
+                    },
+                },
+                floors: [],
+            }
+
+            render(
+                <StructuralProjectCard
+                    project={project}
+                    onOpen={vi.fn()}
+                    onOpenCanvas={vi.fn()}
+                    onRename={vi.fn()}
+                    onDelete={vi.fn()}
+                    timeAgo={() => '10m ago'}
+                />
+            )
+
+            // Governing Section and Critical Temp must display
+            expect(screen.getAllByText('UB_406x140x39').length).toBeGreaterThanOrEqual(1)
+            expect(screen.getByText('533°C')).toBeInTheDocument()
+
+            // MACS badge and Time Eq badge must both be present
+            expect(screen.getByText('MACS: 10,000 Runs (99.9%)')).toBeInTheDocument()
+            expect(screen.getByText('Time Eq: Not run')).toBeInTheDocument()
+        })
+
+        it('displays calculated Time Eq badge when timeEqResult exists', () => {
+            const project = {
+                id: 'p-calculated',
+                name: 'Office Tower Project',
+                created_by: 'Ian',
+                updated_at: new Date().toISOString(),
+                settings: {
+                    macsBatch: {
+                        run_count: 10000,
+                        pass_count: 10000,
+                        reliability_percent: 100,
+                        governing_section: 'UB_457x191x82',
+                        critical_temp: 631,
+                    },
+                    timeEqResult: {
+                        reliabilityPercent: 99.8,
+                        time_equiv: 45,
+                    },
+                },
+                floors: [],
+            }
+
+            render(
+                <StructuralProjectCard
+                    project={project}
+                    onOpen={vi.fn()}
+                    onOpenCanvas={vi.fn()}
+                    onRename={vi.fn()}
+                    onDelete={vi.fn()}
+                    timeAgo={() => 'Just now'}
+                />
+            )
+
+            expect(screen.getAllByText('UB_457x191x82').length).toBeGreaterThanOrEqual(1)
+            expect(screen.getByText('631°C')).toBeInTheDocument()
+            expect(screen.getByText('Time Eq: 99.8% Rel.')).toBeInTheDocument()
         })
     })
 })

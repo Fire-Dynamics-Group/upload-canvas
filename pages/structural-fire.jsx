@@ -111,7 +111,14 @@ export default function StructuralFirePage() {
                 const handoff = await getHandoff(handoffParam)
                 if (handoff?.run) {
                     const run = handoff.run
-                    const defaultName = run.label || (run.section ? `Structural Fire - ${run.section}` : 'Structural Fire Assessment')
+                    const batch = run?.outputs?.macs_batch || handoff.macs_batch
+                    const defaultName = (
+                        batch?.project_name?.trim() ||
+                        run?.project_name?.trim() ||
+                        (run?.label && run.label !== 'MACS Run' ? run.label.trim() : null) ||
+                        batch?.name?.trim() ||
+                        (run?.section ? `Structural Fire - ${run.section}` : 'Structural Fire Assessment')
+                    )
                     const created = await createProject(defaultName, null, 'timeEq', handoffParam)
                     setProjects((prev) => [created, ...prev])
                     router.replace(`/structural-fire?project=${created.id}`, undefined, { shallow: true })

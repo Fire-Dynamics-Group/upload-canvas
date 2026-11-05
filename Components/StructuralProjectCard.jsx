@@ -18,7 +18,18 @@ export function getStructuralCardMetrics(project) {
     const shearCheck = macsBatch?.shear_check || {}
     const subLimitRuns = shearCheck.sub_limit_runs || []
 
-    const section = macsBatch?.governing_section || macsBatch?.section || timeEqInputs?.section || null
+    // Derive section from batch, inputs, or setup groups
+    let derivedSection = macsBatch?.governing_section || macsBatch?.section || timeEqInputs?.section || null
+    if (!derivedSection && macsBatch?.setup?.groups) {
+        for (const g of macsBatch.setup.groups) {
+            const f = g.fields?.find(field => field.key === 'u_sec_size' || field.key === 'side_b_sec' || field.key === 'side_a_sec')
+            if (f?.value && typeof f.value === 'string' && f.value.toLowerCase() !== 'none') {
+                derivedSection = f.value
+                break
+            }
+        }
+    }
+    const section = derivedSection
     const criticalTemp = macsBatch?.critical_temp ?? timeEqInputs?.criticalTemp ?? null
     const sectionFactor = macsBatch?.section_factor ?? timeEqInputs?.sectionFactor ?? null
     const fireResistancePeriod = timeEqInputs?.fireResistancePeriod || 90
@@ -50,6 +61,38 @@ export function getStructuralCardMetrics(project) {
         statusTone = 'blue'
     }
 
+    // Time Equivalence Status Badge
+    let teqStatusType = 'not-run'
+    let teqStatusLabel = 'Time Eq: Not run'
+    let teqStatusTone = 'gray'
+
+    const hasTeqResults = Boolean(
+        timeEqResult && (
+            timeEqResult.reliabilityPercent !== undefined ||
+            timeEqResult.time_equiv !== undefined ||
+            timeEqResult.teq !== undefined
+        )
+    )
+
+    if (hasTeqResults) {
+        teqStatusType = 'calculated'
+        if (timeEqResult.reliabilityPercent !== undefined) {
+            teqStatusLabel = `Time Eq: ${timeEqResult.reliabilityPercent}% Rel.`
+        } else {
+            const val = Math.round(timeEqResult.time_equiv ?? timeEqResult.teq ?? 0)
+            teqStatusLabel = `Time Eq: ${val}m`
+        }
+        teqStatusTone = 'emerald'
+    } else if (project?.floors?.[0]?.elements?.length > 0) {
+        teqStatusType = 'ready'
+        teqStatusLabel = 'Time Eq: Ready'
+        teqStatusTone = 'blue'
+    } else {
+        teqStatusType = 'not-run'
+        teqStatusLabel = 'Time Eq: Not run'
+        teqStatusTone = 'gray'
+    }
+
     return {
         macsBatch,
         timeEqInputs,
@@ -69,6 +112,9 @@ export function getStructuralCardMetrics(project) {
         statusType,
         statusLabel,
         statusTone,
+        teqStatusType,
+        teqStatusLabel,
+        teqStatusTone,
         thumbnail: settings.thumbnail || null,
     }
 }
@@ -134,13 +180,19 @@ export default function StructuralProjectCard({
                     </div>
                 )}
 
-                {/* MACS Status Badge */}
-                <div className="absolute top-2.5 left-2.5 z-10">
+                {/* MACS & Time Eq Status Badges */}
+                <div className="absolute top-2.5 left-2.5 z-10 flex flex-wrap gap-1.5 max-w-[calc(100%-80px)]">
                     <span
                         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border backdrop-blur-md shadow-sm ${badgeStyles[metrics.statusTone]}`}
                     >
                         <span className={`w-1.5 h-1.5 rounded-full ${badgeDotStyles[metrics.statusTone]}`} />
                         {metrics.statusLabel}
+                    </span>
+                    <span
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border backdrop-blur-md shadow-sm ${badgeStyles[metrics.teqStatusTone]}`}
+                    >
+                        <span className={`w-1.5 h-1.5 rounded-full ${badgeDotStyles[metrics.teqStatusTone]}`} />
+                        {metrics.teqStatusLabel}
                     </span>
                 </div>
 
@@ -295,6 +347,7 @@ export default function StructuralProjectCard({
                         <div className="bg-slate-800/80 p-2 rounded border border-slate-700/50">
                             <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Time Equivalence</span>
                             <div className="grid grid-cols-2 gap-1 text-[11px]">
+                                <div><span className="text-slate-400">Status:</span> <span className="font-medium text-slate-200">{metrics.teqStatusLabel}</span></div>
                                 <div><span className="text-slate-400">Target:</span> <span className="font-medium text-slate-200">{metrics.fireResistancePeriod} min</span></div>
                                 <div><span className="text-slate-400">Mode:</span> <span className="font-medium text-slate-200 capitalize">{metrics.calcType}</span></div>
                                 <div><span className="text-slate-400">Occupancy:</span> <span className="font-medium text-slate-200">{metrics.occupancy}</span></div>
