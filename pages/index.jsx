@@ -210,7 +210,7 @@ export default function Home() {
             batch?.name?.trim() ||
             (run?.section ? `Structural Fire - ${run.section}` : 'Structural Fire Assessment')
           )
-          const created = await createProject(defaultName, userId, 'timeEq', handoffParam)
+          const created = await createProject(defaultName, userName || userId || run?.windows_user || null, 'timeEq', handoffParam)
           router.replace(`/structural-fire?project=${created.id}`)
           return
         }

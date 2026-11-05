@@ -1,5 +1,17 @@
 import React, { useState } from 'react'
 
+export function formatAuthor(author) {
+    if (!author || author === 'Unknown') return 'Unknown'
+    if (author.includes('@')) {
+        const local = author.split('@')[0]
+        return local.split('.').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
+    }
+    if (author.includes('.')) {
+        return author.split('.').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
+    }
+    return author
+}
+
 export function getStructuralCardMetrics(project) {
     const settings = project?.settings || {}
     const macsBatch = settings.macsBatch || null
@@ -232,7 +244,7 @@ export default function StructuralProjectCard({
                         {project.name}
                     </h3>
                     <p className="text-xs text-slate-400 mt-0.5">
-                        {project.created_by || 'Unknown'} · {timeAgo(project.updated_at)}
+                        {formatAuthor(project.created_by)} · {timeAgo(project.updated_at)}
                     </p>
 
                     {/* Key Engineering Highlights Grid */}

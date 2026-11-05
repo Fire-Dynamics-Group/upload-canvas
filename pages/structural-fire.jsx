@@ -13,9 +13,11 @@ import {
 import MacsBatchOverview from '../Components/StructuralFire/MacsBatchOverview'
 import TimeEqWorkspace from '../Components/StructuralFire/TimeEqWorkspace'
 import { getStructuralCardMetrics } from '../Components/StructuralProjectCard'
+import useUserName from '../hooks/useUserName'
 
 export default function StructuralFirePage() {
     const router = useRouter()
+    const { userName, userId } = useUserName()
     const { project: queryProjectId, run: queryRunId, handoff: queryHandoffId } = router.query
 
     // Projects list
@@ -119,7 +121,7 @@ export default function StructuralFirePage() {
                         batch?.name?.trim() ||
                         (run?.section ? `Structural Fire - ${run.section}` : 'Structural Fire Assessment')
                     )
-                    const created = await createProject(defaultName, null, 'timeEq', handoffParam)
+                    const created = await createProject(defaultName, userName || userId || run?.windows_user || null, 'timeEq', handoffParam)
                     setProjects((prev) => [created, ...prev])
                     router.replace(`/structural-fire?project=${created.id}`, undefined, { shallow: true })
                     selectProjectById(created.id)
@@ -141,7 +143,7 @@ export default function StructuralFirePage() {
         const name = window.prompt('Enter new project name:', 'Structural Fire Assessment')
         if (!name?.trim()) return
         try {
-            const created = await createProject(name.trim(), null, 'timeEq')
+            const created = await createProject(name.trim(), userName || userId || null, 'timeEq')
             setProjects((prev) => [created, ...prev])
             router.push(`/structural-fire?project=${created.id}`, undefined, { shallow: true })
             selectProjectById(created.id)
