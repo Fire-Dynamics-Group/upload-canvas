@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import {
@@ -11,6 +11,7 @@ import {
 } from '../Components/ApiCalls'
 import MacsBatchOverview from '../Components/StructuralFire/MacsBatchOverview'
 import TimeEqWorkspace from '../Components/StructuralFire/TimeEqWorkspace'
+import { getStructuralCardMetrics } from '../Components/StructuralProjectCard'
 
 export default function StructuralFirePage() {
     const router = useRouter()
@@ -27,6 +28,21 @@ export default function StructuralFirePage() {
     const [activeTab, setActiveTab] = useState('macsBatch') // 'macsBatch' | 'timeEq' | 'split'
     const [isClaiming, setIsClaiming] = useState(false)
     const [error, setError] = useState(null)
+
+    // Project Switcher Dropdown state
+    const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false)
+    const [projectSearch, setProjectSearch] = useState('')
+    const projectDropdownRef = useRef(null)
+
+    useEffect(() => {
+        function handleClickOutside(event) {
+            if (projectDropdownRef.current && !projectDropdownRef.current.contains(event.target)) {
+                setIsProjectDropdownOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
 
     // Initial load: projects only (raw 10k run data stays on desktop results.db)
     useEffect(() => {
@@ -97,6 +113,7 @@ export default function StructuralFirePage() {
     }
 
     const effectiveBatch = selectedProject?.settings?.macsBatch || selectedRun?.outputs?.macs_batch || null
+    const selectedMetrics = selectedProject ? getStructuralCardMetrics(selectedProject) : null
 
     return (
         <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
@@ -105,8 +122,8 @@ export default function StructuralFirePage() {
                 <div className="flex items-center gap-3">
                     <span className="text-2xl">🔥🏢</span>
                     <div>
-                        <h1 className="text-lg font-bold tracking-tight leading-none">
-                            Structural Fire Engineering
+                        <h1 className="text-lg font-bold tracking-tight leading-none text-white">
+                            Structural Fire Assessment
                         </h1>
                         <span className="text-[11px] text-slate-400">
                             MACS+ Composite Slab & Monte Carlo Time Equivalence
@@ -116,31 +133,114 @@ export default function StructuralFirePage() {
 
                 {/* Project Selector & Actions */}
                 <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
-                        <span className="text-xs text-slate-400">Project:</span>
-                        <select
-                            value={selectedProject?.id || ''}
-                            onChange={(e) => {
-                                const id = e.target.value
-                                if (id) {
-                                    router.push(`/structural-fire?project=${id}`, undefined, { shallow: true })
-                                    selectProjectById(id)
-                                }
-                            }}
-                            className="bg-transparent text-xs font-semibold text-white outline-none cursor-pointer"
+                    {/* Back to Projects Hub */}
+                    <Link
+                        href="/?mode=timeEq"
+                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+                        title="Return to Projects Hub"
+                    >
+                        <span>←</span>
+                        <span>All Projects</span>
+                    </Link>
+
+                    {/* Rich Project Switcher Dropdown */}
+                    <div className="relative" ref={projectDropdownRef}>
+                        <button
+                            type="button"
+                            onClick={() => setIsProjectDropdownOpen((prev) => !prev)}
+                            className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700 text-xs font-semibold text-white transition-colors cursor-pointer"
                         >
-                            {projects.map((p) => (
-                                <option key={p.id} value={p.id} className="bg-slate-900 text-white">
-                                    {p.name}
-                                </option>
-                            ))}
-                        </select>
+                            <span className="text-slate-400 text-[11px]">Assessment:</span>
+                            <span className="max-w-[160px] truncate">{selectedProject?.name || 'Select Assessment'}</span>
+                            {selectedProject && selectedMetrics && (
+                                <span className={`w-2 h-2 rounded-full ${
+                                    selectedMetrics.statusTone === 'emerald' ? 'bg-emerald-400' :
+                                    selectedMetrics.statusTone === 'amber' ? 'bg-amber-400 animate-pulse' :
+                                    selectedMetrics.statusTone === 'blue' ? 'bg-blue-400' : 'bg-slate-500'
+                                }`} />
+                            )}
+                            <span className="text-[10px] text-slate-400 ml-0.5">▾</span>
+                        </button>
+
+                        {isProjectDropdownOpen && (
+                            <div className="absolute right-0 mt-1.5 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 p-2 text-left animate-fadeIn">
+                                <div className="px-1 py-1 border-b border-slate-800 mb-1.5">
+                                    <input
+                                        type="text"
+                                        placeholder="Filter assessments..."
+                                        value={projectSearch}
+                                        onChange={(e) => setProjectSearch(e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="w-full bg-slate-800 text-white text-xs px-2.5 py-1.5 rounded-md border border-slate-700 outline-none focus:border-indigo-500"
+                                        autoFocus
+                                    />
+                                </div>
+
+                                <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
+                                    {projects
+                                        .filter((p) => p.name.toLowerCase().includes(projectSearch.toLowerCase()))
+                                        .map((p) => {
+                                            const m = getStructuralCardMetrics(p)
+                                            const isSelected = p.id === selectedProject?.id
+                                            return (
+                                                <button
+                                                    key={p.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setIsProjectDropdownOpen(false)
+                                                        router.push(`/structural-fire?project=${p.id}`, undefined, { shallow: true })
+                                                        selectProjectById(p.id)
+                                                    }}
+                                                    className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition-colors flex items-center justify-between gap-2 ${
+                                                        isSelected
+                                                            ? 'bg-indigo-950/80 text-white border border-indigo-700/60'
+                                                            : 'text-slate-200 hover:bg-slate-800/80 border border-transparent'
+                                                    }`}
+                                                >
+                                                    <div className="truncate flex-1">
+                                                        <div className="font-semibold truncate">{p.name}</div>
+                                                        <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                                                            <span className={`w-1.5 h-1.5 rounded-full ${
+                                                                m.statusTone === 'emerald' ? 'bg-emerald-400' :
+                                                                m.statusTone === 'amber' ? 'bg-amber-400' :
+                                                                m.statusTone === 'blue' ? 'bg-blue-400' : 'bg-slate-500'
+                                                            }`} />
+                                                            <span>{m.statusLabel}</span>
+                                                        </div>
+                                                    </div>
+                                                    {isSelected && <span className="text-indigo-400 font-bold">✓</span>}
+                                                </button>
+                                            )
+                                        })}
+                                </div>
+
+                                <div className="mt-2 pt-2 border-t border-slate-800 flex items-center justify-between px-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setIsProjectDropdownOpen(false)
+                                            handleNewProject()
+                                        }}
+                                        className="text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1 py-1"
+                                    >
+                                        <span>+ New Assessment</span>
+                                    </button>
+                                    <Link
+                                        href="/?mode=timeEq"
+                                        className="text-[11px] text-slate-400 hover:text-slate-200 py-1"
+                                        onClick={() => setIsProjectDropdownOpen(false)}
+                                    >
+                                        ⊞ All Projects
+                                    </Link>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <button
                         type="button"
                         onClick={handleNewProject}
-                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-2.5 py-1.5 rounded transition-colors"
+                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors"
                     >
                         + New
                     </button>
@@ -148,10 +248,10 @@ export default function StructuralFirePage() {
                     {selectedProject && (
                         <Link
                             href={`/?project=${selectedProject.id}&returnTo=structural-fire`}
-                            className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold px-3 py-1.5 rounded shadow transition-colors flex items-center gap-1.5"
+                            className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow transition-colors flex items-center gap-1.5"
                         >
                             <span>📐</span>
-                            <span>Open on Canvas</span>
+                            <span>Compartment Plan Canvas</span>
                         </Link>
                     )}
 

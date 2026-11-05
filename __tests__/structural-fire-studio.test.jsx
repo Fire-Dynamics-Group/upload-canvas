@@ -491,5 +491,35 @@ describe('Structural Fire Engineering: Studio Components & APIs', () => {
             render(<MacsBatchOverview />)
             expect(screen.getByText('No MACS+ Simulation Batch Linked')).toBeInTheDocument()
         })
+
+        it('renders the header with All Projects link and rich project switcher', async () => {
+            const project = {
+                id: 'proj-1',
+                name: 'Bay 3 Logistics',
+                mode: 'timeEq',
+                settings: {
+                    macsBatch: { total_runs: 10000, reliability_percent: 99.4 },
+                },
+                floors: [],
+            }
+            globalThis.fetch.mockImplementation(async (url) => {
+                if (String(url).includes('/projects?mode=timeEq')) {
+                    return { ok: true, status: 200, json: async () => [project] }
+                }
+                return { ok: true, status: 200, json: async () => project }
+            })
+            render(<StructuralFirePage />)
+
+            expect(screen.getByText('Structural Fire Assessment')).toBeInTheDocument()
+            expect(screen.getByText('All Projects')).toBeInTheDocument()
+
+            // Open rich project switcher
+            await waitFor(() => expect(screen.getByText('Bay 3 Logistics')).toBeInTheDocument())
+            fireEvent.click(screen.getByText('Bay 3 Logistics'))
+
+            // Filter input and shortcuts are shown
+            expect(screen.getByPlaceholderText('Filter assessments...')).toBeInTheDocument()
+            expect(screen.getByText('+ New Assessment')).toBeInTheDocument()
+        })
     })
 })

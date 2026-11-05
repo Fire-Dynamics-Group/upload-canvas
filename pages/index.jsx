@@ -554,15 +554,26 @@ export default function Home() {
 
   const [showUploadScreen, setShowUploadScreen] = useState(false)
 
-  const handleNewProject = (name) => {
+  const handleNewProject = async (name) => {
     if (selectedFile) {
       if (!window.confirm('Start a new project? All current progress will be cleared.')) return
     }
     resetProject()
     setSelectedFile(undefined)
     setIsContinuing(false)
-    setShowUploadScreen(true)
     if (name) setProjectName(name)
+
+    if (currentMode === 'timeEq') {
+      try {
+        const created = await createProject(name || 'Structural Fire Assessment', userId, 'timeEq')
+        router.push(`/structural-fire?project=${created.id}`)
+        return
+      } catch (err) {
+        console.error('Failed to create structural fire project:', err)
+      }
+    }
+
+    setShowUploadScreen(true)
   }
 
   const handleSelectProject = async (projectId) => {
@@ -634,10 +645,10 @@ export default function Home() {
               {(router.query?.returnTo === 'structural-fire' || currentMode === 'timeEq') && projectId && (
             <Link
               href={`/structural-fire?project=${projectId}`}
-              className="text-white bg-indigo-600 hover:bg-indigo-700 font-medium rounded-lg text-sm px-4 py-2 flex items-center gap-1.5"
+              className="text-white bg-indigo-600 hover:bg-indigo-700 font-medium rounded-lg text-sm px-4 py-2 flex items-center gap-1.5 shadow"
             >
-              <span>🏗️</span>
-              <span>SFE Studio</span>
+              <span>←</span>
+              <span>Back to Assessment</span>
             </Link>
           )}
           <button

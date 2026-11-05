@@ -34,12 +34,12 @@ describe('ProjectDashboard - per-mode project lists', () => {
         expect(screen.queryByText('Panattoni Unit 3')).toBeNull()
     })
 
-    it('switching to Time Equivalence stays on the dashboard and re-lists for timeEq', async () => {
+    it('switching to MACS+ & Time Equivalence stays on the dashboard and re-lists for timeEq', async () => {
         const onModeSwitch = vi.fn()
         render(<ProjectDashboard onSelectProject={noop} onNewProject={noop} userName="Ian" onModeSwitch={onModeSwitch} />)
         await screen.findByText('Crown Wharf')
 
-        fireEvent.click(screen.getByText('Time Equivalence'))
+        fireEvent.click(screen.getByText('MACS+ & Time Equivalence'))
 
         await screen.findByText('Panattoni Unit 3')
         expect(listProjects).toHaveBeenLastCalledWith('timeEq')
@@ -57,5 +57,50 @@ describe('ProjectDashboard - per-mode project lists', () => {
         fireEvent.click(screen.getByText('Radiation'))
 
         await waitFor(() => expect(onModeSwitch).toHaveBeenCalledWith('radiation'))
+    })
+
+    it('renders structural project cards with MACS status and supports plan canvas access', async () => {
+        const richTeqProject = {
+            id: 'p-rich',
+            name: 'Amazon Fulfillment Bay 2',
+            mode: 'timeEq',
+            created_by: 'Ian',
+            updated_at: '2026-11-04T12:00:00Z',
+            floors: [{ id: 'f1', elements: [{ id: 1 }] }],
+            settings: {
+                macsBatch: {
+                    total_runs: 10000,
+                    pass_count: 9920,
+                    fail_count: 80,
+                    reliability_percent: 99.2,
+                    governing_section: 'UB 457x191x82',
+                    critical_temp: 631,
+                    shear_check: { sub_limit_runs: [] },
+                },
+                timeEqInputs: {
+                    fireResistancePeriod: 90,
+                    use: 'Storage',
+                },
+            },
+        }
+        listProjects.mockResolvedValue([richTeqProject])
+        useStore.setState({ currentMode: 'timeEq' })
+
+        const onSelect = vi.fn()
+        render(<ProjectDashboard onSelectProject={onSelect} onNewProject={noop} userName="Ian" />)
+
+        await screen.findByText('Amazon Fulfillment Bay 2')
+        // MACS status badge
+        expect(screen.getByText(/MACS: 10,000 Runs/i)).toBeInTheDocument()
+        // Governing section
+        expect(screen.getAllByText('UB 457x191x82').length).toBeGreaterThan(0)
+        // Critical temp
+        expect(screen.getByText('631°C')).toBeInTheDocument()
+        // Target period
+        expect(screen.getByText('REI 90m')).toBeInTheDocument()
+
+        // Clicking secondary Plan button opens 2D canvas
+        fireEvent.click(screen.getByTitle('Open compartment drawing on canvas'))
+        expect(onSelect).toHaveBeenCalledWith('p-rich')
     })
 })
