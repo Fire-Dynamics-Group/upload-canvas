@@ -598,7 +598,7 @@ describe('Structural Fire Engineering: Studio Components & APIs', () => {
                 <CompartmentMiniMap
                     geoPoints={geoPoints}
                     inputs={{ compartmentHeight: 3.15 }}
-                    selectedMacsRun={SAMPLE_RUN}
+                    selectedMacsRun={null}
                 />
             )
 
