@@ -50,6 +50,9 @@ export function resolveTimeEqInputs(saved, { wallCount = 0, openingCount = 0, wa
     for (const key of Object.keys(TIME_EQ_INPUT_DEFAULTS)) {
         if (s[key] !== undefined) resolved[key] = s[key]
     }
+    if (resolved.nSim === 2000) {
+        resolved.nSim = RELIABILITY_DEFAULTS.nSim
+    }
     resolved.floorAndCeilingMaterials = sized(resolved.floorAndCeilingMaterials, 2, 'concrete')
     resolved.wallProperties = sized(s.wallProperties, wallCount, 'concrete')
     resolved.openingHeights = sized(s.openingHeights, openingCount, 1)

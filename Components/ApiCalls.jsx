@@ -378,7 +378,7 @@ const reliabilityRequestBody = (
       compartmentHeight,
       fireResistancePeriod,
       isSprinklered = false,
-      nSim = 2000,
+      nSim = 10000,
       openableWidths = null,   // per-wall openable width (party/fire walls = 0)
       roomComposition = null,  // for backend-derived b-value
       bValue = null,           // explicit b-value override (wins over roomComposition)

@@ -45,7 +45,7 @@ describe('sendTimeEqReliabilityData', () => {
     const body = JSON.parse(globalThis.fetch.mock.calls[0][1].body)
     expect(body.combustionFactor).toBe(0.8)
     expect(body.sprinklerFactor).toBe(0.65)
-    expect(body.nSim).toBe(2000)
+    expect(body.nSim).toBe(10000)
   })
 
   it('throws with the backend detail on a non-ok response', async () => {
