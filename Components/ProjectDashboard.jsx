@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useContext } from 'react'
+import { RouterContext } from 'next/dist/shared/lib/router-context'
 import { listProjects, renameProject, deleteProject } from './ApiCalls'
 import { deleteConfirmationMatches } from '../utils/projectActions'
 import FDRobot from './FDRobot'
 import useStore from '../store/useStore'
+import Link from 'next/link'
 import { isDbBacked } from '../store/persistenceModes'
+import StructuralProjectCard from './StructuralProjectCard'
 
 function timeAgo(dateStr) {
   if (!dateStr) return ''
@@ -35,6 +38,7 @@ export function isOwnedByCurrentUser(project, userId, userName) {
 }
 
 export default function ProjectDashboard({ onSelectProject, onNewProject, userName, userId, onModeSwitch }) {
+  const router = useContext(RouterContext)
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -160,7 +164,7 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
   const modeOptions = [
     { key: 'fdsGen', label: 'FDS Generation' },
     { key: 'radiation', label: 'Radiation' },
-    { key: 'timeEq', label: 'Time Equivalence' },
+    { key: 'timeEq', label: 'MACS+ & Time Equivalence' },
     { key: 'efs', label: 'External Fire Spread' },
   ]
 
@@ -191,6 +195,15 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
             {m.label}
           </button>
         ))}
+        {currentMode === 'timeEq' && (
+          <Link
+            href="/structural-fire"
+            className="ml-auto bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors"
+          >
+            <span>🏢</span>
+            <span>Open Assessment</span>
+          </Link>
+        )}
       </div>
 
       {/* Header */}
@@ -257,63 +270,81 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filtered.map((project) => (
-              <div
-                key={project.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => onSelectProject(project.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    onSelectProject(project.id)
-                  }
-                }}
-                className="relative bg-gray-800 hover:bg-gray-700 rounded-lg overflow-hidden text-left transition-colors border border-gray-700 hover:border-gray-500 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {project.settings?.thumbnail ? (
-                  <img
-                    src={project.settings.thumbnail}
-                    alt={project.name}
-                    className="w-full h-40 object-cover bg-gray-900"
-                  />
-                ) : (
-                  <div className="w-full h-40 bg-gray-900 flex items-center justify-center text-gray-600 text-sm">
-                    No preview
+            {filtered.map((project) =>
+              currentMode === 'timeEq' ? (
+                <StructuralProjectCard
+                  key={project.id}
+                  project={project}
+                  onOpen={(p) => {
+                    if (router?.push) {
+                      router.push(`/structural-fire?project=${p.id}`)
+                    } else if (typeof window !== 'undefined') {
+                      window.location.href = `/structural-fire?project=${p.id}`
+                    }
+                  }}
+                  onOpenCanvas={(e, p) => onSelectProject(p.id)}
+                  onRename={openRename}
+                  onDelete={openDelete}
+                  timeAgo={timeAgo}
+                />
+              ) : (
+                <div
+                  key={project.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onSelectProject(project.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      onSelectProject(project.id)
+                    }
+                  }}
+                  className="relative bg-gray-800 hover:bg-gray-700 rounded-lg overflow-hidden text-left transition-colors border border-gray-700 hover:border-gray-500 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {project.settings?.thumbnail ? (
+                    <img
+                      src={project.settings.thumbnail}
+                      alt={project.name}
+                      className="w-full h-40 object-cover bg-gray-900"
+                    />
+                  ) : (
+                    <div className="w-full h-40 bg-gray-900 flex items-center justify-center text-gray-600 text-sm">
+                      No preview
+                    </div>
+                  )}
+                  <div className="absolute top-2 right-2 flex gap-1">
+                    <button
+                      type="button"
+                      onClick={(e) => openRename(e, project)}
+                      title="Rename project"
+                      aria-label="Rename project"
+                      className="p-1.5 rounded-md bg-gray-900 bg-opacity-70 hover:bg-opacity-100 text-gray-300 hover:text-white"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => openDelete(e, project)}
+                      title="Delete project"
+                      aria-label="Delete project"
+                      className="p-1.5 rounded-md bg-gray-900 bg-opacity-70 hover:bg-opacity-100 text-gray-300 hover:text-red-400"
+                    >
+                      🗑️
+                    </button>
                   </div>
-                )}
-                <div className="absolute top-2 right-2 flex gap-1">
-                  <button
-                    type="button"
-                    onClick={(e) => openRename(e, project)}
-                    title="Rename project"
-                    aria-label="Rename project"
-                    className="p-1.5 rounded-md bg-gray-900 bg-opacity-70 hover:bg-opacity-100 text-gray-300 hover:text-white"
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => openDelete(e, project)}
-                    title="Delete project"
-                    aria-label="Delete project"
-                    className="p-1.5 rounded-md bg-gray-900 bg-opacity-70 hover:bg-opacity-100 text-gray-300 hover:text-red-400"
-                  >
-                    🗑️
-                  </button>
-                </div>
-                <div className="p-4">
-                  <h3 className="font-medium text-white truncate">{project.name}</h3>
-                  <p className="text-sm text-gray-400 mt-1">
-                    {project.created_by || 'Unknown'}
-                  </p>
-                  <div className="flex justify-between items-center mt-3 text-xs text-gray-500">
-                    <span>{project.floors?.length || 0} floor{(project.floors?.length || 0) !== 1 ? 's' : ''}</span>
-                    <span>{timeAgo(project.updated_at)}</span>
+                  <div className="p-4">
+                    <h3 className="font-medium text-white truncate">{project.name}</h3>
+                    <p className="text-sm text-gray-400 mt-1">
+                      {project.created_by || 'Unknown'}
+                    </p>
+                    <div className="flex justify-between items-center mt-3 text-xs text-gray-500">
+                      <span>{project.floors?.length || 0} floor{(project.floors?.length || 0) !== 1 ? 's' : ''}</span>
+                      <span>{timeAgo(project.updated_at)}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            )}
           </div>
         )}
       </div>

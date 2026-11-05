@@ -735,10 +735,24 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
     }
 
     function handleScaleInput(inputDistance) {
-        let scaleDistance = inputDistance
+        let scaleDistance = parseFloat(inputDistance)
+        if (!Number.isFinite(scaleDistance) || scaleDistance <= 0) {
+            alert('Please enter a valid positive distance in metres.')
+            return
+        }
         let desiredScale = 0.1 //m - later be changeable
         let pixels = calcDistance(scalePoints[0], scalePoints[1])
+        if (!Number.isFinite(pixels) || pixels < 2) {
+            alert('The two points clicked are too close together. Please draw two distinct points.')
+            setScalePoints([])
+            setIsDrawing(false)
+            return
+        }
         let temp = pixels / (scaleDistance / desiredScale)
+        if (!Number.isFinite(temp) || temp <= 0) {
+            alert('Calculated scale is invalid. Please try again.')
+            return
+        }
         deltaGridlines(temp, 'polyline')
     }
  

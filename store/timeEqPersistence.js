@@ -29,6 +29,10 @@ export const TIME_EQ_INPUT_DEFAULTS = {
     criticalTemp: RELIABILITY_DEFAULTS.criticalTemp,
     customBValue: '',                   // blank => derive from materials
     memberProtection: 'protected',      // 'protected' | 'unprotected'
+    section: '',
+    exposure: '',
+    governingSide: '',
+    macsRunId: null,
 }
 
 const sized = (candidate, length, fill) =>
@@ -45,6 +49,9 @@ export function resolveTimeEqInputs(saved, { wallCount = 0, openingCount = 0, wa
     const resolved = { ...TIME_EQ_INPUT_DEFAULTS }
     for (const key of Object.keys(TIME_EQ_INPUT_DEFAULTS)) {
         if (s[key] !== undefined) resolved[key] = s[key]
+    }
+    if (resolved.nSim === 2000) {
+        resolved.nSim = RELIABILITY_DEFAULTS.nSim
     }
     resolved.floorAndCeilingMaterials = sized(resolved.floorAndCeilingMaterials, 2, 'concrete')
     resolved.wallProperties = sized(s.wallProperties, wallCount, 'concrete')
@@ -79,6 +86,7 @@ export function buildTimeEqPayload(s) {
             timeEqInputs: s.timeEqInputs || {},
             timeEqResult: s.timeEqResult ?? null,
             thumbnail: s.thumbnail ?? null,
+            ...(s.macsBatch ? { macsBatch: s.macsBatch } : {}),
         },
         floors: [
             {
@@ -105,6 +113,7 @@ export function hydrateTimeEqState(project, floorDetail, state) {
         floorId: floorDetail.id,
         timeEqInputs: ps.timeEqInputs ?? {},
         timeEqResult: ps.timeEqResult ?? null,
+        macsBatch: ps.macsBatch ?? null,
         canvasDimensions: floorDetail.canvas_dimensions || {},
         pixelsPerMesh: floorDetail.pixels_per_mesh || 1,
         originPixels: floorDetail.origin_pixels || null,
@@ -122,5 +131,6 @@ export function timeEqAutosaveSnapshot(s) {
         originPixels: s.originPixels,
         timeEqInputs: s.timeEqInputs,
         timeEqResult: s.timeEqResult,
+        macsBatch: s.macsBatch,
     }
 }

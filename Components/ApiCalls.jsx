@@ -16,13 +16,70 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || server_urls.localhost
 
 // `mode` is the canvas mode that owns the project (fdsGen / timeEq). Each
 // DB-backed mode has its own dashboard; see store/persistenceModes.js.
-export const createProject = async (name = "Untitled Project", createdBy = null, mode = "fdsGen") => {
+export const createProject = async (name = "Untitled Project", createdBy = null, mode = "fdsGen", handoffId = null) => {
+    const payload = { name, mode, settings: {}, created_by: createdBy }
+    if (handoffId) payload.handoff_id = handoffId
     const resp = await authedFetch(`${API_BASE}/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, mode, settings: {}, created_by: createdBy }),
+        body: JSON.stringify(payload),
     })
     if (!resp.ok) throw new Error(`Failed to create project: ${resp.status}`)
+    return resp.json()
+}
+
+export const getHandoff = async (handoffId) => {
+    const resp = await authedFetch(`${API_BASE}/handoffs/${encodeURIComponent(handoffId)}`, { method: 'GET' })
+    if (!resp.ok) {
+        let errData = null
+        try {
+            errData = await resp.json()
+        } catch (_) {}
+        const detail = errData?.detail
+        const message = typeof detail === 'string' ? detail : detail?.message || `Failed to fetch handoff: ${resp.status}`
+        const error = new Error(message)
+        error.status = resp.status
+        if (detail?.claimed_by_project_id) {
+            error.claimedByProjectId = detail.claimed_by_project_id
+        }
+        throw error
+    }
+    return resp.json()
+}
+
+export const claimHandoff = async (projectId, handoffId) => {
+    const resp = await authedFetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/macs-handoffs/${encodeURIComponent(handoffId)}/claim`, {
+        method: 'POST',
+    })
+    if (!resp.ok) {
+        let errData = null
+        try {
+            errData = await resp.json()
+        } catch (_) {}
+        const message = typeof errData?.detail === 'string' ? errData.detail : `Failed to claim handoff: ${resp.status}`
+        const error = new Error(message)
+        error.status = resp.status
+        throw error
+    }
+    return resp.json()
+}
+
+export const getAllMacsRuns = async (limit = 50, offset = 0) => {
+    const resp = await authedFetch(`${API_BASE}/projects/macs-runs?limit=${limit}&offset=${offset}`, { method: 'GET' })
+    if (!resp.ok) throw new Error(`Failed to fetch all MACs runs: ${resp.status}`)
+    return resp.json()
+}
+
+export const getMacsRunDetail = async (runId) => {
+    const resp = await authedFetch(`${API_BASE}/projects/macs-runs/${encodeURIComponent(runId)}`, { method: 'GET' })
+    if (!resp.ok) throw new Error(`Failed to fetch MACs run detail: ${resp.status}`)
+    return resp.json()
+}
+
+export const getMacsRuns = async (projectId) => {
+    if (!projectId) return []
+    const resp = await authedFetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/macs-runs`, { method: 'GET' })
+    if (!resp.ok) throw new Error(`Failed to fetch MACs runs: ${resp.status}`)
     return resp.json()
 }
 
@@ -321,7 +378,7 @@ const reliabilityRequestBody = (
       compartmentHeight,
       fireResistancePeriod,
       isSprinklered = false,
-      nSim = 2000,
+      nSim = 10000,
       openableWidths = null,   // per-wall openable width (party/fire walls = 0)
       roomComposition = null,  // for backend-derived b-value
       bValue = null,           // explicit b-value override (wins over roomComposition)
@@ -504,4 +561,69 @@ export const downloadEfsReport = async (elevations, isCommercial = true) => {
     if (!resp.ok) throw new Error(`Failed to generate EFS report: ${resp.status}`)
     const blob = await resp.blob()
     saveAs(blob, 'EFS_Report.docx')
+}
+
+
+export const getMacsBatchSummary = async (projectId, batchId) => {
+    const resp = await authedFetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/macs-batch/${encodeURIComponent(batchId)}`, { method: 'GET' })
+    if (!resp.ok) throw new Error(`Failed to fetch MACS batch summary: ${resp.status}`)
+    return resp.json()
+}
+
+export const getMacsBatchDistribution = async (projectId, batchId, column, spaghettiN = 300) => {
+    const resp = await authedFetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/macs-batch/${encodeURIComponent(batchId)}/distribution?column=${encodeURIComponent(column)}&spaghetti_n=${spaghettiN}`, { method: 'GET' })
+    if (!resp.ok) throw new Error(`Failed to fetch MACS batch distribution: ${resp.status}`)
+    return resp.json()
+}
+
+export const getMacsBatchRuns = async (projectId, batchId, params = {}) => {
+    const query = new URLSearchParams()
+    if (params.page) query.set('page', params.page)
+    if (params.limit) query.set('limit', params.limit)
+    if (params.search) query.set('search', params.search)
+    if (params.status) query.set('status', params.status)
+    if (params.sortBy) query.set('sort_by', params.sortBy)
+    if (params.sortOrder) query.set('sort_order', params.sortOrder)
+    const resp = await authedFetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/macs-batch/${encodeURIComponent(batchId)}/runs?${query.toString()}`, { method: 'GET' })
+    if (!resp.ok) throw new Error(`Failed to fetch MACS batch runs: ${resp.status}`)
+    return resp.json()
+}
+
+export const getMacsBatchRunDetail = async (projectId, batchId, runId) => {
+    const resp = await authedFetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/macs-batch/${encodeURIComponent(batchId)}/runs/${encodeURIComponent(runId)}`, { method: 'GET' })
+    if (!resp.ok) throw new Error(`Failed to fetch MACS batch run detail: ${resp.status}`)
+    return resp.json()
+}
+
+const MACS_BATCH_CHART_FILENAMES = {
+    scatter: 'macs-fireload-glazing-scatter',
+    totalCapacity: 'macs-total-slab-capacity',
+    beamTemp: 'macs-unprotected-beam-temperature',
+    meshTemp: 'macs-reinforcement-mesh-temperature',
+}
+
+export const downloadMacsBatchCharts = (charts, batchId = null) => {
+    const suffix = batchId ? `-${String(batchId).slice(0, 8)}` : ''
+    for (const [key, stem] of Object.entries(MACS_BATCH_CHART_FILENAMES)) {
+        if (charts?.[key]) {
+            let b64 = charts[key]
+            if (b64.includes('base64,')) b64 = b64.split('base64,')[1]
+            saveAs(base64ToPngBlob(b64), `${stem}${suffix}.png`)
+        }
+    }
+}
+
+export const downloadStructuralFireReport = async (projectId, projectName = 'Project') => {
+    const resp = await authedFetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/structural-fire-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+    })
+    if (!resp.ok) {
+        let detail = ''
+        try { detail = (await resp.json()).detail } catch (_) {}
+        throw new Error(detail || `Failed to generate structural fire report: ${resp.status}`)
+    }
+    const blob = await resp.blob()
+    const cleanName = (projectName || 'Project').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_')
+    saveAs(blob, `Structural_Fire_Report_${cleanName}.docx`)
 }

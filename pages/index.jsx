@@ -18,8 +18,14 @@ import useCanvasPan from '../hooks/useCanvasPan'
 import { isDbBacked, autosaveSnapshot } from '../store/persistenceModes'
 import { savePdfToIndexedDB, loadPdfFromIndexedDB } from '../utils/pdfStorage'
 import { computeFramingScroll, elementPixelBox } from '../utils/viewportFraming'
+import { useRouter } from 'next/router'
+import Link from 'next/link'
+import MacsBanner from '../Components/MacsBanner'
+import { applyMacsRunToInputs } from '../utils/macsHandoff'
 import {
   createProject,
+  getHandoff,
+  getMacsRuns,
   saveProjectToServer,
   loadProject,
   loadFloorDetail,
@@ -90,6 +96,7 @@ const loadPdfDocument = async (pdfjs, source, maxAttempts = 3) => {
 }
 
 export default function Home() {
+  const router = useRouter()
   let dev_mode = true
   const [hasMounted, setHasMounted] = useState(false)
   const stageRef = useRef(null)
@@ -114,7 +121,7 @@ export default function Home() {
   const viewMode = useStore((state) => state.viewMode)
   useCanvasPan(stageRef, Boolean(selectedFile) && viewMode === '2d')
   const setPdfCanvasRef = useStore((state) => state.setPdfCanvasRef)
-  const pdfCanvasRefLocal = useRef()
+  const pdfCanvasRefLocal = useRef(null)
   useEffect(() => { setPdfCanvasRef(pdfCanvasRefLocal) }, [setPdfCanvasRef])
 
   const pdfCanvasRef = useStore((state) => state.pdfCanvasRef)
@@ -181,7 +188,74 @@ export default function Home() {
   const buildSavePayload = useStore((state) => state.buildSavePayload)
   const hydrateFromServer = useStore((state) => state.hydrateFromServer)
 
-  // --- Clear stale legacy localStorage (elements exist but no projectId) ---
+
+  // --- Consume MACs handoff from query (?handoff=<id>) ---
+  const hasProcessedHandoff = useRef(false)
+  useEffect(() => {
+    const handoffParam = router.query?.handoff || (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('handoff') : null)
+    if (!handoffParam || hasProcessedHandoff.current) return
+    hasProcessedHandoff.current = true
+
+    async function processHandoff() {
+      try {
+        useStore.getState().setCurrentMode('timeEq')
+        const handoff = await getHandoff(handoffParam)
+        if (handoff?.run) {
+          const run = handoff.run
+          const batch = run?.outputs?.macs_batch || handoff.macs_batch
+          const defaultName = (
+            batch?.project_name?.trim() ||
+            run?.project_name?.trim() ||
+            (run?.label && run.label !== 'MACS Run' ? run.label.trim() : null) ||
+            batch?.name?.trim() ||
+            (run?.section ? `Structural Fire - ${run.section}` : 'Structural Fire Assessment')
+          )
+          const created = await createProject(defaultName, userName || userId || run?.windows_user || null, 'timeEq', handoffParam)
+          router.replace(`/structural-fire?project=${created.id}`)
+          return
+        }
+      } catch (err) {
+        if (err.status === 409 && err.claimedByProjectId) {
+          router.replace(`/structural-fire?project=${err.claimedByProjectId}`)
+          return
+        } else if (err.status === 404) {
+          useStore.getState().setMacsNotice({
+            type: 'error',
+            message: 'MACS handoff not found.',
+          })
+        } else if (err.status === 410) {
+          useStore.getState().setMacsNotice({
+            type: 'error',
+            message: 'MACS handoff has expired. Please run MACs in i-macs and send again.',
+          })
+        } else {
+          useStore.getState().setMacsNotice({
+            type: 'error',
+            message: err.message || 'Failed to process MACs handoff.',
+          })
+        }
+      }
+    }
+    processHandoff()
+  }, [router.query])
+
+  // --- Consume project deep-link from query (?project=<id> or ?projectId=<id>) ---
+  const hasProcessedProject = useRef(false)
+  useEffect(() => {
+    const projectParam = router.query?.project || router.query?.projectId ||
+      (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('project') || new URLSearchParams(window.location.search).get('projectId') : null)
+    if (!projectParam || hasProcessedProject.current) return
+    hasProcessedProject.current = true
+
+    async function processProjectDeepLink() {
+      useStore.getState().setCurrentMode('timeEq')
+      await handleSelectProject(projectParam)
+    }
+    processProjectDeepLink()
+  }, [router.query])
+
+
+    // --- Clear stale legacy localStorage (elements exist but no projectId) ---
   const hasCheckedLegacy = useRef(false)
   useEffect(() => {
     if (hasCheckedLegacy.current) return
@@ -277,7 +351,6 @@ export default function Home() {
 
   // Shared function to render a PDF onto the canvas from any source
   const renderPdf = async (pdfSource, skipScale = false) => {
-    if (!pdfCanvasRef.current) return
     const pdfjs = await import('pdfjs-dist/build/pdf')
 
     // pdfjs accepts a URL string or {data: ArrayBuffer}
@@ -285,7 +358,18 @@ export default function Home() {
     const pdf = await loadPdfDocument(pdfjs, source)
     const page = await pdf.getPage(1)
 
-    const canvas = pdfCanvasRef.current
+    const getCanvas = () => pdfCanvasRefLocal.current || pdfCanvasRef?.current || useStore.getState().pdfCanvasRef?.current
+    let canvas = getCanvas()
+    if (!canvas) {
+      for (let i = 0; i < 20 && !getCanvas(); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      canvas = getCanvas()
+    }
+    if (!canvas) {
+      console.warn('pdfCanvasRef is not mounted yet; skipping canvas render')
+      return
+    }
     const context = canvas.getContext('2d')
     const scale = 1.5
     const viewport = page.getViewport({ scale })
@@ -294,17 +378,43 @@ export default function Home() {
     canvas.width = viewport.width
     setCanvasDimensions({ width: canvas.width, height: canvas.height })
 
+    // Ensure solid white background before rendering PDF
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+
     await page.render({ canvasContext: context, viewport }).promise
     console.log('Page rendered')
 
     const colouredImageData = context.getImageData(0, 0, canvas.width, canvas.height)
+    const cdata = colouredImageData.data
+    for (let i = 0; i < cdata.length; i += 4) {
+      const a = cdata[i + 3]
+      if (a < 255) {
+        const alpha = a / 255
+        cdata[i] = Math.round(cdata[i] * alpha + 255 * (1 - alpha))
+        cdata[i + 1] = Math.round(cdata[i + 1] * alpha + 255 * (1 - alpha))
+        cdata[i + 2] = Math.round(cdata[i + 2] * alpha + 255 * (1 - alpha))
+        cdata[i + 3] = 255
+      }
+    }
     const greyScaledImageData = context.getImageData(0, 0, canvas.width, canvas.height)
     const data = greyScaledImageData.data
     for (let i = 0; i < data.length; i += 4) {
-      const avg = (data[i] + data[i + 1] + data[i + 2]) / 3
+      const a = data[i + 3]
+      let r = data[i]
+      let g = data[i + 1]
+      let b = data[i + 2]
+      if (a < 255) {
+        const alpha = a / 255
+        r = Math.round(r * alpha + 255 * (1 - alpha))
+        g = Math.round(g * alpha + 255 * (1 - alpha))
+        b = Math.round(b * alpha + 255 * (1 - alpha))
+      }
+      const avg = (r + g + b) / 3
       data[i] = avg
       data[i + 1] = avg
       data[i + 2] = avg
+      data[i + 3] = 255
     }
     context.putImageData(greyScaledImageData, 0, 0)
     toggleIsPdfGreyscale(true)
@@ -342,8 +452,12 @@ export default function Home() {
       if (!currentProjectId) {
         try {
           const name = useStore.getState().projectName || "Untitled Project"
-          const project = await createProject(name, userId, mode)
+          const handoffId = useStore.getState().handoffId
+          const project = await createProject(name, userId, mode, handoffId)
           currentProjectId = project.id
+          if (handoffId) {
+            useStore.getState().setHandoffId(null)
+          }
           // Do an initial save to create floor 0
           const saved = await saveProjectToServer(currentProjectId, {
             name,
@@ -354,6 +468,12 @@ export default function Home() {
           setProjectId(currentProjectId)
           setFloorId(currentFloorId)
           setProjectName(name)
+          if (mode === 'timeEq') {
+            try {
+              const runs = await getMacsRuns(currentProjectId)
+              useStore.getState().setMacsRuns(runs)
+            } catch (_) {}
+          }
         } catch (err) {
           console.error('Failed to create project:', err)
           // Surface it: without a projectId autosave never arms, so the user
@@ -430,15 +550,26 @@ export default function Home() {
 
   const [showUploadScreen, setShowUploadScreen] = useState(false)
 
-  const handleNewProject = (name) => {
+  const handleNewProject = async (name) => {
     if (selectedFile) {
       if (!window.confirm('Start a new project? All current progress will be cleared.')) return
     }
     resetProject()
     setSelectedFile(undefined)
     setIsContinuing(false)
-    setShowUploadScreen(true)
     if (name) setProjectName(name)
+
+    if (currentMode === 'timeEq') {
+      try {
+        const created = await createProject(name || 'Structural Fire Assessment', userId, 'timeEq')
+        router.push(`/structural-fire?project=${created.id}`)
+        return
+      } catch (err) {
+        console.error('Failed to create structural fire project:', err)
+      }
+    }
+
+    setShowUploadScreen(true)
   }
 
   const handleSelectProject = async (projectId) => {
@@ -446,7 +577,32 @@ export default function Home() {
     try {
       const project = await loadProject(projectId)
       const floor = project.floors?.[0]
-      if (!floor) throw new Error("No floors in project")
+
+      if (project.mode) {
+        useStore.getState().setCurrentMode(project.mode)
+      }
+
+      if (!floor) {
+        // Project exists (e.g. from MACS handoff) but has no floor or drawing yet.
+        // Wipe stale canvas state from previous project and show upload screen.
+        useStore.getState().setProjectId(projectId)
+        useStore.getState().setFloorId(null)
+        useStore.getState().setProjectName(project.name)
+        useStore.getState().setElements([])
+        useStore.getState().setFloorDimensions(null)
+        useStore.getState().setPixelsPerMesh(1)
+        useStore.getState().setOriginPixels(null)
+        setSelectedFile(null)
+        setIsContinuing(true)
+        setShowUploadScreen(true)
+        if (project.mode === 'timeEq') {
+          try {
+            const runs = await getMacsRuns(projectId)
+            useStore.getState().setMacsRuns(runs)
+          } catch (_) {}
+        }
+        return
+      }
 
       const floorDetail = await loadFloorDetail(projectId, floor.id)
       hydrateFromServer(project, floorDetail)
@@ -457,9 +613,17 @@ export default function Home() {
       // wipe the loaded floor.
       lastSavedRef.current = JSON.stringify(useStore.getState().buildSavePayload())
 
+      if (project.mode === 'timeEq') {
+        try {
+          const runs = await getMacsRuns(projectId)
+          useStore.getState().setMacsRuns(runs)
+        } catch (_) {}
+      }
+
       if (floor.pdf_s3_key) {
         const { url } = await getFloorPdfUrl(projectId, floor.id)
-        await renderPdf(url, true)
+        const hasCalibratedScale = typeof floorDetail?.pixels_per_mesh === 'number' && floorDetail.pixels_per_mesh > 0 && floorDetail.pixels_per_mesh !== 1.0
+        await renderPdf(url, hasCalibratedScale)
       } else {
         // No PDF yet - go to upload screen
         setIsContinuing(true)
@@ -495,7 +659,16 @@ export default function Home() {
         <div className="fixed top-2 right-2 z-50 flex gap-2">
           {isDbBacked(currentMode) && (
             <>
-              <button
+              {(router.query?.returnTo === 'structural-fire' || currentMode === 'timeEq') && projectId && (
+            <Link
+              href={`/structural-fire?project=${projectId}`}
+              className="text-white bg-indigo-600 hover:bg-indigo-700 font-medium rounded-lg text-sm px-4 py-2 flex items-center gap-1.5 shadow"
+            >
+              <span>←</span>
+              <span>Back to Assessment</span>
+            </Link>
+          )}
+          <button
                 onClick={handleBackToDashboard}
                 className="text-white bg-gray-700 hover:bg-gray-600 font-medium rounded-lg text-sm px-4 py-2"
                 type="button"
@@ -516,7 +689,7 @@ export default function Home() {
       {/* Toolbar belongs to the canvas — only show it when a plan is open, not
           on the dashboard / upload / loading screens (it's a fixed overlay now).
           Hidden in the 3D / FDS views, which are read-only. */}
-      {selectedFile && tool != "scale" && viewMode === '2d' ? (<>
+      {selectedFile && viewMode === '2d' ? (<>
       {menuOverlay}
       </>
       )
@@ -531,6 +704,7 @@ export default function Home() {
         {viewMode === 'results' && <ReliabilityResultsView />}
       </>)}
       {showModePopup && <ModePopup setToggleShowPopup={setShowModePopup} onModeSelected={handleModeSelected}/>}
+      {currentMode === 'timeEq' && <MacsBanner />}
       <div
         ref={stageRef}
         className={selectedFile ? `relative ${currentMode === 'efs' && tool !== 'scale' && viewMode === '2d' ? 'efs-canvas-stage' : ''}` : undefined}
@@ -577,7 +751,7 @@ export default function Home() {
             no project is open — otherwise the previous project's PDF lingers
             behind the dashboard and the user has to scroll past it. */}
         <canvas
-        ref={pdfCanvasRef}
+        ref={pdfCanvasRefLocal}
         style={selectedFile ? { width: canvasDimensions.width * canvasZoom, height: canvasDimensions.height * canvasZoom } : undefined}
         className={selectedFile ? 'absolute top-0 left-0 z-0 block pointer-events-none' : 'hidden'}
         />

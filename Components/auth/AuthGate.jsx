@@ -34,11 +34,31 @@ function MicrosoftProvider({ children }) {
       const redirectResult = await client.handleRedirectPromise()
       const signedIn = client.getActiveAccount() || client.getAllAccounts()[0]
       if (!signedIn) {
-        await client.loginRedirect({ scopes: apiScope ? [apiScope] : identityScopes })
+        try {
+          if (typeof window !== 'undefined' && window.location.pathname + window.location.search !== '/') {
+            sessionStorage.setItem('auth_return_url', window.location.href)
+          }
+        } catch (_) {}
+        await client.loginRedirect({
+          scopes: apiScope ? [apiScope] : identityScopes,
+          redirectStartPage: window.location.href,
+        })
         return
       }
       client.setActiveAccount(signedIn)
       if (cancelled) return
+
+      // If user came back from SSO login, restore target URL with handoff/project query if preserved
+      try {
+        const returnUrl = sessionStorage.getItem('auth_return_url')
+        if (returnUrl) {
+          sessionStorage.removeItem('auth_return_url')
+          if (returnUrl !== window.location.href) {
+            window.location.replace(returnUrl)
+            return
+          }
+        }
+      } catch (_) {}
       setTokenProvider(async () => {
         if (apiScope) {
           const result = await client.acquireTokenSilent({ account: signedIn, scopes: [apiScope] })

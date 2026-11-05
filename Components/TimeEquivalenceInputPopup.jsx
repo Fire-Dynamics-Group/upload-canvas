@@ -1,6 +1,8 @@
 import useStore from '@/store/useStore';
 import { useState, useEffect } from 'react';
-import { sendTimeEqData, sendTimeEqReliabilityData } from './ApiCalls'
+import { sendTimeEqData, sendTimeEqReliabilityChartsData, saveProjectToServer, downloadReliabilityCharts } from './ApiCalls'
+import MacsBanner from './MacsBanner'
+import MacsRunHistory from './MacsRunHistory'
 import { resolveTimeEqInputs } from '@/store/timeEqPersistence'
 import {
     OCCUPANCY_DISTRIBUTIONS,
@@ -102,28 +104,41 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
     const [ criticalTemp, setCriticalTemp ] = useState(initial.criticalTemp)
     const [ customBValue, setCustomBValue ] = useState(initial.customBValue)  // blank => derive from materials
     const [ openableWidths, setOpenableWidths ] = useState(initial.openableWidths)
-    // Last run shown again on reopen / project reload; charts are not persisted.
+    // Last run shown again on reopen / project reload, including saved charts.
     const [ reliabilityResult, setReliabilityResult ] = useState(savedResult ?? null)
     const [ reliabilityError, setReliabilityError ] = useState(null)
     const [ isRunning, setIsRunning ] = useState(false)
     const [ memberProtection, setMemberProtection ] = useState(initial.memberProtection)  // 'protected' | 'unprotected'
+    const [ section, setSection ] = useState(initial.section || '')
+    const [ exposure, setExposure ] = useState(initial.exposure || '')
     const isUnprotected = calcType === 'reliability' && memberProtection === 'unprotected'
 
     // Write every input change back to the store so the debounced project
     // autosave (index.jsx) picks it up. Replaces the whole object: the store
     // slice is exactly what the popup shows.
+
+    // Sync external input changes (e.g. from MACs run history or banner)
+    useEffect(() => {
+        if (!savedInputs) return
+        if (savedInputs.criticalTemp !== undefined && savedInputs.criticalTemp !== criticalTemp) setCriticalTemp(savedInputs.criticalTemp)
+        if (savedInputs.sectionFactor !== undefined && savedInputs.sectionFactor !== sectionFactor) setSectionFactor(savedInputs.sectionFactor)
+        if (savedInputs.section !== undefined && savedInputs.section !== section) setSection(savedInputs.section)
+        if (savedInputs.exposure !== undefined && savedInputs.exposure !== exposure) setExposure(savedInputs.exposure)
+        if (savedInputs.memberProtection !== undefined && savedInputs.memberProtection !== memberProtection) setMemberProtection(savedInputs.memberProtection)
+        if (savedInputs.calcType !== undefined && savedInputs.calcType !== calcType) setCalcType(savedInputs.calcType)
+    }, [savedInputs])
     useEffect(() => {
         setTimeEqInputs({
             calcType, fireResistancePeriod, compartmentHeight, isSprinklered, use,
             wallProperties, openingHeights, floorAndCeilingMaterials,
             mcOccupancy, nSim, growthRate, combustionFactor, sprinklerFactor,
-            sectionFactor, criticalTemp, customBValue, openableWidths, memberProtection,
+            sectionFactor, criticalTemp, customBValue, openableWidths, memberProtection, section, exposure,
         })
     }, [
         calcType, fireResistancePeriod, compartmentHeight, isSprinklered, use,
         wallProperties, openingHeights, floorAndCeilingMaterials,
         mcOccupancy, nSim, growthRate, combustionFactor, sprinklerFactor,
-        sectionFactor, criticalTemp, customBValue, openableWidths, memberProtection,
+        sectionFactor, criticalTemp, customBValue, openableWidths, memberProtection, section, exposure,
         setTimeEqInputs,
     ])
 
@@ -177,9 +192,8 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
         setIsRunning(true)
         try {
             const tempData = mockData || convertedPoints
-            // Shared mapping with the Results tab, so its full-results rerun
-            // can never drift from the run shown here.
-            const result = await sendTimeEqReliabilityData(tempData, reliabilityRequestOptionsFromInputs({
+            // Runs Monte Carlo simulation AND generates report charts
+            const result = await sendTimeEqReliabilityChartsData(tempData, reliabilityRequestOptionsFromInputs({
                 fireResistancePeriod, compartmentHeight, isSprinklered,
                 wallProperties, floorAndCeilingMaterials, mcOccupancy, nSim,
                 growthRate, combustionFactor, sprinklerFactor, sectionFactor,
@@ -187,6 +201,15 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
             }))
             setReliabilityResult(result)
             setTimeEqResult(result)
+
+            // Immediately save full results and charts to the backend project database
+            const state = useStore.getState()
+            if (state.projectId) {
+                const payload = state.buildSavePayload()
+                if (payload) {
+                    saveProjectToServer(state.projectId, payload).catch((err) => console.error('Save failed:', err))
+                }
+            }
         } catch (err) {
             setReliabilityError(err.message || 'Reliability calculation failed')
         } finally {
@@ -218,6 +241,9 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
             >
               &times;
             </button>
+            <div className="mb-2">
+              <MacsBanner />
+            </div>
             <div className="flex gap-6 mb-3 pr-6">
                 <label className="flex items-center gap-1">
                     <input type="radio" name="calcType" checked={calcType === 'deterministic'} onChange={() => setCalcType('deterministic')} />
@@ -402,6 +428,13 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
                 </label>
               </div>
 
+              {(section || exposure) && (
+                <div className="mb-3 p-2 bg-gray-50 border border-gray-200 rounded text-sm flex gap-4">
+                  {section && <div><span className="font-semibold">Section:</span> {section}</div>}
+                  {exposure && <div><span className="font-semibold">Exposure:</span> {exposure}</div>}
+                </div>
+              )}
+
               {memberProtection === 'unprotected' && (
                 <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-md">
                   <label className="font-semibold">Critical steel temperature (°C) — required:</label>
@@ -468,16 +501,52 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
               {reliabilityResultLines(reliabilityResult).map((line, i) => (
                 <p key={i} className={i === 0 ? 'text-xl font-bold' : undefined}>{line}</p>
               ))}
-              {/* Charts + the per-sample QA table live in the Results tab —
-                  a full-screen view, too big for this popup. */}
-              <button
-                className="px-4 py-2 bg-blue-500 text-white rounded-lg mt-2"
-                onClick={() => { setViewMode('results'); handleClose() }}
-              >
-                Open Results (charts + QA table)
-              </button>
+              {reliabilityResult.charts && (
+                <div className="grid grid-cols-2 gap-2 mt-3">
+                  {reliabilityResult.charts.steelTempSpaghetti && (
+                    <div>
+                      <span className="text-xs font-semibold text-gray-700 block mb-1">Steel Temperature Spaghetti</span>
+                      <img
+                        src={`data:image/png;base64,${reliabilityResult.charts.steelTempSpaghetti}`}
+                        alt="Steel Temperature Spaghetti"
+                        className="w-full rounded border bg-white"
+                      />
+                    </div>
+                  )}
+                  {reliabilityResult.charts.passFailScatter && (
+                    <div>
+                      <span className="text-xs font-semibold text-gray-700 block mb-1">Pass / Fail Scatter</span>
+                      <img
+                        src={`data:image/png;base64,${reliabilityResult.charts.passFailScatter}`}
+                        alt="Pass Fail Scatter"
+                        className="w-full rounded border bg-white"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2 mt-3">
+                <button
+                  type="button"
+                  className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm"
+                  onClick={() => { setViewMode('results'); handleClose() }}
+                >
+                  Open Results (charts + QA table)
+                </button>
+                {reliabilityResult.charts && (
+                  <button
+                    type="button"
+                    className="px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white rounded-lg text-sm"
+                    onClick={() => downloadReliabilityCharts(reliabilityResult.charts, reliabilityResult.seed)}
+                  >
+                    Download Charts
+                  </button>
+                )}
+              </div>
             </div>
           )}
+
+          <MacsRunHistory />
 
           {calcType === 'reliability' ? (
             <button className="px-4 py-2 bg-blue-500 text-white rounded-lg mt-2 disabled:opacity-50" onClick={handleReliabilityClick} disabled={isRunning || (memberProtection === 'unprotected' && !hasCriticalTemp(criticalTemp))}>

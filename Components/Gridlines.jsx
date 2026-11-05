@@ -12,51 +12,47 @@ function Gridlines({pixelsPerMesh, dimensions, hasScale, zoom = 1}) {
     const canvasHeight = dimensions.height
 
     useEffect(() => {
-        // TODO: needs to redraw all elements each frame
-        // TODO: need to add finished polygon or points to object array
         const canvas = canvasRef.current
+        if (!canvas) return
         const context = canvas.getContext('2d')
         context.clearRect(0, 0, canvas.width, canvas.height)
-        // FUTURE: recalc gridlines depending on viewport
-        // allow zoom and pan of pdf floor plan
-        // all gridlines
-        if (hasScale && showGrid) {
-
-            let rows = Math.floor(canvas.height / pixelsPerMesh)
-    
-            context.lineWidth = 0.2
-            for (let i=0; i<rows; i++) {
-                // later make 1 long svg -> may have issue removing particular points
-                let path_text = 'M 0,' + `${(i+1)*pixelsPerMesh}` + ' h ' + canvas.width + ' '
-                let path = new Path2D(path_text);
-                context.stroke(path);
-    
+        if (hasScale && showGrid && Number.isFinite(pixelsPerMesh) && pixelsPerMesh > 1) {
+            let step = pixelsPerMesh
+            const rawRows = Math.floor(canvas.height / step)
+            const rawCols = Math.floor(canvas.width / step)
+            if (step < 4 || rawRows > 400 || rawCols > 400) {
+                const stride = Math.ceil(Math.max(rawRows, rawCols) / 400)
+                step = pixelsPerMesh * stride
             }
-            let cols = Math.floor(canvas.width / pixelsPerMesh)
-    
+
+            let rows = Math.floor(canvas.height / step)
             context.lineWidth = 0.2
-            for (let i=0; i<cols; i++) {
-                // later make 1 long svg -> may have issue removing particular points
-                let path_text = `M ${(i+1)*pixelsPerMesh}, 0, v ${canvas.height}`
-                let path = new Path2D(path_text);
-                context.stroke(path);
-    
+            context.strokeStyle = 'rgba(0, 0, 0, 0.25)'
+            for (let i = 0; i < rows; i++) {
+                let path_text = 'M 0,' + `${(i + 1) * step}` + ' h ' + canvas.width + ' '
+                let path = new Path2D(path_text)
+                context.stroke(path)
+            }
+            let cols = Math.floor(canvas.width / step)
+            for (let i = 0; i < cols; i++) {
+                let path_text = `M ${(i + 1) * step}, 0, v ${canvas.height}`
+                let path = new Path2D(path_text)
+                context.stroke(path)
             }
         }
     }, [pixelsPerMesh, hasScale, currentMode, showGrid, dimensions])
 
-// should be width and height of image
-  return (
-  <>
-      <canvas 
-      ref={canvasRef}
-      width={canvasWidth}
-      height={canvasHeight}
-      style={{ width: canvasWidth * zoom, height: canvasHeight * zoom }}
-      className='bg-transparent top-0 left-0 absolute z-[5] pointer-events-none'
-      />
-  </>
-  )
+    return (
+        <>
+            <canvas 
+                ref={canvasRef}
+                width={canvasWidth}
+                height={canvasHeight}
+                style={{ width: canvasWidth * zoom, height: canvasHeight * zoom }}
+                className='bg-transparent top-0 left-0 absolute z-[5] pointer-events-none'
+            />
+        </>
+    )
 }
 
 export default Gridlines
