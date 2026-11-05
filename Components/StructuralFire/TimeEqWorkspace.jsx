@@ -504,16 +504,6 @@ export default function TimeEqWorkspace({
                             <div className="flex items-center gap-2">
                                 <button
                                     type="button"
-                                    onClick={handleDownloadReport}
-                                    disabled={isDownloadingReport}
-                                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold px-2.5 py-1 rounded transition-colors flex items-center gap-1.5 disabled:opacity-50"
-                                    title="Download combined structural fire engineering report (.docx)"
-                                >
-                                    <span>📄</span>
-                                    <span>{isDownloadingReport ? 'Downloading…' : 'Download Report (.docx)'}</span>
-                                </button>
-                                <button
-                                    type="button"
                                     onClick={() => downloadReliabilityCharts(chartsData, result?.seed)}
                                     className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold px-2.5 py-1 rounded transition-colors flex items-center gap-1.5"
                                     title="Download both charts as PNG files"
@@ -797,7 +787,7 @@ export default function TimeEqWorkspace({
                                     type="number"
                                     step="500"
                                     min="500"
-                                    max="10000"
+                                    max="50000"
                                     value={inputs.nSim || RELIABILITY_DEFAULTS.nSim}
                                     onChange={(e) => updateField('nSim', Number(e.target.value))}
                                     className="w-full border border-gray-300 rounded px-2.5 py-1.5 bg-white text-gray-800"

@@ -424,13 +424,7 @@ describe('Structural Fire Engineering: Studio Components & APIs', () => {
             })
         })
 
-        it('TimeEqWorkspace renders Download Report (.docx) button and triggers report download', async () => {
-            globalThis.fetch.mockResolvedValue({
-                ok: true,
-                status: 200,
-                blob: async () => new Blob(['docx-bytes']),
-            })
-
+        it('TimeEqWorkspace renders Download Charts (PNG) button and hides Report (.docx) until enabled', async () => {
             const projectWithCharts = {
                 id: 'p-200',
                 name: 'Office Tower Bay',
@@ -458,15 +452,11 @@ describe('Structural Fire Engineering: Studio Components & APIs', () => {
                 />
             )
 
-            const reportBtn = screen.getByRole('button', { name: /Download Report \(\.docx\)/i })
-            expect(reportBtn).toBeInTheDocument()
-            fireEvent.click(reportBtn)
+            const chartsBtn = screen.getByRole('button', { name: /Download Charts \(PNG\)/i })
+            expect(chartsBtn).toBeInTheDocument()
 
-            await waitFor(() => {
-                const call = globalThis.fetch.mock.calls.find(([u]) => u.includes('/projects/p-200/structural-fire-report'))
-                expect(call).toBeTruthy()
-                expect(call[1].method).toBe('POST')
-            })
+            // Report button is hidden until report formatting is ready
+            expect(screen.queryByRole('button', { name: /Download Report \(\.docx\)/i })).not.toBeInTheDocument()
         })
 
         it('renders honest empty state when floorDetail has no drawn elements', () => {
