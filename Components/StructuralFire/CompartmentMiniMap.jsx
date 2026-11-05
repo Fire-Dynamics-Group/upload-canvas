@@ -225,8 +225,7 @@ export default function CompartmentMiniMap({
     const toSvgX = (x) => offsetX + (x - bbox.minX) * scale
     const toSvgY = (y) => offsetY + (bbox.maxY - y) * scale // invert Y so North is up
 
-    // Find if MACS Governing beam matches wall 1 (typically Side A)
-    const governingCritTemp = selectedMacsRun?.critical_temp || selectedMacsRun?.outputs?.side_b_critical_temp || 705
+
 
     return (
         <div className="mt-3 pt-3 border-t border-gray-100">
@@ -248,12 +247,7 @@ export default function CompartmentMiniMap({
                                 <span className="w-2.5 h-2.5 rounded bg-cyan-400 inline-block"></span>
                                 Opening (O1–O{openings.length})
                             </span>
-                            {selectedMacsRun && (
-                                <span className="flex items-center gap-1 text-amber-300">
-                                    <span className="w-2.5 h-2.5 rounded bg-amber-400 inline-block"></span>
-                                    MACS Gov ({Math.round(governingCritTemp)}°C)
-                                </span>
-                            )}
+
                         </div>
                     </div>
 
@@ -333,38 +327,7 @@ export default function CompartmentMiniMap({
                                 )
                             })}
 
-                            {/* MACS Governing Beam Marker on W1 (Side A) */}
-                            {walls.length > 0 && selectedMacsRun && (
-                                <g>
-                                    <line
-                                        x1={toSvgX(walls[0].p1.x)}
-                                        y1={toSvgY(walls[0].p1.y) - 6}
-                                        x2={toSvgX(walls[0].p2.x)}
-                                        y2={toSvgY(walls[0].p2.y) - 6}
-                                        stroke="#fbbf24"
-                                        strokeWidth="2"
-                                        strokeDasharray="4,3"
-                                    />
-                                    <rect
-                                        x={(toSvgX(walls[0].p1.x) + toSvgX(walls[0].p2.x)) / 2 - 50}
-                                        y={(toSvgY(walls[0].p1.y) + toSvgY(walls[0].p2.y)) / 2 - 24}
-                                        width="100"
-                                        height="16"
-                                        rx="3"
-                                        fill="#fbbf24"
-                                    />
-                                    <text
-                                        x={(toSvgX(walls[0].p1.x) + toSvgX(walls[0].p2.x)) / 2}
-                                        y={(toSvgY(walls[0].p1.y) + toSvgY(walls[0].p2.y)) / 2 - 13}
-                                        textAnchor="middle"
-                                        fill="#78350f"
-                                        fontSize="9"
-                                        fontWeight="bold"
-                                    >
-                                        Side A ({Math.round(governingCritTemp)}°C)
-                                    </text>
-                                </g>
-                            )}
+
 
                             {/* Openings (drawn cyan on top of walls with interactive hover) */}
                             {openings.map((op) => {
@@ -477,7 +440,7 @@ export default function CompartmentMiniMap({
                                 <span>🎯</span>
                                 <span>
                                     {walls[hoveredWall].label}: Length {walls[hoveredWall].length}m · Material: {wallMaterials[hoveredWall]} (b = {getBForMaterial(wallMaterials[hoveredWall], hoveredWall)})
-                                    {hoveredWall === 0 && selectedMacsRun ? ` · MACS Side A (${Math.round(governingCritTemp)}°C)` : ''}
+
                                 </span>
                             </span>
                         ) : (
@@ -613,11 +576,7 @@ export default function CompartmentMiniMap({
                                             <div>
                                                 <div className="font-bold text-gray-800 flex items-center gap-1.5 text-[11px]">
                                                     <span>{w.name} ({w.length}m)</span>
-                                                    {idx === 0 && selectedMacsRun && (
-                                                        <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-1.5 py-0.2 rounded">
-                                                            Side A ({Math.round(governingCritTemp)}°C)
-                                                        </span>
-                                                    )}
+
                                                 </div>
                                                 <span className="text-[10px] text-gray-400 block">
                                                     {linkedOpening ? `${linkedOpening.label}: ${linkedOpening.width}m openable` : 'Solid boundary'} · {(w.length * compartmentHeight).toFixed(1)} m²
