@@ -639,7 +639,7 @@ export default function TimeEqWorkspace({
             )}
 
             {/* In-Place Parameters Form */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+            <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm text-gray-800">
                 <div className="flex items-center justify-between mb-3 border-b border-gray-100 pb-2">
                     <h3 className="text-sm font-bold text-gray-800">In-Place Parameters Editor</h3>
                     {selectedMacsRun && (
@@ -717,26 +717,28 @@ export default function TimeEqWorkspace({
                     <div className="space-y-3">
                         <div>
                             <label className="font-semibold text-gray-700 block mb-1">Member Protection Mode</label>
-                            <div className="flex gap-2">
-                                <label className="flex items-center gap-1.5 cursor-pointer">
+                            <div className="flex gap-3 text-gray-700">
+                                <label className="flex items-center gap-1.5 cursor-pointer text-gray-700 hover:text-gray-900">
                                     <input
                                         type="radio"
                                         name="memberProtection"
                                         value="unprotected"
                                         checked={inputs.memberProtection === 'unprotected'}
                                         onChange={() => updateField('memberProtection', 'unprotected')}
+                                        className="text-blue-600 focus:ring-blue-500"
                                     />
-                                    <span>Unprotected (MACS)</span>
+                                    <span className="text-gray-700 font-medium">Unprotected (MACS)</span>
                                 </label>
-                                <label className="flex items-center gap-1.5 cursor-pointer">
+                                <label className="flex items-center gap-1.5 cursor-pointer text-gray-700 hover:text-gray-900">
                                     <input
                                         type="radio"
                                         name="memberProtection"
                                         value="protected"
                                         checked={inputs.memberProtection !== 'unprotected'}
                                         onChange={() => updateField('memberProtection', 'protected')}
+                                        className="text-blue-600 focus:ring-blue-500"
                                     />
-                                    <span>Protected</span>
+                                    <span className="text-gray-700 font-medium">Protected</span>
                                 </label>
                             </div>
                         </div>

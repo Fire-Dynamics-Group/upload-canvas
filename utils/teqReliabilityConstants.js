@@ -37,7 +37,7 @@ export const GROWTH_RATES = [
 
 // Engine defaults (mirror teq_reliability.SteelParams), surfaced + overridable.
 export const RELIABILITY_DEFAULTS = {
-  nSim: 2000,
+  nSim: 10000,
   combustionFactor: 0.8,
   sprinklerFactor: 0.65,
   sectionFactor: 135,
