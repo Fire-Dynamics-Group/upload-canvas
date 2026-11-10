@@ -65,9 +65,12 @@ export function resolveTimeEqInputs(saved, { wallCount = 0, openingCount = 0, wa
 }
 
 // Fields the handoff does not set. resolveTimeEqInputs fills calculator
-// defaults (Office, REI 90, protected, 10,000 sims). Those are not this
-// project's values until someone stores them.
-const UNSET_PROJECT_FIELDS = ['mcOccupancy', 'use', 'fireResistancePeriod', 'memberProtection', 'nSim', 'exposure']
+// defaults (Office, REI 90, protected, 10,000 sims, 500°C, Ap/V 135).
+// Those are not this project's values until someone stores them.
+const UNSET_PROJECT_FIELDS = [
+    'mcOccupancy', 'use', 'fireResistancePeriod', 'memberProtection', 'nSim', 'exposure',
+    'criticalTemp', 'sectionFactor',
+]
 
 export function presentTimeEqInputs(saved, geometry) {
     const resolved = resolveTimeEqInputs(saved, geometry)

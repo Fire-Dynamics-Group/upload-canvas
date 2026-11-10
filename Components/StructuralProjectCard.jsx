@@ -44,8 +44,8 @@ export function getStructuralCardMetrics(project) {
     const section = derivedSection
     const criticalTemp = macsBatch?.critical_temp ?? timeEqInputs?.criticalTemp ?? null
     const sectionFactor = macsBatch?.section_factor ?? timeEqInputs?.sectionFactor ?? null
-    const fireResistancePeriod = timeEqInputs?.fireResistancePeriod || 90
-    const occupancy = timeEqInputs?.use || timeEqInputs?.mcOccupancy || 'Office'
+    const fireResistancePeriod = timeEqInputs?.fireResistancePeriod || null
+    const occupancy = timeEqInputs?.use || timeEqInputs?.mcOccupancy || null
     const calcType = timeEqInputs?.calcType || 'deterministic'
     const teqResult = timeEqResult?.time_equiv ?? timeEqResult?.teq ?? null
 
@@ -264,13 +264,13 @@ export default function StructuralProjectCard({
                         <div>
                             <span className="text-[10px] uppercase font-bold text-slate-500 block">Target Fire Res.</span>
                             <span className="font-semibold text-slate-200 block">
-                                REI {metrics.fireResistancePeriod}m
+                                {metrics.fireResistancePeriod ? `REI ${metrics.fireResistancePeriod}m` : '—'}
                             </span>
                         </div>
                         <div>
                             <span className="text-[10px] uppercase font-bold text-slate-500 block">Occupancy</span>
                             <span className="font-semibold text-slate-200 truncate block">
-                                {metrics.occupancy}
+                                {metrics.occupancy || '—'}
                             </span>
                         </div>
                     </div>

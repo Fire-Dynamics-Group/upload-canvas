@@ -79,17 +79,23 @@ export default function TimeEqWorkspace({
     // Sync from selected MACS run
     const handleSyncFromMacs = () => {
         if (!selectedMacsRun) return
-        const criticalTemp = selectedMacsRun.critical_temp !== undefined
+        const rawTemp = selectedMacsRun.critical_temp !== undefined
             ? selectedMacsRun.critical_temp
-            : selectedMacsRun.outputs?.side_b_critical_temp || 550
-        const sectionFactor = selectedMacsRun.section_factor || 140
-        const section = selectedMacsRun.section || selectedMacsRun.inputs?.u_sec_size || 'UB 457x191x82'
-        const exposure = selectedMacsRun.exposure || '3-sided'
+            : selectedMacsRun.outputs?.side_b_critical_temp
+        const criticalTemp = rawTemp === undefined || rawTemp === null || rawTemp === ''
+            ? ''
+            : Math.round(Number(rawTemp))
+        const rawFactor = selectedMacsRun.section_factor
+        const sectionFactor = rawFactor === undefined || rawFactor === null || rawFactor === ''
+            ? ''
+            : Math.round(Number(rawFactor))
+        const section = selectedMacsRun.section || selectedMacsRun.inputs?.u_sec_size || ''
+        const exposure = selectedMacsRun.exposure || ''
 
         setInputs((prev) => ({
             ...prev,
-            criticalTemp: Math.round(criticalTemp),
-            sectionFactor: Math.round(sectionFactor),
+            criticalTemp,
+            sectionFactor,
             section,
             exposure,
             memberProtection: 'unprotected',
@@ -439,7 +445,7 @@ export default function TimeEqWorkspace({
                             </span>
                             <span className="text-2xl font-black text-blue-700 tabular-nums">
                                 {isUnprotected
-                                    ? `${result.criticalTemp || inputs.criticalTemp || 550} °C`
+                                    ? `${result.criticalTemp || inputs.criticalTemp ? `${result.criticalTemp || inputs.criticalTemp} °C` : '—'}`
                                     : (result.fractile_equiv_time !== undefined
                                         ? `${result.fractile_equiv_time.toFixed(1)} min`
                                         : result.mean_equiv_time !== undefined
@@ -522,7 +528,7 @@ export default function TimeEqWorkspace({
                                                 Steel Temperature vs Fire Exposure Time
                                             </span>
                                             <span className="text-[11px] text-gray-500">
-                                                Heating curves against critical temperature limit ({result?.criticalTemp || inputs.criticalTemp || 550}°C)
+                                                Heating curves against critical temperature limit ({result?.criticalTemp || inputs.criticalTemp ? `${result?.criticalTemp || inputs.criticalTemp}°C` : '—'})
                                             </span>
                                         </div>
                                         <button
@@ -637,7 +643,9 @@ export default function TimeEqWorkspace({
                             onClick={handleSyncFromMacs}
                             className="text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1 rounded transition-colors"
                         >
-                            Sync Critical Temp ({Math.round(selectedMacsRun.critical_temp)}°C) from selected run
+                            {selectedMacsRun.critical_temp === 0 || selectedMacsRun.critical_temp
+                                ? `Sync Critical Temp (${Math.round(selectedMacsRun.critical_temp)}°C) from selected run`
+                                : 'Sync Critical Temp from selected run'}
                         </button>
                     )}
                 </div>
@@ -752,7 +760,7 @@ export default function TimeEqWorkspace({
                                 <label className="font-semibold text-gray-700 block mb-1">Critical Temp (°C)</label>
                                 <input
                                     type="number"
-                                    value={inputs.criticalTemp || 550}
+                                    value={inputs.criticalTemp === 0 || inputs.criticalTemp ? inputs.criticalTemp : ''}
                                     onChange={(e) => updateField('criticalTemp', Number(e.target.value))}
                                     className="w-full border border-gray-300 rounded px-2.5 py-1.5 bg-white text-gray-800 font-bold text-blue-900"
                                 />
@@ -761,7 +769,7 @@ export default function TimeEqWorkspace({
                                 <label className="font-semibold text-gray-700 block mb-1">Ap/V (m⁻¹)</label>
                                 <input
                                     type="number"
-                                    value={inputs.sectionFactor || 140}
+                                    value={inputs.sectionFactor === 0 || inputs.sectionFactor ? inputs.sectionFactor : ''}
                                     onChange={(e) => updateField('sectionFactor', Number(e.target.value))}
                                     className="w-full border border-gray-300 rounded px-2.5 py-1.5 bg-white text-gray-800"
                                 />
