@@ -12,38 +12,40 @@ const server_urls = {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || server_urls.localhost
 
+async function readApiError(resp, fallback) {
+    let errData = null
+    try {
+        errData = await resp.json()
+    } catch (_) {}
+    const detail = errData?.detail
+    const message = typeof detail === 'string' ? detail : detail?.message || fallback
+    const error = new Error(message)
+    error.status = resp.status
+    if (detail && typeof detail === 'object' && detail.claimed_by_project_id) {
+        error.claimedByProjectId = detail.claimed_by_project_id
+    }
+    return error
+}
+
 // --- Project persistence API ---
 
 // `mode` is the canvas mode that owns the project (fdsGen / timeEq). Each
 // DB-backed mode has its own dashboard; see store/persistenceModes.js.
-export const createProject = async (name = "Untitled Project", createdBy = null, mode = "fdsGen", handoffId = null) => {
-    const payload = { name, mode, settings: {}, created_by: createdBy }
+export const createProject = async (name = "Untitled Project", createdBy = null, mode = "fdsGen", handoffId = null, settings = {}) => {
+    const payload = { name, mode, settings: settings || {}, created_by: createdBy }
     if (handoffId) payload.handoff_id = handoffId
     const resp = await authedFetch(`${API_BASE}/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
     })
-    if (!resp.ok) throw new Error(`Failed to create project: ${resp.status}`)
+    if (!resp.ok) throw await readApiError(resp, `Failed to create project: ${resp.status}`)
     return resp.json()
 }
 
 export const getHandoff = async (handoffId) => {
     const resp = await authedFetch(`${API_BASE}/handoffs/${encodeURIComponent(handoffId)}`, { method: 'GET' })
-    if (!resp.ok) {
-        let errData = null
-        try {
-            errData = await resp.json()
-        } catch (_) {}
-        const detail = errData?.detail
-        const message = typeof detail === 'string' ? detail : detail?.message || `Failed to fetch handoff: ${resp.status}`
-        const error = new Error(message)
-        error.status = resp.status
-        if (detail?.claimed_by_project_id) {
-            error.claimedByProjectId = detail.claimed_by_project_id
-        }
-        throw error
-    }
+    if (!resp.ok) throw await readApiError(resp, `Failed to fetch handoff: ${resp.status}`)
     return resp.json()
 }
 

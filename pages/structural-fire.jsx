@@ -14,6 +14,8 @@ import MacsBatchOverview from '../Components/StructuralFire/MacsBatchOverview'
 import TimeEqWorkspace from '../Components/StructuralFire/TimeEqWorkspace'
 import { getStructuralCardMetrics } from '../Components/StructuralProjectCard'
 import useUserName from '../hooks/useUserName'
+import { createHandoffProject } from '../utils/macsHandoff'
+import useStore from '../store/useStore'
 
 export default function StructuralFirePage() {
     const router = useRouter()
@@ -121,10 +123,22 @@ export default function StructuralFirePage() {
                         batch?.name?.trim() ||
                         (run?.section ? `Structural Fire - ${run.section}` : 'Structural Fire Assessment')
                     )
-                    const created = await createProject(defaultName, userName || userId || run?.windows_user || null, 'timeEq', handoffParam)
-                    setProjects((prev) => [created, ...prev])
-                    router.replace(`/structural-fire?project=${created.id}`, undefined, { shallow: true })
-                    selectProjectById(created.id)
+                    const result = await createHandoffProject({
+                        name: defaultName,
+                        createdBy: userName || userId || run?.windows_user || null,
+                        handoffId: handoffParam,
+                        run,
+                        batch,
+                    })
+                    useStore.getState().setCurrentMode('timeEq')
+                    useStore.getState().setTimeEqInputs(result.applied)
+                    useStore.getState().setMacsBatch(result.batch ?? null)
+                    if (result.alreadyClaimed) {
+                        router.replace(`/structural-fire?project=${result.projectId}`, undefined, { shallow: true })
+                        selectProjectById(result.projectId)
+                    } else {
+                        router.replace(`/?project=${result.projectId}`)
+                    }
                 }
             } catch (err) {
                 if (err.status === 409 && err.claimedByProjectId) {

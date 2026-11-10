@@ -2,13 +2,12 @@ import { useState, useEffect } from 'react'
 import {
     OCCUPANCY_DISTRIBUTIONS,
     GROWTH_RATES,
-    RELIABILITY_DEFAULTS,
     reliabilityRequestOptionsFromInputs,
     hasCriticalTemp,
     UNPROTECTED_CRITICAL_TEMP_REQUIRED,
     wallLengths,
 } from '../../utils/teqReliabilityConstants'
-import { TIME_EQ_INPUT_DEFAULTS, resolveTimeEqInputs } from '../../store/timeEqPersistence'
+import { presentTimeEqInputs } from '../../store/timeEqPersistence'
 import {
     sendTimeEqReliabilityChartsData,
     saveProjectToServer,
@@ -30,7 +29,7 @@ export default function TimeEqWorkspace({
     // Seed inputs from project settings or defaults
     const [inputs, setInputs] = useState(() => {
         const saved = project?.settings?.timeEqInputs || {}
-        return resolveTimeEqInputs(saved)
+        return presentTimeEqInputs(saved)
     })
 
     // Seed result and charts from project settings
@@ -62,7 +61,7 @@ export default function TimeEqWorkspace({
     // Keep inputs and result in sync if project changes
     useEffect(() => {
         if (project?.settings?.timeEqInputs) {
-            setInputs(resolveTimeEqInputs(project.settings.timeEqInputs))
+            setInputs(presentTimeEqInputs(project.settings.timeEqInputs))
         }
         if (project?.settings?.timeEqResult) {
             setResult(project.settings.timeEqResult)
@@ -647,12 +646,14 @@ export default function TimeEqWorkspace({
                     {/* Column 1: Occupancy & Resistance */}
                     <div className="space-y-3">
                         <div>
-                            <label className="font-semibold text-gray-700 block mb-1">Occupancy / Fuel Load</label>
+                            <label htmlFor="teq-occupancy" className="font-semibold text-gray-700 block mb-1">Occupancy / Fuel Load</label>
                             <select
-                                value={inputs.mcOccupancy || 'Office'}
+                                id="teq-occupancy"
+                                value={inputs.mcOccupancy || ''}
                                 onChange={(e) => updateField('mcOccupancy', e.target.value)}
                                 className="w-full border border-gray-300 rounded px-2.5 py-1.5 bg-white text-gray-800 focus:ring-1 focus:ring-blue-500"
                             >
+                                <option value="">Unknown</option>
                                 {OCCUPANCY_DISTRIBUTIONS.map((occ) => (
                                     <option key={occ.occupancy} value={occ.occupancy}>
                                         {occ.occupancy} ({occ.mean} MJ/m²)
@@ -662,12 +663,14 @@ export default function TimeEqWorkspace({
                         </div>
 
                         <div>
-                            <label className="font-semibold text-gray-700 block mb-1">Fire Resistance Period (R)</label>
+                            <label htmlFor="teq-fire-resistance" className="font-semibold text-gray-700 block mb-1">Fire Resistance Period (R)</label>
                             <select
-                                value={inputs.fireResistancePeriod || 60}
-                                onChange={(e) => updateField('fireResistancePeriod', Number(e.target.value))}
+                                id="teq-fire-resistance"
+                                value={inputs.fireResistancePeriod || ''}
+                                onChange={(e) => updateField('fireResistancePeriod', e.target.value === '' ? '' : Number(e.target.value))}
                                 className="w-full border border-gray-300 rounded px-2.5 py-1.5 bg-white text-gray-800 focus:ring-1 focus:ring-blue-500"
                             >
+                                <option value="">Unknown</option>
                                 <option value={30}>30 minutes</option>
                                 <option value={60}>60 minutes</option>
                                 <option value={90}>90 minutes</option>
@@ -724,7 +727,7 @@ export default function TimeEqWorkspace({
                                         type="radio"
                                         name="memberProtection"
                                         value="protected"
-                                        checked={inputs.memberProtection !== 'unprotected'}
+                                        checked={inputs.memberProtection === 'protected'}
                                         onChange={() => updateField('memberProtection', 'protected')}
                                         className="text-blue-600 focus:ring-blue-500"
                                     />
@@ -766,12 +769,14 @@ export default function TimeEqWorkspace({
                         </div>
 
                         <div>
-                            <label className="font-semibold text-gray-700 block mb-1">Exposure</label>
+                            <label htmlFor="teq-exposure" className="font-semibold text-gray-700 block mb-1">Exposure</label>
                             <select
-                                value={inputs.exposure || '3-sided'}
+                                id="teq-exposure"
+                                value={inputs.exposure || ''}
                                 onChange={(e) => updateField('exposure', e.target.value)}
                                 className="w-full border border-gray-300 rounded px-2.5 py-1.5 bg-white text-gray-800"
                             >
+                                <option value="">Unknown</option>
                                 <option value="3-sided">3-sided (Composite slab above)</option>
                                 <option value="4-sided">4-sided (Isolated)</option>
                             </select>
@@ -782,13 +787,14 @@ export default function TimeEqWorkspace({
                     <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-2">
                             <div>
-                                <label className="font-semibold text-gray-700 block mb-1">Simulations (N)</label>
+                                <label htmlFor="teq-nsim" className="font-semibold text-gray-700 block mb-1">Simulations (N)</label>
                                 <input
+                                    id="teq-nsim"
                                     type="number"
                                     step="500"
                                     min="500"
                                     max="50000"
-                                    value={inputs.nSim || RELIABILITY_DEFAULTS.nSim}
+                                    value={inputs.nSim === 0 || inputs.nSim ? inputs.nSim : ''}
                                     onChange={(e) => updateField('nSim', Number(e.target.value))}
                                     className="w-full border border-gray-300 rounded px-2.5 py-1.5 bg-white text-gray-800"
                                 />
