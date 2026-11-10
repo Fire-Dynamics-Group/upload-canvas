@@ -21,7 +21,7 @@ import { computeFramingScroll, elementPixelBox } from '../utils/viewportFraming'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import MacsBanner from '../Components/MacsBanner'
-import { applyMacsRunToInputs } from '../utils/macsHandoff'
+import { createHandoffProject, settingsForFloorlessOpen, readHandoffPrefill, formatMacsPrefill } from '../utils/macsHandoff'
 import {
   createProject,
   getHandoff,
@@ -40,11 +40,16 @@ import { describeSaveStatus } from '../utils/saveStatus'
 // Check if we're in the browser environment
 const isBrowser = typeof window !== "undefined";
 
-// Only import pdfjs if we're in the browser
+// Only import pdfjs if we're in the browser. A failed worker bundle must not
+// take the whole page down (tests and odd bundlers surface that as a throw).
 let pdfjs;
 if (isBrowser) {
-  pdfjs = require('pdfjs-dist/webpack');
-  pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.js';
+  try {
+    pdfjs = require('pdfjs-dist/webpack');
+    pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.js';
+  } catch (err) {
+    pdfjs = null
+  }
 }
 
 // Error thrown by loadPdfDocument with a user-facing `message` already chosen.
@@ -187,6 +192,8 @@ export default function Home() {
   const setSaveStatus = useStore((state) => state.setSaveStatus)
   const buildSavePayload = useStore((state) => state.buildSavePayload)
   const hydrateFromServer = useStore((state) => state.hydrateFromServer)
+  const timeEqInputs = useStore((state) => state.timeEqInputs)
+  const macsPrefill = formatMacsPrefill(timeEqInputs)
 
 
   // --- Consume MACs handoff from query (?handoff=<id>) ---
@@ -210,8 +217,19 @@ export default function Home() {
             batch?.name?.trim() ||
             (run?.section ? `Structural Fire - ${run.section}` : 'Structural Fire Assessment')
           )
-          const created = await createProject(defaultName, userName || userId || run?.windows_user || null, 'timeEq', handoffParam)
-          router.replace(`/structural-fire?project=${created.id}`)
+          const result = await createHandoffProject({
+            name: defaultName,
+            createdBy: userName || userId || run?.windows_user || null,
+            handoffId: handoffParam,
+            run,
+            batch,
+          })
+          useStore.getState().setTimeEqInputs(result.applied)
+          useStore.getState().setMacsBatch(result.batch ?? null)
+          const dest = result.alreadyClaimed
+            ? `/structural-fire?project=${result.projectId}`
+            : `/?project=${result.projectId}`
+          router.replace(dest)
           return
         }
       } catch (err) {
@@ -448,6 +466,21 @@ export default function Home() {
       let currentProjectId = useStore.getState().projectId
       let currentFloorId = useStore.getState().floorId
 
+      // A handoff project exists before the plan does. Create the floor from
+      // the store so the prefilled member inputs are what gets saved.
+      if (currentProjectId && !currentFloorId) {
+        try {
+          const saved = await saveProjectToServer(currentProjectId, useStore.getState().buildSavePayload())
+          currentFloorId = saved?.floors?.[0]?.id || null
+          if (currentFloorId) setFloorId(currentFloorId)
+          lastSavedRef.current = JSON.stringify(useStore.getState().buildSavePayload())
+        } catch (err) {
+          console.error('Failed to create floor for PDF upload:', err)
+          setSaveStatus('create-failed')
+          return
+        }
+      }
+
       // If no project yet, create one + initial floor via bulk save
       if (!currentProjectId) {
         try {
@@ -584,14 +617,24 @@ export default function Home() {
 
       if (!floor) {
         // Project exists (e.g. from MACS handoff) but has no floor or drawing yet.
-        // Wipe stale canvas state from previous project and show upload screen.
-        useStore.getState().setProjectId(projectId)
-        useStore.getState().setFloorId(null)
-        useStore.getState().setProjectName(project.name)
-        useStore.getState().setElements([])
-        useStore.getState().setFloorDimensions(null)
-        useStore.getState().setPixelsPerMesh(1)
-        useStore.getState().setOriginPixels(null)
+        // Hydrate this project's settings in the same update that attaches it,
+        // so autosave cannot post another project's inputs or an empty store.
+        const prefill = readHandoffPrefill(project.id)
+        const hydrated = settingsForFloorlessOpen(project, prefill)
+        const current = useStore.getState()
+        useStore.setState({
+          projectId,
+          floorId: null,
+          projectName: project.name,
+          timeEqInputs: hydrated.timeEqInputs,
+          timeEqResult: hydrated.timeEqResult,
+          macsBatch: hydrated.macsBatch,
+          elements: [],
+          elementsByMode: { ...(current.elementsByMode || {}), [current.currentMode]: [] },
+          pixelsPerMesh: 1,
+          originPixels: null,
+        })
+        lastSavedRef.current = JSON.stringify(useStore.getState().buildSavePayload())
         setSelectedFile(null)
         setIsContinuing(true)
         setShowUploadScreen(true)
@@ -732,6 +775,9 @@ export default function Home() {
         ) :
             <>
       <div>
+        {macsPrefill && (
+          <p className="text-sm text-slate-700 mb-2">MACs member: {macsPrefill}. Upload the plan PDF.</p>
+        )}
         <label>
           <input
             id="image"

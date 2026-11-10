@@ -1,6 +1,8 @@
 import StructuralFirePage from '../pages/structural-fire'
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+
+const { routerReplace } = vi.hoisted(() => ({ routerReplace: vi.fn() }))
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import MacsCharts from '../Components/StructuralFire/MacsCharts'
 import MacsRunDetail from '../Components/StructuralFire/MacsRunDetail'
@@ -16,6 +18,7 @@ vi.mock('next/router', () => ({
     useRouter: () => ({
         query: {},
         push: vi.fn(),
+        replace: routerReplace,
     }),
 }))
 vi.mock('file-saver', () => ({ saveAs: vi.fn() }))
@@ -578,12 +581,16 @@ describe('Structural Fire Engineering: Studio Components & APIs', () => {
 
             const originalSearch = window.location.search
             window.history.pushState({}, '', '/structural-fire?handoff=handoff-uuid-1')
+            routerReplace.mockClear()
 
             try {
                 render(<StructuralFirePage />)
                 await waitFor(() => {
-                    expect(screen.getByText('Test Handoff Project')).toBeInTheDocument()
+                    expect(routerReplace).toHaveBeenCalled()
                 })
+                expect(String(routerReplace.mock.calls.at(-1)[0])).toBe('/?project=created-proj-1')
+                const posts = globalThis.fetch.mock.calls.filter((call) => call[1]?.method === 'POST' && /\/projects$/.test(String(call[0])))
+                expect(posts).toHaveLength(1)
             } finally {
                 window.history.pushState({}, '', originalSearch || '/')
             }

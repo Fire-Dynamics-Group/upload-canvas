@@ -64,6 +64,29 @@ export function resolveTimeEqInputs(saved, { wallCount = 0, openingCount = 0, wa
     return resolved
 }
 
+// Fields the handoff does not set. resolveTimeEqInputs fills calculator
+// defaults (Office, REI 90, protected, 10,000 sims). Those are not this
+// project's values until someone stores them.
+const UNSET_PROJECT_FIELDS = ['mcOccupancy', 'use', 'fireResistancePeriod', 'memberProtection', 'nSim', 'exposure']
+
+export function presentTimeEqInputs(saved, geometry) {
+    const resolved = resolveTimeEqInputs(saved, geometry)
+    const source = saved || {}
+    for (const key of UNSET_PROJECT_FIELDS) {
+        if (key === 'mcOccupancy' || key === 'use') {
+            if (source.mcOccupancy === undefined && source.use === undefined) {
+                resolved.mcOccupancy = ''
+                resolved.use = ''
+            }
+            continue
+        }
+        if (source[key] === undefined || source[key] === null || source[key] === '') {
+            resolved[key] = ''
+        }
+    }
+    return resolved
+}
+
 const toElementIn = (el, i) => ({
     element_index: el.id ?? i,
     type: el.type,
