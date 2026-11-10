@@ -14,8 +14,10 @@ import MacsBatchOverview from '../Components/StructuralFire/MacsBatchOverview'
 import TimeEqWorkspace from '../Components/StructuralFire/TimeEqWorkspace'
 import { getStructuralCardMetrics } from '../Components/StructuralProjectCard'
 import useUserName from '../hooks/useUserName'
-import { createHandoffProject } from '../utils/macsHandoff'
+import MacsBanner from '../Components/MacsBanner'
+import MacsRunHistory from '../Components/MacsRunHistory'
 import useStore from '../store/useStore'
+import { createHandoffProject, sortMacsRunsNewestFirst } from '../utils/macsHandoff'
 
 export default function StructuralFirePage() {
     const router = useRouter()
@@ -85,9 +87,14 @@ export default function StructuralFirePage() {
                 setSelectedFloor(null)
             }
 
-            // Load governing run if present for critical temp handoff
-            const projRuns = await getMacsRuns(pid).catch(() => [])
-            setSelectedRun(projRuns && projRuns.length > 0 ? projRuns[0] : null)
+            // Full history, newest first. The newest run is shown as the
+            // governing record. It is not copied into the inputs until confirm.
+            const projRuns = sortMacsRunsNewestFirst(await getMacsRuns(pid).catch(() => []))
+            setSelectedRun(projRuns.length > 0 ? projRuns[0] : null)
+            useStore.getState().setCurrentMode('timeEq')
+            useStore.getState().setProjectId(pid)
+            useStore.getState().setMacsRuns(projRuns)
+            useStore.getState().setTimeEqInputs(p.settings?.timeEqInputs || {})
         } catch (err) {
             setError(`Failed to load project: ${err.message}`)
         } finally {
@@ -318,6 +325,8 @@ export default function StructuralFirePage() {
                 </div>
             </header>
 
+            <MacsBanner />
+
             {/* Error Banner */}
             {error && (
                 <div className="bg-red-500 text-white text-xs px-4 py-2 font-medium flex items-center justify-between">
@@ -438,6 +447,7 @@ export default function StructuralFirePage() {
                         )}
                     </>
                 )}
+                <MacsRunHistory />
             </main>
         </div>
     )

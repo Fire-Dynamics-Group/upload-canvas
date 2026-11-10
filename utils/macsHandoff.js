@@ -142,9 +142,18 @@ export function isRunMatchingInputs(run, inputs = {}) {
     if (!run || !inputs) return false
     const ctMatches = Number(run.critical_temp) === Number(inputs.criticalTemp)
     const sfMatches = Number(run.section_factor) === Number(inputs.sectionFactor)
-    const secMatches = !run.section || !inputs.section || run.section === inputs.section
-    const expMatches = !run.exposure || !inputs.exposure || run.exposure === inputs.exposure
+    const secMatches = Boolean(run.section) && Boolean(inputs.section) && run.section === inputs.section
+    const expMatches = Boolean(run.exposure) && Boolean(inputs.exposure) && run.exposure === inputs.exposure
     return ctMatches && sfMatches && secMatches && expMatches
+}
+
+export function sortMacsRunsNewestFirst(runs) {
+    if (!Array.isArray(runs)) return []
+    const time = (run) => {
+        const parsed = Date.parse(run?.received_at || run?.client_timestamp || '')
+        return Number.isFinite(parsed) ? parsed : 0
+    }
+    return [...runs].sort((a, b) => time(b) - time(a))
 }
 
 export function hasNewerMacsRun(runs, inputs = {}) {
