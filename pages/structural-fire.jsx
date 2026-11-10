@@ -12,7 +12,7 @@ import {
 } from '../Components/ApiCalls'
 import MacsBatchOverview from '../Components/StructuralFire/MacsBatchOverview'
 import TimeEqWorkspace from '../Components/StructuralFire/TimeEqWorkspace'
-import { getStructuralCardMetrics } from '../Components/StructuralProjectCard'
+import { getStructuralCardMetrics, projectsWithMacsRuns } from '../Components/StructuralProjectCard'
 import useUserName from '../hooks/useUserName'
 import MacsBanner from '../Components/MacsBanner'
 import MacsRunHistory from '../Components/MacsRunHistory'
@@ -57,8 +57,9 @@ export default function StructuralFirePage() {
         async function fetchInitialData() {
             try {
                 const projList = await listProjects('timeEq').catch(() => [])
+                const withRuns = await projectsWithMacsRuns(projList, getMacsRuns)
                 if (!active) return
-                setProjects(projList)
+                setProjects(withRuns)
             } catch (err) {
                 if (active) setError(err.message || 'Failed to load projects')
             }

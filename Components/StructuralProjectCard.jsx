@@ -12,6 +12,47 @@ export function formatAuthor(author) {
     return author
 }
 
+function presentId(value) {
+    if (value === null || value === undefined) return false
+    return String(value).trim() !== ''
+}
+
+// Rows already on the project. Critical temp, Ap/V, and section name are not rows.
+export function macsRunRowsOn(project) {
+    const settings = project?.settings || {}
+    const sources = [project?.macs_runs, project?.macsRuns, settings.macs_runs, settings.macsRuns]
+    for (const source of sources) {
+        if (!Array.isArray(source)) continue
+        return source.filter((row) => row && typeof row === 'object' && presentId(row.id ?? row.run_id))
+    }
+    return []
+}
+
+export function projectHasMacsRunRows(project) {
+    return Array.isArray(project?.macs_runs)
+        || Array.isArray(project?.macsRuns)
+        || Array.isArray(project?.settings?.macs_runs)
+        || Array.isArray(project?.settings?.macsRuns)
+}
+
+// List payloads omit macs-runs. Attach the rows for this project when the
+// caller can load them. A failed or non-array response leaves the project
+// unchanged so a missing fetch cannot invent a link.
+export async function projectsWithMacsRuns(projects, fetchRuns) {
+    if (!Array.isArray(projects)) return []
+    if (typeof fetchRuns !== 'function') return projects
+    return Promise.all(projects.map(async (project) => {
+        if (projectHasMacsRunRows(project)) return project
+        try {
+            const runs = await fetchRuns(project?.id)
+            if (!Array.isArray(runs)) return project
+            return { ...project, macs_runs: runs }
+        } catch {
+            return project
+        }
+    }))
+}
+
 export function getStructuralCardMetrics(project) {
     const settings = project?.settings || {}
     const macsBatch = settings.macsBatch || null
@@ -67,7 +108,7 @@ export function getStructuralCardMetrics(project) {
         statusType = 'batch-linked'
         statusLabel = 'MACS Batch Linked'
         statusTone = 'emerald'
-    } else if (section || criticalTemp || timeEqInputs?.macsRunId) {
+    } else if (presentId(timeEqInputs?.macsRunId) || macsRunRowsOn(project).length > 0) {
         statusType = 'run-linked'
         statusLabel = 'MACS Run Linked'
         statusTone = 'blue'

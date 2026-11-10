@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import ProjectDashboard from '../Components/ProjectDashboard'
-import { listProjects } from '../Components/ApiCalls'
+import { listProjects, getMacsRuns } from '../Components/ApiCalls'
 import useStore from '../store/useStore'
 
 // Each DB-backed mode has its own project list. The dashboard asks the API
@@ -13,6 +13,7 @@ vi.mock('../Components/ApiCalls', () => ({
     listProjects: vi.fn(),
     renameProject: vi.fn(),
     deleteProject: vi.fn(),
+    getMacsRuns: vi.fn(async () => []),
 }))
 
 const fdsProject = { id: 'p1', name: 'Crown Wharf', mode: 'fdsGen', created_by: 'Ian', floors: [], settings: {} }
@@ -102,5 +103,39 @@ describe('ProjectDashboard - per-mode project lists', () => {
         // Clicking secondary Plan button opens 2D canvas
         fireEvent.click(screen.getByTitle('Open compartment drawing on canvas'))
         expect(onSelect).toHaveBeenCalledWith('p-rich')
+    })
+
+    it('shows Awaiting MACS Data for calculator defaults and MACS Run Linked only after a macs-runs row loads', async () => {
+        const defaults = {
+            id: 'p-defaults',
+            name: 'California Drive',
+            mode: 'timeEq',
+            created_by: 'Ian',
+            created_at: '2026-11-09T12:00:00Z',
+            floors: [],
+            settings: { timeEqInputs: { criticalTemp: 500, sectionFactor: 135 } },
+        }
+        const fetched = {
+            id: 'p-row',
+            name: 'Fetched Run',
+            mode: 'timeEq',
+            created_by: 'Ian',
+            created_at: '2026-11-08T12:00:00Z',
+            floors: [],
+            settings: { timeEqInputs: {} },
+        }
+        listProjects.mockResolvedValue([defaults, fetched])
+        getMacsRuns.mockImplementation(async (id) => (
+            id === 'p-row' ? [{ id: 'row-1', run_id: 'row-1' }] : []
+        ))
+        useStore.setState({ currentMode: 'timeEq' })
+
+        render(<ProjectDashboard onSelectProject={noop} onNewProject={noop} userName="Ian" />)
+
+        await screen.findByText('California Drive')
+        expect(screen.getByText('Fetched Run')).toBeInTheDocument()
+        expect(screen.getAllByText('Awaiting MACS Data')).toHaveLength(1)
+        expect(screen.getAllByText('MACS Run Linked')).toHaveLength(1)
+        expect(screen.queryByText('MACS Batch Linked')).not.toBeInTheDocument()
     })
 })

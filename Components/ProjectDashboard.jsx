@@ -1,12 +1,12 @@
 import { useState, useEffect, useContext } from 'react'
 import { RouterContext } from 'next/dist/shared/lib/router-context'
-import { listProjects, renameProject, deleteProject } from './ApiCalls'
+import { listProjects, renameProject, deleteProject, getMacsRuns } from './ApiCalls'
 import { deleteConfirmationMatches } from '../utils/projectActions'
 import FDRobot from './FDRobot'
 import useStore from '../store/useStore'
 import Link from 'next/link'
 import { isDbBacked } from '../store/persistenceModes'
-import StructuralProjectCard from './StructuralProjectCard'
+import StructuralProjectCard, { projectsWithMacsRuns } from './StructuralProjectCard'
 
 function timeAgo(dateStr) {
   if (!dateStr) return ''
@@ -68,7 +68,10 @@ export default function ProjectDashboard({ onSelectProject, onNewProject, userNa
     setError(null)
     try {
       const data = await listProjects(currentMode)
-      setProjects(data)
+      const listed = currentMode === 'timeEq'
+        ? await projectsWithMacsRuns(data, getMacsRuns)
+        : data
+      setProjects(listed)
     } catch (err) {
       setError(err.message)
     } finally {
