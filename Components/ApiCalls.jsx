@@ -10,7 +10,16 @@ const server_urls = {
     // fastapi-production-e615.up.railway.app
   }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || server_urls.localhost
+// NEXT_PUBLIC_API_URL wins. A production build with that unset uses the
+// existing server url. Local dev keeps localhost.
+export function resolveApiBase(env = process.env) {
+    const configured = typeof env.NEXT_PUBLIC_API_URL === 'string' ? env.NEXT_PUBLIC_API_URL.trim() : ''
+    if (configured) return configured
+    if (env.NODE_ENV === 'production') return server_urls.server
+    return server_urls.localhost
+}
+
+const API_BASE = resolveApiBase()
 
 // --- Project persistence API ---
 
