@@ -8,6 +8,7 @@ import {
     wallLengths,
 } from '../../utils/teqReliabilityConstants'
 import { presentTimeEqInputs } from '../../store/timeEqPersistence'
+import useStore from '../../store/useStore'
 import {
     sendTimeEqReliabilityChartsData,
     saveProjectToServer,
@@ -26,9 +27,14 @@ export default function TimeEqWorkspace({
     const projectId = project?.id
     const projectName = project?.name || 'Untitled Project'
 
-    // Seed inputs from project settings or defaults
+    // Seed inputs from project settings or defaults. A confirmed banner
+    // write lives on the store and wins over the last saved settings.
     const [inputs, setInputs] = useState(() => {
         const saved = project?.settings?.timeEqInputs || {}
+        const state = useStore.getState()
+        if (state.projectId === project?.id && state.timeEqInputs && Object.keys(state.timeEqInputs).length > 0) {
+            return presentTimeEqInputs(state.timeEqInputs)
+        }
         return presentTimeEqInputs(saved)
     })
 
@@ -70,6 +76,14 @@ export default function TimeEqWorkspace({
             }
         }
     }, [project?.id])
+
+    // A confirmed "Use these" writes the store. That wins over the saved
+    // settings, including when this tab opens after the confirm.
+    const storeInputs = useStore((state) => (state.projectId === projectId ? state.timeEqInputs : null))
+    useEffect(() => {
+        if (!storeInputs || Object.keys(storeInputs).length === 0) return
+        setInputs(presentTimeEqInputs(storeInputs))
+    }, [storeInputs])
 
     // Update field helper
     const updateField = (field, value) => {

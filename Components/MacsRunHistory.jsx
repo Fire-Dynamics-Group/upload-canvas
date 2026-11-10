@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import useStore from '../store/useStore'
-import { isRunMatchingInputs, applyMacsRunToInputs } from '../utils/macsHandoff'
+import { isRunMatchingInputs, applyMacsRunToInputs, sortMacsRunsNewestFirst } from '../utils/macsHandoff'
 import { claimHandoff, getMacsRuns } from './ApiCalls'
 
 export default function MacsRunHistory() {
@@ -22,13 +22,8 @@ export default function MacsRunHistory() {
         setClaimError(null)
         try {
             await claimHandoff(projectId, handoffInput.trim())
-            const updatedRuns = await getMacsRuns(projectId)
+            const updatedRuns = sortMacsRunsNewestFirst(await getMacsRuns(projectId))
             setMacsRuns(updatedRuns)
-            if (updatedRuns && updatedRuns.length > 0) {
-                // Apply the newly claimed run
-                const nextInputs = applyMacsRunToInputs(updatedRuns[0], timeEqInputs)
-                setTimeEqInputs(nextInputs)
-            }
             setHandoffInput('')
             setMacsNotice({ type: 'success', message: 'Handoff claimed successfully.' })
         } catch (err) {
@@ -38,7 +33,7 @@ export default function MacsRunHistory() {
         }
     }
 
-    const runs = Array.isArray(macsRuns) ? macsRuns : []
+    const runs = sortMacsRunsNewestFirst(macsRuns)
 
     return (
         <div className="mt-4 border-t border-gray-200 pt-4">
