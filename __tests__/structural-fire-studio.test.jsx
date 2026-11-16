@@ -588,6 +588,66 @@ describe('Structural Fire Engineering: Studio Components & APIs', () => {
                 window.history.pushState({}, '', originalSearch || '/')
             }
         })
+
+        it('shows loading bar while handoff is in flight and never flashes empty batch state', async () => {
+            let releaseHandoff
+            const handoffGate = new Promise((resolve) => {
+                releaseHandoff = resolve
+            })
+            const handoffResponse = {
+                handoff_id: 'handoff-uuid-2',
+                run: {
+                    id: 'run-2',
+                    critical_temp: 580,
+                    section_factor: 140,
+                    section: 'UB 457x191x82',
+                    exposure: '3-sided',
+                    outputs: { macs_batch: { batch_id: 'b-2', name: 'Batch 2', run_count: 10000 } },
+                },
+            }
+            const createdProject = {
+                id: 'created-proj-2',
+                name: 'Delayed Handoff Project',
+                mode: 'timeEq',
+                settings: { macsBatch: { batch_id: 'b-2', name: 'Batch 2', run_count: 10000 } },
+                floors: [],
+            }
+
+            globalThis.fetch.mockImplementation(async (url, opts) => {
+                const u = String(url)
+                if (u.includes('/handoffs/')) {
+                    await handoffGate
+                    return { ok: true, status: 200, json: async () => handoffResponse }
+                }
+                if (u.endsWith('/projects') && opts?.method === 'POST') {
+                    return { ok: true, status: 201, json: async () => createdProject }
+                }
+                if (u.includes('/projects/created-proj-2')) {
+                    return { ok: true, status: 200, json: async () => createdProject }
+                }
+                if (u.includes('/projects?mode=timeEq')) {
+                    return { ok: true, status: 200, json: async () => [{ id: 'old-proj', name: 'Old Empty Project', mode: 'timeEq', settings: {} }] }
+                }
+                return { ok: true, status: 200, json: async () => [] }
+            })
+
+            const originalSearch = window.location.search
+            window.history.pushState({}, '', '/structural-fire?handoff=handoff-uuid-2')
+
+            try {
+                render(<StructuralFirePage />)
+                expect(screen.getByRole('progressbar', { name: /Linking MACS\+ simulation batch/i })).toBeInTheDocument()
+                expect(screen.getByText('Linking MACS+ Simulation Batch')).toBeInTheDocument()
+                expect(screen.queryByText('No MACS+ Simulation Batch Linked')).not.toBeInTheDocument()
+
+                releaseHandoff()
+                await waitFor(() => {
+                    expect(screen.getByText('Delayed Handoff Project')).toBeInTheDocument()
+                })
+            } finally {
+                window.history.pushState({}, '', originalSearch || '/')
+            }
+        })
     })
 
     describe('CompartmentMiniMap', () => {
