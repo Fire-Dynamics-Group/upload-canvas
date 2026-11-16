@@ -626,10 +626,16 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
         // exist, and scale isn't on the waterfall — see docs/scale-tool-ux.md #4).
         // Grid-only, matching snapVertexToGrid's click-side behaviour so the
         // cyan crosshair and the landed dot coincide.
-        const computeScaleHoverFromCursor = (raw) => ({
-            guideLine: applyGridFallback({ raw, snapped: raw, guides: [], pixelsPerMesh }),
-            snapGuides: [],
-        })
+        const computeScaleHoverFromCursor = (raw, orthoActive = isCtrlPressed) => {
+            let pt = raw
+            if (orthoActive && scalePoints.length === 1) {
+                pt = snapVertexOrtho(raw, scalePoints[0])
+            }
+            return {
+                guideLine: applyGridFallback({ raw: pt, snapped: pt, guides: [], pixelsPerMesh }),
+                snapGuides: [],
+            }
+        }
 
         const handleMouseMove = (event) => {
             // Calibration is complete after two clicks. Keep the segment fixed
@@ -637,6 +643,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             if (tool === 'scale' && scalePoints.length >= 2) return
             const raw = canvasPoint(event, canvasRef.current)
             setIsCtrlPressed(event.ctrlKey)
+            setIsShiftPressed(event.shiftKey)
             if (tool === 'polyline' && polylineSkipsAlignment(comment)) {
                 setGuideLine(event.shiftKey ? {
                     x: Math.round(raw.x / pixelsPerMesh) * pixelsPerMesh,
@@ -665,7 +672,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                     setGuideLine(guideLine)
                     setSnapGuides(snapGuides)
                 } else if (tool === 'scale' && scalePoints.length === 1) {
-                    const { guideLine, snapGuides } = computeScaleHoverFromCursor(raw)
+                    const { guideLine, snapGuides } = computeScaleHoverFromCursor(raw, event.ctrlKey)
                     setGuideLine(guideLine)
                     setSnapGuides(snapGuides)
                 } else if (shouldNudgeHeldVertex({
@@ -703,7 +710,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 setGuideLine(guideLine)
                 setSnapGuides(snapGuides)
             } else if (tool === 'scale') {
-                const { guideLine, snapGuides } = computeScaleHoverFromCursor(raw)
+                const { guideLine, snapGuides } = computeScaleHoverFromCursor(raw, event.ctrlKey)
                 setGuideLine(guideLine)
                 setSnapGuides(snapGuides)
             } else {
@@ -717,7 +724,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
         return () => {
             window.removeEventListener("mousemove", handleMouseMove)
         }
-    }, [isDrawing, currentPoly, scalePoints.length, tool, currentRect, selectedElement, comment, pixelsPerMesh, elements, isShiftPressed, currentMode, hasScale, zoom])
+    }, [isDrawing, currentPoly, scalePoints, tool, currentRect, selectedElement, comment, pixelsPerMesh, elements, isShiftPressed, isCtrlPressed, currentMode, hasScale, zoom])
 
     function deltaGridlines(pxPerMesh, tool) { // actioned if debug mode and after scale set normally
         setPixelsPerMesh(pxPerMesh)
@@ -1663,11 +1670,19 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
         // selected, since clicks in that state manipulate the selection
         // rather than placing a new element. Per docs/first-click-feedback.md.
         const DRAWING_TOOLS_FOR_MARKER = ['point', 'polyline', 'rect', 'scale']
-        if (DRAWING_TOOLS_FOR_MARKER.includes(tool) && guideLine && !selectedElement) {
+        let markerPoint = guideLine
+        if (guideLine && isCtrlPressed) {
+            if (tool === 'scale' && scalePoints.length === 1) {
+                markerPoint = snapVertexOrtho(guideLine, scalePoints[0])
+            } else if (tool === 'polyline' && currentPoly.length > 0) {
+                markerPoint = snapVertexOrtho(guideLine, currentPoly[currentPoly.length - 1])
+            }
+        }
+        if (DRAWING_TOOLS_FOR_MARKER.includes(tool) && markerPoint && !selectedElement) {
             context.save()
             context.fillStyle = '#ff00ff'
             context.beginPath()
-            context.arc(guideLine.x, guideLine.y, 4, 0, Math.PI * 2)
+            context.arc(markerPoint.x, markerPoint.y, 4, 0, Math.PI * 2)
             context.fill()
             context.restore()
         }
@@ -1675,23 +1690,23 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
         // Scale-tool crosshair: full-canvas horizontal + vertical lines through
         // the cursor + live px distance from the first click. Bluebeam/AutoCAD
         // convention for precise calibration pointing.
-        if (tool === 'scale' && scalePoints.length < 2 && guideLine) {
+        if (tool === 'scale' && scalePoints.length < 2 && markerPoint) {
             context.save()
             context.setLineDash([6, 4])
             context.strokeStyle = 'rgba(0, 150, 200, 0.6)'
             context.lineWidth = 1
             context.beginPath()
-            context.moveTo(guideLine.x, 0)
-            context.lineTo(guideLine.x, canvas.height)
-            context.moveTo(0, guideLine.y)
-            context.lineTo(canvas.width, guideLine.y)
+            context.moveTo(markerPoint.x, 0)
+            context.lineTo(markerPoint.x, canvas.height)
+            context.moveTo(0, markerPoint.y)
+            context.lineTo(canvas.width, markerPoint.y)
             context.stroke()
             context.setLineDash([])
 
             if (scalePoints.length === 1) {
                 const p0 = scalePoints[0]
-                const dx = guideLine.x - p0.x
-                const dy = guideLine.y - p0.y
+                const dx = markerPoint.x - p0.x
+                const dy = markerPoint.y - p0.y
                 const dist = Math.sqrt(dx * dx + dy * dy)
                 const label = `${dist.toFixed(0)} px`
                 context.font = '12px sans-serif'
@@ -1699,8 +1714,8 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 const padX = 6, padY = 4
                 const boxW = metrics.width + padX * 2
                 const boxH = 18
-                const boxX = guideLine.x + 14
-                const boxY = guideLine.y + 14
+                const boxX = markerPoint.x + 14
+                const boxY = markerPoint.y + 14
                 context.fillStyle = 'rgba(255, 255, 255, 0.95)'
                 context.strokeStyle = 'rgba(0, 150, 200, 0.8)'
                 context.lineWidth = 1
@@ -1715,7 +1730,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 context.strokeStyle = 'rgba(0, 150, 200, 0.8)'
                 context.beginPath()
                 context.moveTo(p0.x, p0.y)
-                context.lineTo(guideLine.x, guideLine.y)
+                context.lineTo(markerPoint.x, markerPoint.y)
                 context.stroke()
                 context.setLineDash([])
             }
@@ -2124,8 +2139,8 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 context.fillStyle = 'red'
                 let newP = canvasPoint(event, canvasRef.current)
                 // if ctrl pressed -> next point ortho
-                if (isCtrlPressed && currentPoly.length > 0) { // and not first point
-                    newP = snapVertexOrtho(newP, currentPoly[currentPoly.length-1])
+                if ((event.ctrlKey || isCtrlPressed) && scalePoints.length > 0) {
+                    newP = snapVertexOrtho(newP, scalePoints[scalePoints.length - 1])
                 }
                 newP = snapVertexToGrid(newP)
                 context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension)  

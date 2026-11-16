@@ -433,9 +433,10 @@ export default function Home() {
     if (!file) return
 
     const arrayBuffer = await file.arrayBuffer()
+    const hasCalibratedScale = useStore.getState().pixelsPerMesh !== 1
 
     // Render using a URL (pdfjs prefers this for File objects)
-    await renderPdf(URL.createObjectURL(file), isContinuing)
+    await renderPdf(URL.createObjectURL(file), isContinuing && hasCalibratedScale)
 
     // Only persist/upload the PDF for DB-backed modes. Non-DB modes
     // (radiation/efs) are scratch — the plan must not survive a reload, so
@@ -479,6 +480,24 @@ export default function Home() {
           // Surface it: without a projectId autosave never arms, so the user
           // would otherwise draw a whole plan that is never persisted (issue #3).
           setSaveStatus('create-failed')
+          return
+        }
+      } else if (!currentFloorId) {
+        // Project already exists (e.g. from MACS handoff) but has no floor yet — create floor 0 so PDF upload can attach to it.
+        try {
+          const basePayload = useStore.getState().buildSavePayload() || {
+            name: useStore.getState().projectName || "Untitled Project",
+            settings: {},
+            floors: [{ floor_number: 0, name: "Fire Floor", elements: [] }],
+          }
+          const saved = await saveProjectToServer(currentProjectId, basePayload)
+          currentFloorId = saved.floors?.[0]?.id ?? null
+          if (currentFloorId) {
+            setFloorId(currentFloorId)
+          }
+        } catch (err) {
+          console.error('Failed to initialize floor for project:', err)
+          setSaveStatus('pdf-failed')
           return
         }
       }
