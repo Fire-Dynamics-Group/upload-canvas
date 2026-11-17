@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
     TIME_EQ_INPUT_DEFAULTS,
     resolveTimeEqInputs,
+    presentTimeEqInputs,
     buildTimeEqPayload,
     hydrateTimeEqState,
     timeEqAutosaveSnapshot,
@@ -26,6 +27,13 @@ describe('resolveTimeEqInputs — merge saved inputs over geometry-derived defau
         expect(r.floorAndCeilingMaterials).toEqual(['concrete', 'concrete'])
         // openable widths default to the drawn wall lengths, rounded to 2dp
         expect(r.openableWidths).toEqual([10, 5.12, 10, 5.12])
+    })
+
+    it('presentTimeEqInputs defaults nSim to 10000 when unset while keeping occupancy and FR period blank', () => {
+        const p = presentTimeEqInputs({}, geometry)
+        expect(p.nSim).toBe(10000)
+        expect(p.mcOccupancy).toBe('')
+        expect(p.fireResistancePeriod).toBe('')
     })
 
     it('keeps saved scalar inputs', () => {
