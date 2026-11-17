@@ -451,9 +451,10 @@ export default function Home() {
     if (!file) return
 
     const arrayBuffer = await file.arrayBuffer()
+    const hasCalibratedScale = useStore.getState().pixelsPerMesh !== 1
 
     // Render using a URL (pdfjs prefers this for File objects)
-    await renderPdf(URL.createObjectURL(file), isContinuing)
+    await renderPdf(URL.createObjectURL(file), isContinuing && hasCalibratedScale)
 
     // Only persist/upload the PDF for DB-backed modes. Non-DB modes
     // (radiation/efs) are scratch — the plan must not survive a reload, so

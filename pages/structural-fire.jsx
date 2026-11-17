@@ -36,6 +36,16 @@ export default function StructuralFirePage() {
     const [isClaiming, setIsClaiming] = useState(false)
     const [error, setError] = useState(null)
 
+    // Handoff loading state - synchronous detection on first render tick so we lead with loading
+    const [handoffLoading, setHandoffLoading] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search)
+            return Boolean(params.get('handoff'))
+        }
+        return false
+    })
+    const [handoffStep, setHandoffStep] = useState('Connecting to MACS+ handoff…')
+
     // Project Switcher Dropdown state
     const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false)
     const [projectSearch, setProjectSearch] = useState('')
@@ -103,12 +113,20 @@ export default function StructuralFirePage() {
     }, [])
 
     useEffect(() => {
+        const hasHandoffInUrl = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('handoff')
         if (queryProjectId && selectedProject?.id !== queryProjectId) {
             selectProjectById(queryProjectId)
-        } else if (!queryProjectId && projects.length > 0 && !selectedProject && !queryHandoffId) {
+        } else if (!queryProjectId && projects.length > 0 && !selectedProject && !queryHandoffId && !handoffLoading && !hasHandoffInUrl) {
             selectProjectById(projects[0].id)
         }
-    }, [queryProjectId, projects, selectProjectById, selectedProject?.id, queryHandoffId])
+    }, [queryProjectId, projects, selectProjectById, selectedProject?.id, queryHandoffId, handoffLoading])
+
+    // Sync handoffLoading if queryHandoffId arrives after router hydration
+    useEffect(() => {
+        if (queryHandoffId && !handoffLoading && !hasProcessedHandoff.current) {
+            setHandoffLoading(true)
+        }
+    }, [queryHandoffId, handoffLoading])
 
     // Consume direct MACS handoff from query (?handoff=<id>)
     const hasProcessedHandoff = useRef(false)
@@ -116,11 +134,14 @@ export default function StructuralFirePage() {
         const handoffParam = queryHandoffId || (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('handoff') : null)
         if (!handoffParam || hasProcessedHandoff.current) return
         hasProcessedHandoff.current = true
+        setHandoffLoading(true)
+        setHandoffStep('Fetching MACS+ simulation batch…')
 
         async function processHandoff() {
             try {
                 const handoff = await getHandoff(handoffParam)
                 if (handoff?.run) {
+                    setHandoffStep('Creating structural fire assessment project…')
                     const run = handoff.run
                     const batch = run?.outputs?.macs_batch || handoff.macs_batch
                     const defaultName = (
@@ -140,24 +161,32 @@ export default function StructuralFirePage() {
                     useStore.getState().setCurrentMode('timeEq')
                     useStore.getState().setTimeEqInputs(result.applied)
                     useStore.getState().setMacsBatch(result.batch ?? null)
-                    if (result.alreadyClaimed) {
+                    setHandoffStep('Loading linked assessment workspace…')
+                    if (typeof router?.replace === 'function') {
                         router.replace(`/structural-fire?project=${result.projectId}`, undefined, { shallow: true })
-                        selectProjectById(result.projectId)
-                    } else {
-                        router.replace(`/?project=${result.projectId}`)
                     }
+                    const projList = await listProjects('timeEq').catch(() => null)
+                    if (Array.isArray(projList)) {
+                        setProjects(projList)
+                    }
+                    await selectProjectById(result.projectId)
                 }
             } catch (err) {
                 if (err.status === 409 && err.claimedByProjectId) {
-                    router.replace(`/structural-fire?project=${err.claimedByProjectId}`, undefined, { shallow: true })
-                    selectProjectById(err.claimedByProjectId)
+                    setHandoffStep('Opening previously linked assessment…')
+                    if (typeof router?.replace === 'function') {
+                        router.replace(`/structural-fire?project=${err.claimedByProjectId}`, undefined, { shallow: true })
+                    }
+                    await selectProjectById(err.claimedByProjectId)
                 } else {
                     setError(`Failed to process MACS handoff: ${err.message}`)
                 }
+            } finally {
+                setHandoffLoading(false)
             }
         }
         processHandoff()
-    }, [queryHandoffId, selectProjectById, router])
+    }, [queryHandoffId, selectProjectById, router, userName, userId])
 
     // Handle project creation
     const handleNewProject = async () => {
@@ -374,7 +403,12 @@ export default function StructuralFirePage() {
                 </div>
 
                 <div className="text-xs text-gray-500 flex items-center gap-2">
-                    {effectiveBatch ? (
+                    {handoffLoading ? (
+                        <span className="text-blue-600 font-medium flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                            <span>Linking MACS+ Simulation Batch…</span>
+                        </span>
+                    ) : effectiveBatch ? (
                         <span>
                             Linked MACS Batch: <strong className="text-gray-800">{effectiveBatch.name || 'Batch Overview'}</strong> ({Number(effectiveBatch.run_count || 0).toLocaleString()} runs)
                         </span>
@@ -386,9 +420,40 @@ export default function StructuralFirePage() {
 
             {/* Main Application Workspace (Full-width clean layout) */}
             <main className="flex-1 p-6 max-w-[1700px] w-full mx-auto">
-                {isLoadingProject ? (
-                    <div className="p-12 text-center text-sm text-gray-500 bg-white rounded-lg border border-gray-200">
-                        Loading project data…
+                {handoffLoading ? (
+                    <div className="mx-auto max-w-xl p-10 text-center bg-white rounded-xl border border-blue-100 shadow-sm space-y-5 my-12 animate-fadeIn">
+                        <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-blue-50 text-blue-600 mb-1">
+                            <svg className="animate-spin h-7 w-7 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-bold text-slate-800">Linking MACS+ Simulation Batch</h2>
+                            <p className="text-xs text-slate-500 mt-1">{handoffStep}</p>
+                        </div>
+                        <div
+                            role="progressbar"
+                            aria-label="Linking MACS+ simulation batch"
+                            className="h-2 w-full max-w-md mx-auto overflow-hidden rounded-full bg-blue-100"
+                        >
+                            <div className="h-full w-1/2 animate-pulse rounded-full bg-blue-600" />
+                        </div>
+                        <div className="flex items-center justify-center gap-2 text-xs text-blue-700 bg-blue-50/80 py-2.5 px-4 rounded-lg border border-blue-100 max-w-md mx-auto">
+                            <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                            <span>Setting up structural fire assessment & Monte Carlo parameters</span>
+                        </div>
+                    </div>
+                ) : isLoadingProject ? (
+                    <div className="mx-auto max-w-xl p-10 text-center bg-white rounded-xl border border-gray-200 shadow-sm space-y-4 my-12">
+                        <div className="text-sm font-medium text-gray-700">Loading project data…</div>
+                        <div
+                            role="progressbar"
+                            aria-label="Loading project data"
+                            className="h-2 w-full max-w-md mx-auto overflow-hidden rounded-full bg-slate-100"
+                        >
+                            <div className="h-full w-1/2 animate-pulse rounded-full bg-blue-600" />
+                        </div>
                     </div>
                 ) : (
                     <>
