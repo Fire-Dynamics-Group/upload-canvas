@@ -126,7 +126,7 @@ export default function TimeEqWorkspace({
         if (!origin && elements.length > 0) {
             try {
                 const valid = elements.filter(el => Array.isArray(el?.points) && el.points.length > 0)
-                if (valid.length > 0) origin = findOriginPixels(valid)
+                if (valid.length > 0) origin = findOriginPixels(valid, canvasDim.height)
             } catch (_) {}
         }
         if (!origin) origin = { x: 0, y: 0 }

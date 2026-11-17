@@ -778,4 +778,62 @@ describe('Structural Fire Engineering: Studio Components & APIs', () => {
             expect(screen.getByText('Time Eq: 99.8% Rel.')).toBeInTheDocument()
         })
     })
+
+    describe('TimeEqWorkspace geometry projection when origin_pixels is null', () => {
+        it('passes canvasDim.height to findOriginPixels so walls and openings are not squashed to y=0', () => {
+            const project = {
+                id: 'p-geom-1',
+                name: 'Test 10k Project',
+                mode: 'timeEq',
+                settings: { timeEqInputs: {} },
+            }
+            const floorDetail = {
+                id: 'f-1',
+                pixels_per_mesh: 1,
+                canvas_dimensions: { width: 500, height: 400 },
+                origin_pixels: null,
+                elements: [
+                    {
+                        id: 1,
+                        type: 'polyline',
+                        comments: 'obstruction',
+                        points: [
+                            { x: 100, y: 100 },
+                            { x: 300, y: 100 },
+                            { x: 300, y: 200 },
+                            { x: 100, y: 200 },
+                            { x: 100, y: 100 },
+                        ],
+                    },
+                    {
+                        id: 2,
+                        type: 'polyline',
+                        comments: 'opening',
+                        points: [
+                            { x: 150, y: 100 },
+                            { x: 200, y: 100 },
+                        ],
+                    },
+                ],
+            }
+
+            const { container } = render(
+                <TimeEqWorkspace
+                    project={project}
+                    floorDetail={floorDetail}
+                    selectedMacsRun={null}
+                    onProjectUpdated={vi.fn()}
+                />
+            )
+
+            // 20m x 10m = 200.0 m² Floor (not fallback 60.0 m²)
+            expect(screen.getByText('200.0 m² Floor')).toBeInTheDocument()
+            const lines = Array.from(container.querySelectorAll('svg line'))
+            expect(lines.length).toBeGreaterThanOrEqual(4)
+            for (const line of lines) {
+                expect(line.getAttribute('y1')).not.toBe('NaN')
+                expect(line.getAttribute('y2')).not.toBe('NaN')
+            }
+        })
+    })
 })
