@@ -11,6 +11,7 @@ const server_urls = {
   }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || server_urls.localhost
+const FEE_API_BASE = process.env.NEXT_PUBLIC_FEE_API_URL || API_BASE
 
 async function readApiError(resp, fallback) {
     let errData = null
@@ -615,7 +616,7 @@ export const downloadMacsBatchCharts = (charts, batchId = null) => {
     }
 }
 
-export const downloadStructuralFireReport = async (projectId, projectName = 'Project') => {
+export const downloadStructuralFireReport = async (projectId, projectName = 'Project', jobNumber = '') => {
     const resp = await authedFetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/structural-fire-report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -627,5 +628,41 @@ export const downloadStructuralFireReport = async (projectId, projectName = 'Pro
     }
     const blob = await resp.blob()
     const cleanName = (projectName || 'Project').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_')
-    saveAs(blob, `Structural_Fire_Report_${cleanName}.docx`)
+    const disposition = resp.headers?.get?.('content-disposition') || ''
+    const match = disposition.match(/filename="?([^"]+)"?/i)
+    if (match?.[1]) {
+        saveAs(blob, match[1])
+        return
+    }
+    const compactName = (projectName || 'Project').replace(/[^A-Za-z0-9]/g, '') || 'Project'
+    const cleanJob = String(jobNumber || '').replace(/[^\w-]/g, '').trim()
+    const prefix = cleanJob ? `${cleanJob}-` : ''
+    saveAs(blob, `${prefix}Fire Dynamics-SFR-${compactName}-Rev00.docx`)
+}
+
+
+export const getFeeEngineers = async () => {
+    const resp = await authedFetch(`${API_BASE}/fee-proposals/engineers`)
+    if (!resp.ok) return []
+    const data = await resp.json().catch(() => [])
+    return Array.isArray(data) ? data : []
+}
+
+export const getFeeGenerationsForProject = async (synergyProjectRef, limit = 5) => {
+    if (!synergyProjectRef) return []
+    const resp = await authedFetch(
+        `${FEE_API_BASE}/word/fee-proposal/generations?synergy_project_ref=${encodeURIComponent(synergyProjectRef)}&limit=${limit}`
+    )
+    if (!resp.ok) return []
+    const data = await resp.json().catch(() => [])
+    return Array.isArray(data) ? data : []
+}
+
+export const getPreviousFeeOptions = async (synergyProjectRef) => {
+    if (!synergyProjectRef) return null
+    const resp = await authedFetch(
+        `${FEE_API_BASE}/word/fee-proposal/previous-options?synergy_project_ref=${encodeURIComponent(synergyProjectRef)}`
+    )
+    if (!resp.ok) return null
+    return resp.json().catch(() => null)
 }
