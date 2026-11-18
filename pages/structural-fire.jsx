@@ -11,6 +11,8 @@ import {
     claimHandoff,
 } from '../Components/ApiCalls'
 import MacsBatchOverview from '../Components/StructuralFire/MacsBatchOverview'
+import ReportBuilderTab from '../Components/StructuralFire/ReportBuilderTab'
+import ReportDetailsModal from '../Components/StructuralFire/ReportDetailsModal'
 import TimeEqWorkspace from '../Components/StructuralFire/TimeEqWorkspace'
 import { getStructuralCardMetrics } from '../Components/StructuralProjectCard'
 import useUserName from '../hooks/useUserName'
@@ -33,6 +35,7 @@ export default function StructuralFirePage() {
     // MACS Batch & Governing Run
     const [selectedRun, setSelectedRun] = useState(null)
     const [activeTab, setActiveTab] = useState('macsBatch') // 'macsBatch' | 'timeEq' | 'split'
+    const [reportDetailsOpen, setReportDetailsOpen] = useState(false)
     const [isClaiming, setIsClaiming] = useState(false)
     const [error, setError] = useState(null)
 
@@ -400,9 +403,20 @@ export default function StructuralFirePage() {
                     >
                         Side-by-Side View
                     </button>
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('report')}
+                        className={`text-xs font-bold px-3 py-1.5 rounded transition-colors ${
+                            activeTab === 'report'
+                                ? 'bg-blue-600 text-white'
+                                : 'text-gray-700 hover:bg-gray-100'
+                        }`}
+                    >
+                        Report Inputs &amp; Create Report
+                    </button>
                 </div>
 
-                <div className="text-xs text-gray-500 flex items-center gap-2">
+                <div className="text-xs text-gray-500 flex items-center gap-3">
                     {handoffLoading ? (
                         <span className="text-blue-600 font-medium flex items-center gap-1.5">
                             <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
@@ -414,6 +428,15 @@ export default function StructuralFirePage() {
                         </span>
                     ) : (
                         <span className="italic text-gray-400">No MACS batch linked to this project yet</span>
+                    )}
+                    {selectedProject && (
+                        <button
+                            type="button"
+                            onClick={() => setReportDetailsOpen(true)}
+                            className="px-2.5 py-1 rounded border border-gray-300 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                        >
+                            Report Details
+                        </button>
                     )}
                 </div>
             </div>
@@ -510,9 +533,23 @@ export default function StructuralFirePage() {
                                 </div>
                             </div>
                         )}
+                        {activeTab === 'report' && (
+                            <ReportBuilderTab
+                                project={selectedProject}
+                                effectiveBatch={effectiveBatch}
+                                userName={userName}
+                                onProjectUpdated={(p) => setSelectedProject(p)}
+                            />
+                        )}
                     </>
                 )}
                 <MacsRunHistory />
+                <ReportDetailsModal
+                    isOpen={reportDetailsOpen}
+                    onClose={() => setReportDetailsOpen(false)}
+                    project={selectedProject}
+                    onSaved={(updated) => setSelectedProject(updated)}
+                />
             </main>
         </div>
     )
