@@ -210,4 +210,26 @@ describe('ReportBuilderTab', () => {
         fireEvent.change(screen.getByLabelText(/Client Name/i), { target: { value: 'Custom Client' } })
         expect(screen.getByText('Edited by you')).toBeTruthy()
     })
+
+    it('surfaces an honest error when Synergy directory search fails', async () => {
+        authedFetch.mockResolvedValueOnce({
+            ok: false,
+            status: 401,
+            json: async () => ({ error: 'unauthorized', code: 'missing_token' }),
+        })
+
+        render(
+            <ReportBuilderTab
+                project={{ id: 'proj-1', name: 'Draft', settings: {} }}
+                effectiveBatch={null}
+                userName="Ian Shaw"
+            />
+        )
+
+        const searchInput = screen.getByLabelText(/Search Project Name \/ Job Number/i)
+        fireEvent.change(searchInput, { target: { value: 'blackhorse' } })
+
+        const alert = await screen.findByRole('alert')
+        expect(alert.textContent).toMatch(/Synergy search unavailable \(unauthorized\)/i)
+    })
 })

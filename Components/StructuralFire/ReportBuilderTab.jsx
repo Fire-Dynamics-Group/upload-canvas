@@ -250,6 +250,7 @@ export default function ReportBuilderTab({ project, effectiveBatch, userName = '
     const [searchResults, setSearchResults] = useState([])
     const [isSearching, setIsSearching] = useState(false)
     const [searchOpen, setSearchOpen] = useState(false)
+    const [searchError, setSearchError] = useState(null)
     const [isPrefilling, setIsPrefilling] = useState(false)
     const searchTimeoutRef = useRef(null)
 
@@ -276,10 +277,12 @@ export default function ReportBuilderTab({ project, effectiveBatch, userName = '
         if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
         if (q.length < 2) {
             setSearchResults([])
+            setSearchError(null)
             setIsSearching(false)
             return
         }
         setIsSearching(true)
+        setSearchError(null)
         searchTimeoutRef.current = setTimeout(async () => {
             try {
                 const resp = await authedFetch(
@@ -290,10 +293,16 @@ export default function ReportBuilderTab({ project, effectiveBatch, userName = '
                     setSearchResults(Array.isArray(data?.items) ? data.items : [])
                     setSearchOpen(true)
                 } else {
+                    const errBody = await resp.json().catch(() => null)
+                    const detail = errBody?.error || errBody?.detail || `HTTP ${resp.status}`
                     setSearchResults([])
+                    setSearchError(`Synergy search unavailable (${detail}).`)
+                    setSearchOpen(true)
                 }
-            } catch (_) {
+            } catch (err) {
                 setSearchResults([])
+                setSearchError(err?.message || 'Failed to reach Synergy directory.')
+                setSearchOpen(true)
             } finally {
                 setIsSearching(false)
             }
@@ -591,6 +600,19 @@ export default function ReportBuilderTab({ project, effectiveBatch, userName = '
                                 )}
                             </div>
                         </label>
+                        {searchOpen && !isSearching && searchError && (
+                            <div
+                                role="alert"
+                                className="mt-1 rounded border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800"
+                            >
+                                {searchError}
+                            </div>
+                        )}
+                        {searchOpen && !isSearching && !searchError && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+                            <div className="mt-1 rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-600">
+                                No matching Synergy projects found.
+                            </div>
+                        )}
                         {searchOpen && searchResults.length > 0 && (
                             <ul
                                 role="listbox"
