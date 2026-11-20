@@ -48,6 +48,10 @@ describe('ReportBuilderTab', () => {
                     pass_count: 990,
                     reliability_percent: 99.0,
                     charts: { scatter: 'a', totalCapacity: 'b', beamTemp: 'c', meshTemp: 'd' },
+                    sample_runs: [
+                        { run_number: 1676, total_runs: 10000 },
+                        { run_number: 9965, total_runs: 10000 },
+                    ],
                 },
                 timeEqInputs: {
                     section: 'UB 406x140x39',
@@ -90,6 +94,7 @@ describe('ReportBuilderTab', () => {
         expect(screen.getByText(/Floor 1 Batch/i)).toBeTruthy()
         expect(screen.getByText(/99\.00%/)).toBeTruthy()
         expect(screen.getByText(/4 \/ 4 charts/i)).toBeTruthy()
+        expect(screen.getByText(/1,676 of 10,000, 9,965 of 10,000/)).toBeTruthy()
         expect(screen.getByText(/98\.70%/)).toBeTruthy()
         expect(screen.getByText(/2 \/ 2 charts/i)).toBeTruthy()
         expect(screen.getByText(/Populated after QA process/i)).toBeTruthy()
