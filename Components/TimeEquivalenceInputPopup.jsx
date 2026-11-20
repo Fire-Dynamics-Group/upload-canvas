@@ -207,7 +207,7 @@ const TimeEquivalenceInputPopup = ({mockData=null, onClose=null}) => {
             if (state.projectId) {
                 const payload = state.buildSavePayload()
                 if (payload) {
-                    saveProjectToServer(state.projectId, payload).catch((err) => console.error('Save failed:', err))
+                    await saveProjectToServer(state.projectId, payload).catch((err) => console.error('Save failed:', err))
                 }
             }
         } catch (err) {
