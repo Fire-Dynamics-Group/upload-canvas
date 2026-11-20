@@ -29,11 +29,17 @@ function timeAgo(dateStr) {
 // visible to their original creator while the old rows are gradually replaced.
 export function isOwnedByCurrentUser(project, userId, userName) {
   if (!project.created_by) return false
-  if (userId && project.created_by === userId) return true
+  const createdBy = project.created_by.trim()
+  if (userId && createdBy === userId) return true
 
-  const legacyFirstName = userName?.trim().split(/\s+/)[0]
+  const normalizedName = userName?.trim()
+  if (normalizedName && createdBy.toLowerCase() === normalizedName.toLowerCase()) {
+    return true
+  }
+
+  const legacyFirstName = normalizedName?.split(/\s+/)[0]
   return Boolean(
-    legacyFirstName && project.created_by.trim().toLowerCase() === legacyFirstName.toLowerCase()
+    legacyFirstName && createdBy.toLowerCase() === legacyFirstName.toLowerCase()
   )
 }
 
