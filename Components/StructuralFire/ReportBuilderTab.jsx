@@ -865,6 +865,20 @@ export default function ReportBuilderTab({ project, effectiveBatch, userName = '
                                     <span>Charts Ready:</span>
                                     <span className="font-semibold text-slate-900">{macsChartCount} / 4 charts</span>
                                 </div>
+                                <div className="flex justify-between gap-2 text-slate-600">
+                                    <span>Sample Runs:</span>
+                                    <span className="font-semibold text-slate-900 text-right tabular-nums">
+                                        {Array.isArray(effectiveBatch.sample_runs) && effectiveBatch.sample_runs.length > 0
+                                            ? effectiveBatch.sample_runs
+                                                  .map((sr, i) =>
+                                                      sr.run_number != null
+                                                          ? `${Number(sr.run_number).toLocaleString()} of ${Number(sr.total_runs || effectiveBatch.run_count || 0).toLocaleString()}`
+                                                          : `#${sr.run_id ?? i + 1}`
+                                                  )
+                                                  .join(', ')
+                                            : '—'}
+                                    </span>
+                                </div>
                             </>
                         ) : (
                             <div className="text-slate-500 italic">No MACS+ batch linked</div>
