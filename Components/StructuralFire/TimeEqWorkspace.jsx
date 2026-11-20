@@ -193,7 +193,7 @@ export default function TimeEqWorkspace({
                                     timeEqInputs: inputs,
                                     timeEqResult: merged,
                                 },
-                                floors: floorDetail ? [floorDetail] : [],
+                                ...(floorDetail ? { floors: [floorDetail] } : {}),
                             }
                             const updated = await saveProjectToServer(projectId, payload)
                             if (onProjectUpdated) onProjectUpdated(updated)
@@ -252,7 +252,7 @@ export default function TimeEqWorkspace({
                             timeEqInputs: inputs,
                             timeEqResult: fullRes,
                         },
-                        floors: floorDetail ? [floorDetail] : [],
+                        ...(floorDetail ? { floors: [floorDetail] } : {}),
                     }
                     const updated = await saveProjectToServer(projectId, payload)
                     if (onProjectUpdated) onProjectUpdated(updated)
