@@ -107,6 +107,7 @@ describe('ReportBuilderTab', () => {
 
         await waitFor(() => expect(saveProjectToServer).toHaveBeenCalledTimes(1))
         expect(saveProjectToServer.mock.calls[0][0]).toBe('proj-42')
+        expect(saveProjectToServer.mock.calls[0][1].floors).toBeUndefined()
         expect(saveProjectToServer.mock.calls[0][1].settings.reportDetails.author).toBe('Diana Prostire')
         expect(onProjectUpdated).toHaveBeenCalledWith(updatedProject)
         expect(downloadStructuralFireReport).toHaveBeenCalledWith('proj-42', 'Apex Hub', '')
