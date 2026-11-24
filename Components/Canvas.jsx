@@ -13,6 +13,7 @@ import { computeTimeEqLabels } from '@/utils/timeEqLabels'
 import { boundaryDistanceOutward, gridlineStations, buildRequiredBoundaryLine, projectSpanOntoWall, baysCoveredBySpan, polylineLength, splitIntoElevations, pointToPolylineDistance } from '@/utils/efsViewFactor'
 import { canvasKeyAction, shouldCommitSelectionNudge, nextNumericElementId, elementIsHighlighted } from '@/utils/elementIds'
 import { selectionAfterPointerUp, shouldNudgeHeldVertex, shouldDropHoldOnPointerEvent } from '@/utils/holdToTargetSelection'
+import { isElementAllowedForMode } from '@/utils/modeElements'
 import { get } from 'http'
 
 /**
@@ -158,10 +159,11 @@ export function collectPointAlignmentCoordinates(elements, excludeId = null, inP
  * modern JS means equal-keyed entries keep their input order — so repeated
  * calls with the same inputs return an identical list (cycling needs this).
  */
-export function collectSelectionCandidates(pointer, elements, threshold = 40) {
+export function collectSelectionCandidates(pointer, elements, threshold = 40, currentMode = null) {
     const candidates = []
     for (const el of elements || []) {
         if (!el || !el.points || el.points.length === 0) continue
+        if (currentMode && !isElementAllowedForMode(currentMode, el)) continue
         const comments = (el.comments || '').toLowerCase()
         const isMeshRect = el.type === 'rect' && comments.includes('mesh')
 
@@ -322,6 +324,15 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
     const efsProtectedByElev = useStore((state) => state.efsProtectedByElev)
     const efsRequiredByElev = useStore((state) => state.efsRequiredByElev)
     const efsEndSpacingByElev = useStore((state) => state.efsEndSpacingByElev)
+    const efsShowDistanceArrows = useStore((state) => state.efsShowDistanceArrows)
+    const efsShowDistances = useStore((state) => state.efsShowDistances)
+    const efsShowGridSquares = useStore((state) => state.efsShowGridSquares)
+    const efsShowGridNumbers = useStore((state) => state.efsShowGridNumbers)
+    const efsShowBayLabels = useStore((state) => state.efsShowBayLabels)
+    const efsWallLineWidth = useStore((state) => state.efsWallLineWidth)
+    const efsBoundaryLineWidth = useStore((state) => state.efsBoundaryLineWidth)
+    const efsNeededBoundaryLineWidth = useStore((state) => state.efsNeededBoundaryLineWidth)
+    const efsArrowLineWidth = useStore((state) => state.efsArrowLineWidth)
     const setPixelsPerMesh = useStore((state) => state.setPixelsPerMesh)
 
 
@@ -732,7 +743,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
         setShowPopup(false)
         // change from scale mode to drawing mode
         setTool(tool)
-        setComment("obstruction")
+        setComment(currentMode === 'efs' ? 'efsWall' : 'obstruction')
         // Scale click 1 set isDrawing=true and never reset it — a latent bug
         // that the first-click-feedback hover pipeline exposed via
         // drawPolyAndGuide(currentPoly=[]). Reset here so the newly-selected
@@ -865,7 +876,11 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                     let prev = points[i-1]
                     let current = points[i]
                     context.strokeStyle = (currentMode === 'fdsGen') ? 'black' : elementConfig[comments] // depending on mode if radiation use comment for optionsObject
-                    context.lineWidth = (currentMode === 'fdsGen') ? 1 : 4; // depending on mode if radiation use 2 else 1
+                    context.lineWidth = (currentMode === 'fdsGen')
+                        ? 1
+                        : (currentMode === 'efs'
+                            ? (comments === 'efsBoundary' ? efsBoundaryLineWidth : efsWallLineWidth)
+                            : 4); // depending on mode if radiation use 2 else 1
                     context.moveTo(prev.x, prev.y)
                     context.lineTo(current.x, current.y)
                     context.stroke()
@@ -1417,30 +1432,37 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                     const protectedBay = (efsProtectedByElev[segment.elevation] || []).includes(segment.bay)
                     context.save()
                     context.strokeStyle = protectedBay ? '#2563eb' : '#ef4444'
-                    context.lineWidth = 6
+                    context.lineWidth = efsWallLineWidth
                     context.beginPath()
                     context.moveTo(segment.a.x, segment.a.y)
                     context.lineTo(segment.b.x, segment.b.y)
                     context.stroke()
-                    context.fillStyle = context.strokeStyle
-                    context.font = 'bold 11px sans-serif'
-                    context.fillText(`${protectedBay ? 'P' : 'U'}${segment.bay} · ${segment.length.toFixed(2)} m`, (segment.a.x + segment.b.x) / 2 + 6, (segment.a.y + segment.b.y) / 2 - 18)
+                    const labelParts = []
+                    if (efsShowBayLabels) labelParts.push(`${protectedBay ? 'P' : 'U'}${segment.bay}`)
+                    if (efsShowDistances) labelParts.push(`${segment.length.toFixed(2)} m`)
+                    if (labelParts.length > 0) {
+                        context.fillStyle = context.strokeStyle
+                        context.font = 'bold 11px sans-serif'
+                        context.fillText(labelParts.join(' · '), (segment.a.x + segment.b.x) / 2 + 6, (segment.a.y + segment.b.y) / 2 - 18)
+                    }
                     context.restore()
                 })
 
                 // Faint column markers on every (non-active) elevation so the whole
                 // building's grid is visible; the active face is drawn richly below.
-                elevations.forEach((e, idx) => {
-                    if (idx === activeIdx) return
-                    gridlineStations(e.points, spacingPx, optsForElev(idx)).forEach((st) => {
-                        context.save()
-                        context.fillStyle = 'rgba(234,179,8,0.5)'
-                        context.beginPath()
-                        context.rect(st.point.x - 3, st.point.y - 3, 6, 6)
-                        context.fill()
-                        context.restore()
+                if (efsShowGridSquares) {
+                    elevations.forEach((e, idx) => {
+                        if (idx === activeIdx) return
+                        gridlineStations(e.points, spacingPx, optsForElev(idx)).forEach((st) => {
+                            context.save()
+                            context.fillStyle = 'rgba(234,179,8,0.5)'
+                            context.beginPath()
+                            context.rect(st.point.x - 3, st.point.y - 3, 6, 6)
+                            context.fill()
+                            context.restore()
+                        })
                     })
-                })
+                }
 
                 // Shade a single bay span (between its two bounding columns) with
                 // a fill/stroke and a label — used for protected bays and regions.
@@ -1505,14 +1527,16 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 stations.forEach((st) => {
                     const r = 5
                     context.save()
-                    context.fillStyle = elementConfig['efsWall']
-                    context.strokeStyle = 'black'
-                    context.lineWidth = 1.5
-                    context.beginPath()
-                    context.rect(st.point.x - r, st.point.y - r, r * 2, r * 2)
-                    context.fill()
-                    context.stroke()
-                    if (showGridlineLabels) {
+                    if (efsShowGridSquares) {
+                        context.fillStyle = elementConfig['efsWall']
+                        context.strokeStyle = 'black'
+                        context.lineWidth = 1.5
+                        context.beginPath()
+                        context.rect(st.point.x - r, st.point.y - r, r * 2, r * 2)
+                        context.fill()
+                        context.stroke()
+                    }
+                    if (showGridlineLabels && efsShowGridNumbers) {
                         const label = String(st.gridline)
                         context.font = 'bold 12px sans-serif'
                         context.lineWidth = 3
@@ -1526,37 +1550,41 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
 
                 const drawBoundaryArrow = (from, to, distM) => {
                     context.save()
-                    context.strokeStyle = elementConfig['efsBoundary']
-                    context.fillStyle = elementConfig['efsBoundary']
-                    context.lineWidth = 1.5
-                    context.beginPath()
-                    context.moveTo(from.x, from.y)
-                    context.lineTo(to.x, to.y)
-                    context.stroke()
-                    // arrowhead at the boundary end
-                    const ang = Math.atan2(to.y - from.y, to.x - from.x)
-                    const head = 8
-                    context.beginPath()
-                    context.moveTo(to.x, to.y)
-                    context.lineTo(to.x - head * Math.cos(ang - Math.PI / 6), to.y - head * Math.sin(ang - Math.PI / 6))
-                    context.lineTo(to.x - head * Math.cos(ang + Math.PI / 6), to.y - head * Math.sin(ang + Math.PI / 6))
-                    context.closePath()
-                    context.fill()
-                    // distance label at the midpoint
-                    const mx = (from.x + to.x) / 2
-                    const my = (from.y + to.y) / 2
-                    const label = `${distM.toFixed(1)} m`
-                    context.font = 'bold 12px sans-serif'
-                    context.lineWidth = 3
-                    context.strokeStyle = 'black'
-                    context.strokeText(label, mx + 4, my - 4)
-                    context.fillStyle = 'white'
-                    context.fillText(label, mx + 4, my - 4)
+                    if (efsShowDistanceArrows) {
+                        context.strokeStyle = elementConfig['efsBoundary']
+                        context.fillStyle = elementConfig['efsBoundary']
+                        context.lineWidth = efsArrowLineWidth
+                        context.beginPath()
+                        context.moveTo(from.x, from.y)
+                        context.lineTo(to.x, to.y)
+                        context.stroke()
+                        // arrowhead at the boundary end
+                        const ang = Math.atan2(to.y - from.y, to.x - from.x)
+                        const head = 8
+                        context.beginPath()
+                        context.moveTo(to.x, to.y)
+                        context.lineTo(to.x - head * Math.cos(ang - Math.PI / 6), to.y - head * Math.sin(ang - Math.PI / 6))
+                        context.lineTo(to.x - head * Math.cos(ang + Math.PI / 6), to.y - head * Math.sin(ang + Math.PI / 6))
+                        context.closePath()
+                        context.fill()
+                    }
+                    if (efsShowDistances) {
+                        // distance label at the midpoint
+                        const mx = (from.x + to.x) / 2
+                        const my = (from.y + to.y) / 2
+                        const label = `${distM.toFixed(1)} m`
+                        context.font = 'bold 12px sans-serif'
+                        context.lineWidth = 3
+                        context.strokeStyle = 'black'
+                        context.strokeText(label, mx + 4, my - 4)
+                        context.fillStyle = 'white'
+                        context.fillText(label, mx + 4, my - 4)
+                    }
                     context.restore()
                 }
                 // Display the distance at every numbered station. The bay
                 // assessment still samples for its worst case independently.
-                if (boundary?.points?.length >= 2) {
+                if (boundary?.points?.length >= 2 && (efsShowDistanceArrows || efsShowDistances)) {
                     stations.forEach((station) => {
                         const arrow = boundaryDistanceOutward(facePts, station.dist, boundary.points, losPts)
                         if (arrow.point) {
@@ -1579,15 +1607,18 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                     && Array.isArray(activeRequired) && activeRequired.length) {
                     const requiredPx = activeRequired.map((d) => d * pxPerM)
                     const line = buildRequiredBoundaryLine(facePts, boundary.points, spacingPx, requiredPx, losPts, activeOpts)
-                    const pts = line.map((l) => l.point).filter(Boolean)
-                    if (pts.length >= 2) {
+                    const valid = line.filter((l) => l.point)
+                    if (valid.length >= 2) {
                         context.save()
                         context.strokeStyle = '#16a34a' // green: the required line
-                        context.lineWidth = 4 // match the drawn boundary line
+                        context.lineWidth = efsNeededBoundaryLineWidth // match the configured needed-boundary width
                         context.setLineDash([8, 5])
                         context.beginPath()
-                        context.moveTo(pts[0].x, pts[0].y)
-                        for (let i = 1; i < pts.length; i++) context.lineTo(pts[i].x, pts[i].y)
+                        // Link the extreme ends of the elevation out to the needed boundary locus.
+                        context.moveTo(valid[0].from.x, valid[0].from.y)
+                        context.lineTo(valid[0].point.x, valid[0].point.y)
+                        for (let i = 1; i < valid.length; i++) context.lineTo(valid[i].point.x, valid[i].point.y)
+                        context.lineTo(valid[valid.length - 1].from.x, valid[valid.length - 1].from.y)
                         context.stroke()
                         context.setLineDash([])
                         context.restore()
@@ -1737,7 +1768,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             context.restore()
         }
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsActiveElevation, efsProtectedByElev, efsRequiredByElev, efsEndSpacingByElev, debugRects, snapGuides, candidateCycleState, zoom])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsActiveElevation, efsProtectedByElev, efsRequiredByElev, efsEndSpacingByElev, efsShowDistanceArrows, efsShowDistances, efsShowGridSquares, efsShowGridNumbers, efsShowBayLabels, efsWallLineWidth, efsBoundaryLineWidth, efsNeededBoundaryLineWidth, efsArrowLineWidth, debugRects, snapGuides, candidateCycleState, zoom])
 
     // Generate thumbnail by compositing PDF + drawing canvases
     const thumbnailTimerRef = useRef(null)
@@ -2110,7 +2141,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 }
             }
 
-            const candidates = collectSelectionCandidates(pointer, elements, 40)
+            const candidates = collectSelectionCandidates(pointer, elements, 40, currentMode)
             if (candidates.length > 0) {
                 const picked = candidates[0]
                 assignSelection({

@@ -4,9 +4,10 @@ import useStore from '../store/useStore'
 // TODO: send in 
 // eslint-disable-next-line react/prop-types
 function Gridlines({pixelsPerMesh, dimensions, hasScale, zoom = 1}) {
-    let showGrid = true // later control via toggle
     const canvasRef = useRef(null)
     const currentMode = useStore((state) => state.currentMode)
+    const efsShowScaleGrid = useStore((state) => state.efsShowScaleGrid)
+    const showGrid = currentMode === 'efs' ? efsShowScaleGrid : true
 
     const canvasWidth = dimensions.width
     const canvasHeight = dimensions.height
@@ -17,27 +18,20 @@ function Gridlines({pixelsPerMesh, dimensions, hasScale, zoom = 1}) {
         const context = canvas.getContext('2d')
         context.clearRect(0, 0, canvas.width, canvas.height)
         if (hasScale && showGrid && Number.isFinite(pixelsPerMesh) && pixelsPerMesh > 1) {
-            let step = pixelsPerMesh
-            const rawRows = Math.floor(canvas.height / step)
-            const rawCols = Math.floor(canvas.width / step)
-            if (step < 4 || rawRows > 400 || rawCols > 400) {
-                const stride = Math.ceil(Math.max(rawRows, rawCols) / 400)
-                step = pixelsPerMesh * stride
-            }
-
-            let rows = Math.floor(canvas.height / step)
-            context.lineWidth = 0.2
-            context.strokeStyle = 'rgba(0, 0, 0, 0.25)'
+            const step = pixelsPerMesh
+            const rows = Math.floor(canvas.height / step)
+            const cols = Math.floor(canvas.width / step)
+            const pathParts = []
             for (let i = 0; i < rows; i++) {
-                let path_text = 'M 0,' + `${(i + 1) * step}` + ' h ' + canvas.width + ' '
-                let path = new Path2D(path_text)
-                context.stroke(path)
+                pathParts.push(`M 0,${(i + 1) * step} h ${canvas.width}`)
             }
-            let cols = Math.floor(canvas.width / step)
             for (let i = 0; i < cols; i++) {
-                let path_text = `M ${(i + 1) * step}, 0, v ${canvas.height}`
-                let path = new Path2D(path_text)
-                context.stroke(path)
+                pathParts.push(`M ${(i + 1) * step},0 v ${canvas.height}`)
+            }
+            if (pathParts.length > 0) {
+                context.lineWidth = 0.2
+                context.strokeStyle = 'rgba(0, 0, 0, 0.25)'
+                context.stroke(new Path2D(pathParts.join(' ')))
             }
         }
     }, [pixelsPerMesh, hasScale, currentMode, showGrid, dimensions])

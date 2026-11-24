@@ -15,6 +15,7 @@ const baseState = (overrides = {}) => ({
         fdsGen: [{ id: 1, comments: 'mesh' }],
         radiation: [{ id: 9, comments: 'escapeRoute' }],
         timeEq: [{ id: 5, comments: 'wall' }],
+        efs: [{ id: 12, comments: 'efsWall' }],
     },
     tool: 'obstruction',
     pixelsPerMesh: 4,
@@ -52,9 +53,9 @@ describe('partializeState — non-DB modes are ephemeral', () => {
     })
 
     it('never caches non-DB-backed geometry buckets, in any mode', () => {
-        for (const mode of ['fdsGen', 'radiation', 'timeEq']) {
+        for (const mode of ['fdsGen', 'radiation', 'timeEq', 'efs']) {
             const p = partializeState(baseState({ currentMode: mode }))
-            expect(Object.keys(p.elementsByMode).sort()).toEqual(['fdsGen', 'timeEq'])
+            expect(Object.keys(p.elementsByMode).sort()).toEqual(['efs', 'fdsGen', 'timeEq'])
             expect(p.elementsByMode.fdsGen).toEqual([{ id: 1, comments: 'mesh' }])
             expect(p.elementsByMode.timeEq).toEqual([{ id: 5, comments: 'wall' }])
         }
@@ -69,6 +70,13 @@ describe('partializeState — non-DB modes are ephemeral', () => {
         expect(p.projectMode).toBe('timeEq')
         expect(p.timeEqInputs).toEqual({ use: 'Hotel' })
         expect(p.timeEqResult).toEqual({ reliability: 0.9 })
+    })
+
+    it('persists currentMode only when the active mode is DB-backed', () => {
+        expect(partializeState(baseState({ currentMode: 'efs' })).currentMode).toBe('efs')
+        expect(partializeState(baseState({ currentMode: 'timeEq' })).currentMode).toBe('timeEq')
+        expect(partializeState(baseState({ currentMode: 'fdsGen' })).currentMode).toBe('fdsGen')
+        expect('currentMode' in partializeState(baseState({ currentMode: 'radiation' }))).toBe(false)
     })
 
     it('still caches project meta and global settings in any mode', () => {

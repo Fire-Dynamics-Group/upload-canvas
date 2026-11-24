@@ -1,5 +1,6 @@
 import { buildFdsPayload, hydrateFdsState, fdsAutosaveSnapshot } from './fdsPersistence'
 import { buildTimeEqPayload, hydrateTimeEqState, timeEqAutosaveSnapshot } from './timeEqPersistence'
+import { buildEfsPayload, hydrateEfsState, efsAutosaveSnapshot, EFS_SETTINGS_DEFAULTS } from './efsPersistence'
 
 // Per-mode persistence registry.
 //
@@ -20,7 +21,7 @@ export const MODE_PERSISTENCE = {
     fdsGen: { dbBacked: true, buildPayload: buildFdsPayload, hydrate: hydrateFdsState, snapshot: fdsAutosaveSnapshot },
     radiation: { dbBacked: false },
     timeEq: { dbBacked: true, buildPayload: buildTimeEqPayload, hydrate: hydrateTimeEqState, snapshot: timeEqAutosaveSnapshot },
-    efs: { dbBacked: false },
+    efs: { dbBacked: true, buildPayload: buildEfsPayload, hydrate: hydrateEfsState, snapshot: efsAutosaveSnapshot },
 }
 
 // True only when the given mode should read/write the projects DB (dashboard,
@@ -96,16 +97,21 @@ const DB_BACKED_ONLY_FIELDS = [
 // cached only when the active mode is DB-backed. Net effect: a radiation/efs
 // session leaves nothing behind to restore on reload.
 export function partializeState(state) {
+    const efsPersisted = Object.fromEntries(
+        Object.keys(EFS_SETTINGS_DEFAULTS).map((k) => [k, state[k]])
+    )
     const persisted = {
+        ...(isDbBacked(state.currentMode) ? { currentMode: state.currentMode } : {}),
         projectId: state.projectId,
         floorId: state.floorId,
         projectName: state.projectName,
-        // Which mode the cached project belongs to. currentMode itself is not
-        // persisted (reload boots into fdsGen), so mergePersistedState uses
-        // this to avoid re-attaching e.g. a timeEq project to fdsGen.
+        // Which mode the cached project belongs to. If currentMode is DB-backed
+        // it is persisted above so HMR/reloads stay in the active mode; scratch
+        // modes omit currentMode and boot back into fdsGen.
         projectMode: state.currentMode,
         timeEqInputs: state.timeEqInputs,
         timeEqResult: state.timeEqResult,
+        ...efsPersisted,
         // Only DB-backed buckets survive; radiation/efs never persist.
         elementsByMode: Object.fromEntries(
             Object.entries(state.elementsByMode || {}).filter(([mode]) => isDbBacked(mode))
