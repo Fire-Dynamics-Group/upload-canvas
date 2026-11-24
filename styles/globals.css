@@ -15,10 +15,38 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-.efs-drawing-panel { left: 12px; width: 216px; padding: 18px 14px; }
+.efs-drawing-panel {
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 224px;
+  padding: 0;
+  border-radius: 0;
+  border-left: 0;
+  border-top: 0;
+  border-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.efs-drawing-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 18px 14px;
+}
+.efs-drawing-footer {
+  padding: 10px 14px;
+  border-top: 1px solid #e2e8f0;
+  background: #fff;
+  flex-shrink: 0;
+}
 .efs-calculation-panel { right: 12px; width: 384px; }
 .efs-calculation-panel.is-expanded { width: min(760px, calc(100vw - 260px)); }
-.efs-drawing-panel.is-collapsed { width: 72px; padding: 12px 8px; overflow: hidden; }
+.efs-drawing-panel.is-collapsed { width: 72px; padding: 0; overflow: hidden; }
+.efs-drawing-panel.is-collapsed .efs-drawing-scroll { padding: 12px 8px; overflow: hidden; }
+.efs-drawing-panel.is-collapsed .efs-panel-heading { flex-direction: column; align-items: center; }
+.efs-drawing-panel.is-collapsed .efs-drawing-footer { padding: 8px; }
 .efs-tool-rail { display: grid; gap: 8px; margin-top: 18px; }
 .efs-tool-rail-button { justify-content: center; padding: 10px 8px; }
 .efs-tool-rail-button .efs-tool-icon { margin: 0; }
@@ -38,11 +66,14 @@
 .efs-calculation-heading { display: flex; justify-content: space-between; align-items: center; padding: 18px; border-bottom: 1px solid #e2e8f0; }
 .efs-calculation-content { padding: 18px; }
 .efs-calculation-content input[type=number] { background: #f8fafc; min-height: 38px; }
-.efs-canvas-stage { margin: 56px 408px 0 240px; }
+.efs-canvas-stage { margin: 56px 408px 0 236px; }
+body:has(.efs-drawing-panel.is-collapsed) .efs-canvas-stage { margin-left: 84px; }
+body:not(:has(.efs-calculation-panel)) .efs-canvas-stage { margin-right: 16px; }
 @media (max-width: 900px) {
-  .efs-drawing-panel { width: 180px; left: 8px; padding: 12px 8px; }
+  .efs-drawing-panel { width: 184px; left: 0; }
+  .efs-drawing-scroll { padding: 12px 8px; }
   .efs-calculation-panel { width: 320px; right: 8px; }
-  .efs-canvas-stage { margin-left: 200px; margin-right: 336px; }
+  .efs-canvas-stage { margin-left: 196px; margin-right: 336px; }
 }
 @media (max-width: 640px) {
   .efs-drawing-panel { top: 48px; left: 8px; right: 8px; bottom: auto; width: auto; max-height: 180px; }

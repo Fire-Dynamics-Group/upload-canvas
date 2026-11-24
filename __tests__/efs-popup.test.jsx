@@ -66,7 +66,7 @@ describe('EfsPopup — whole-elevation required boundary distance', () => {
         expect(screen.getByText(/96\.00 m/)).toBeTruthy()
     })
 
-    it('restores its inputs and result after being closed and reopened', () => {
+    it('restores its inputs and result after being closed and reopened', async () => {
         const { unmount } = render(<EfsPopup onClose={() => {}} />)
         // Change an input away from its default, then run the calc.
         fireEvent.change(screen.getByDisplayValue('1040'), { target: { value: '900' } })
@@ -78,7 +78,8 @@ describe('EfsPopup — whole-elevation required boundary distance', () => {
         unmount()
         render(<EfsPopup onClose={() => {}} />)
         expect(screen.getByDisplayValue('900')).toBeTruthy()
-        expect(screen.getByText(/Governing required boundary distance/)).toBeTruthy()
+        expect(screen.getByText('Loading calculation results…')).toBeTruthy()
+        expect(await screen.findByText(/Governing required boundary distance/)).toBeTruthy()
     })
 
     it('shows column distances and keeps segment protection separate', () => {

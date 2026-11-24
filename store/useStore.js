@@ -6,6 +6,7 @@ import { defaultDoorTimings } from './defaultDoorTimings'
 import { isDbBacked, MODE_PERSISTENCE, PERSIST_VERSION, migratePersistedState, mergePersistedState, partializeState } from './persistenceModes'
 import { fdsElementSignature } from '../utils/fdsSignature'
 import { elementIsHighlighted } from '../utils/elementIds'
+import { isElementAllowedForMode, sanitizeCommentForMode, sanitizeToolForMode } from '../utils/modeElements'
 
 const useStore = create(persist((set, get) => {
     const defaultStairObject = {"fire_floor": 0, "total_floors": 5, "stair_roof_z": 25, "top_storey_height": 21}
@@ -98,6 +99,17 @@ const useStore = create(persist((set, get) => {
         // Per-region vertical band (issue #11), keyed by the drawn region
         // element's id: { base, top } in metres (default 0..elevation height).
         efsRegionConfig: {},
+        // EFS report-image display options (canvas overlay visibility & line widths).
+        efsShowScaleGrid: true,
+        efsShowDistanceArrows: true,
+        efsShowDistances: true,
+        efsShowGridSquares: true,
+        efsShowGridNumbers: true,
+        efsShowBayLabels: true,
+        efsWallLineWidth: 6,
+        efsBoundaryLineWidth: 4,
+        efsNeededBoundaryLineWidth: 4,
+        efsArrowLineWidth: 1.5,
 
         // Fire configuration
         fireHRR: 1000,              // kW
@@ -202,7 +214,10 @@ const useStore = create(persist((set, get) => {
             stairObject: newStairObject
         })),
         
-        addElement: (newEl) => set((state) => commitElements(state, [...state.elements, newEl])),
+        addElement: (newEl) => set((state) => {
+            if (!isElementAllowedForMode(state.currentMode, newEl)) return {}
+            return commitElements(state, [...state.elements, newEl])
+        }),
 
         // Undo/redo over committed elements. undo() steps back to the previous
         // snapshot (pushing the current onto the redo stack); redo() reverses it.
@@ -263,11 +278,13 @@ const useStore = create(persist((set, get) => {
             set(() => {
                 if (newTool != 'selection') 
                 return {
-                    tool: newTool,
+                    tool: sanitizeToolForMode(get().currentMode, newTool),
+                    comment: sanitizeCommentForMode(get().currentMode, get().comment),
                     selectedElement: null,
                 }
                 return {
-                    tool: newTool
+                    tool: sanitizeToolForMode(get().currentMode, newTool),
+                    comment: sanitizeCommentForMode(get().currentMode, get().comment),
                 }
             }
             )
@@ -315,11 +332,12 @@ const useStore = create(persist((set, get) => {
                 originPixels: null,
                 hasDoor: false,
                 tool: 'scale',
+                comment: newMode === 'efs' ? '' : state.comment,
                 selectedElement: null,
             }
         }),
         setComment: (newComment) => set(() => ({
-            comment: newComment
+            comment: sanitizeCommentForMode(get().currentMode, newComment)
         })),
         setCanvasDimensions: (dimensions) => set(() => ({
             canvasDimensions: dimensions
@@ -370,6 +388,29 @@ const useStore = create(persist((set, get) => {
         setEfsRegionBand: (id, band) => set((state) => ({
             efsRegionConfig: { ...state.efsRegionConfig, [id]: { ...state.efsRegionConfig[id], ...band } },
         })),
+
+        setEfsShowScaleGrid: (v) => set(() => ({ efsShowScaleGrid: Boolean(v) })),
+        setEfsShowDistanceArrows: (v) => set(() => ({ efsShowDistanceArrows: Boolean(v) })),
+        setEfsShowDistances: (v) => set(() => ({ efsShowDistances: Boolean(v) })),
+        setEfsShowGridSquares: (v) => set(() => ({ efsShowGridSquares: Boolean(v) })),
+        setEfsShowGridNumbers: (v) => set(() => ({ efsShowGridNumbers: Boolean(v) })),
+        setEfsShowBayLabels: (v) => set(() => ({ efsShowBayLabels: Boolean(v) })),
+        setEfsWallLineWidth: (v) => set(() => {
+            const n = Number(v)
+            return { efsWallLineWidth: Number.isFinite(n) && n >= 0.5 ? n : 6 }
+        }),
+        setEfsBoundaryLineWidth: (v) => set(() => {
+            const n = Number(v)
+            return { efsBoundaryLineWidth: Number.isFinite(n) && n >= 0.5 ? n : 4 }
+        }),
+        setEfsNeededBoundaryLineWidth: (v) => set(() => {
+            const n = Number(v)
+            return { efsNeededBoundaryLineWidth: Number.isFinite(n) && n >= 0.5 ? n : 4 }
+        }),
+        setEfsArrowLineWidth: (v) => set(() => {
+            const n = Number(v)
+            return { efsArrowLineWidth: Number.isFinite(n) && n >= 0.5 ? n : 1.5 }
+        }),
 
         setConvertedPoints: () => set((state) => {
             let tempOrigin = findOriginPixels(state.elements, state.canvasDimensions.height)
@@ -625,6 +666,17 @@ const useStore = create(persist((set, get) => {
                 efsRequiredByElev: {},
                 efsEndSpacingByElev: {},
                 efsRegionConfig: {},
+        // EFS report-image display options (canvas overlay visibility & line widths).
+        efsShowScaleGrid: true,
+        efsShowDistanceArrows: true,
+        efsShowDistances: true,
+        efsShowGridSquares: true,
+        efsShowGridNumbers: true,
+        efsShowBayLabels: true,
+        efsWallLineWidth: 6,
+        efsBoundaryLineWidth: 4,
+        efsNeededBoundaryLineWidth: 4,
+        efsArrowLineWidth: 1.5,
                 efsCalcDone: false,
                 pdfData: null,
                 pdfIsGreyscale: false,

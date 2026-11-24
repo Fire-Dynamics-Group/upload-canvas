@@ -442,7 +442,7 @@ export default function Home() {
 
     if (skipScale) {
       setTool("selection")
-      setComment("obstruction")
+      setComment(useStore.getState().currentMode === 'efs' ? '' : 'obstruction')
     }
   }
 

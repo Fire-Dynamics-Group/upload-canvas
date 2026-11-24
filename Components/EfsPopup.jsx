@@ -68,6 +68,7 @@ const EfsPopup = ({ onClose, docked = false }) => {
     const [result, setResult] = useState(null)
     const [error, setError] = useState(null)
     const [suggestNote, setSuggestNote] = useState(null)
+    const [isRecalculating, setIsRecalculating] = useState(false)
 
     // ---- Enclosing rectangle (BRE 135) tab state ----
     // Elevations come from the same faces as the view-factor method
@@ -201,7 +202,15 @@ const EfsPopup = ({ onClose, docked = false }) => {
     // back with its results (inputs already persist via the store). Mount-only.
     useEffect(() => {
         if (efsCalcDone && wall?.finalPoints?.length >= 2) {
-            assessElev(active, protectedBays)
+            setIsRecalculating(true)
+            const raf = requestAnimationFrame(() => {
+                try {
+                    assessElev(active, protectedBays)
+                } finally {
+                    setIsRecalculating(false)
+                }
+            })
+            return () => cancelAnimationFrame(raf)
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
@@ -538,6 +547,13 @@ const EfsPopup = ({ onClose, docked = false }) => {
                 </div>
 
                 {suggestNote && <p className="text-sm mt-2 text-amber-800">{suggestNote}</p>}
+
+                {isRecalculating && (
+                    <div role="status" className="mt-4 flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700">
+                        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" aria-hidden="true" />
+                        <span>Loading calculation results…</span>
+                    </div>
+                )}
 
                 {regions.length > 0 && (
                     <div className="mt-4 border-t pt-3">

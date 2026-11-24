@@ -17,14 +17,14 @@ describe('persistence mode registry', () => {
         )
     })
 
-    it('marks fdsGen and timeEq as DB-backed', () => {
+    it('marks fdsGen, timeEq, and efs as DB-backed', () => {
         expect(isDbBacked('fdsGen')).toBe(true)
         expect(isDbBacked('timeEq')).toBe(true)
+        expect(isDbBacked('efs')).toBe(true)
     })
 
-    it('marks radiation and efs as NOT DB-backed (yet)', () => {
+    it('marks radiation as NOT DB-backed', () => {
         expect(isDbBacked('radiation')).toBe(false)
-        expect(isDbBacked('efs')).toBe(false)
     })
 
     it('treats unknown/undefined modes as not DB-backed', () => {

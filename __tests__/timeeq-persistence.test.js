@@ -202,9 +202,9 @@ describe('registry wiring', () => {
         expect(snap.pixelsPerMesh).toBe(12.5)
     })
 
-    it('fdsGen has a snapshot too; non-DB modes have none', () => {
+    it('DB-backed modes have a snapshot; non-DB modes have none', () => {
         expect(autosaveSnapshot({ ...sampleState, currentMode: 'fdsGen' })).not.toBeNull()
+        expect(autosaveSnapshot({ ...sampleState, currentMode: 'efs' })).not.toBeNull()
         expect(autosaveSnapshot({ ...sampleState, currentMode: 'radiation' })).toBeNull()
-        expect(autosaveSnapshot({ ...sampleState, currentMode: 'efs' })).toBeNull()
     })
 })
