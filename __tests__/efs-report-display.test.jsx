@@ -82,4 +82,16 @@ describe('EFS report display controls', () => {
         expect(screen.getByLabelText('Calculation parameters and results')).toBeTruthy()
         expect(screen.queryByRole('button', { name: 'Open calcs' })).toBeNull()
     })
+
+    it('collapses the drawing tools panel to an icon-only expand button and re-expands it', () => {
+        render(<EfsWorkspaceTools onChangeMode={() => {}} />)
+
+        fireEvent.click(screen.getByRole('button', { name: 'Collapse drawing tools' }))
+        const expandBtn = screen.getByRole('button', { name: 'Expand drawing tools' })
+        expect(expandBtn.textContent).toBe('')
+        expect(expandBtn.querySelector('svg')).toBeTruthy()
+
+        fireEvent.click(expandBtn)
+        expect(screen.getByRole('button', { name: 'Collapse drawing tools' })).toBeTruthy()
+    })
 })

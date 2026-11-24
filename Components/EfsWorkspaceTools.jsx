@@ -77,13 +77,17 @@ export default function EfsWorkspaceTools({ onChangeMode }) {
                     {!drawingOpen && <span className="efs-panel-eyebrow" title="Drawing tools">EFS</span>}
                     <button
                         type="button"
-                        className="efs-secondary-button"
+                        className="efs-secondary-button flex items-center justify-center"
                         aria-expanded={drawingOpen}
                         aria-label={drawingOpen ? 'Collapse drawing tools' : 'Expand drawing tools'}
                         title={drawingOpen ? 'Collapse drawing tools' : 'Open drawing tools'}
                         onClick={() => setDrawingOpen(!drawingOpen)}
                     >
-                        {drawingOpen ? 'Collapse' : 'Open tools'}
+                        {drawingOpen ? 'Collapse' : (
+                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M13 5l7 7-7 7M6 5l7 7-7 7" />
+                            </svg>
+                        )}
                     </button>
                 </div>
                 {drawingOpen ? <>
