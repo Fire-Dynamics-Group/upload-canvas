@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import React from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import AuthGate from '../Components/auth/AuthGate'
 import { useAuth } from '../lib/auth/AuthContext'
 
@@ -150,5 +150,30 @@ describe('AuthGate Microsoft SSO Redirect & Return Preservation', () => {
         })
 
         expect(mockLoginRedirect).not.toHaveBeenCalled()
+    })
+
+    it('offers Retry sign-in when MSAL fails and recovers on retry', async () => {
+        const fakeAccount = {
+            idTokenClaims: { oid: 'user-oid-1' },
+            name: 'Ian Shaw',
+            username: 'ian.shaw@firedynamicsgroup.com',
+        }
+        mockHandleRedirectPromise
+            .mockRejectedValueOnce(new Error('Popup/redirect failed'))
+            .mockResolvedValueOnce(null)
+        mockGetActiveAccount.mockReturnValue(fakeAccount)
+
+        render(
+            <AuthGate>
+                <TestConsumer />
+            </AuthGate>
+        )
+
+        expect(await screen.findByText(/Microsoft sign-in could not be completed/i)).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: /Retry sign-in/i }))
+
+        await waitFor(() => {
+            expect(screen.getByTestId('auth-status')).toHaveTextContent('ready')
+        })
     })
 })
