@@ -21,9 +21,11 @@ function MockProvider({ children }) {
 function MicrosoftProvider({ children }) {
   const [account, setAccount] = useState(null)
   const [error, setError] = useState(null)
+  const [retryCount, setRetryCount] = useState(0)
 
   useEffect(() => {
     let cancelled = false
+    setError(null)
     const signIn = async () => {
       const { PublicClientApplication } = await import('@azure/msal-browser')
       const client = new PublicClientApplication({
@@ -79,10 +81,24 @@ function MicrosoftProvider({ children }) {
       cancelled = true
       setTokenProvider(async () => null)
     }
-  }, [])
+  }, [retryCount])
 
   if (error) {
-    return <main className="min-h-screen bg-gray-900 text-white flex items-center justify-center p-6"><p>Microsoft sign-in could not be completed. {error.message}</p></main>
+    return (
+      <main className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center gap-4 p-6 text-center">
+        <p>Microsoft sign-in could not be completed. {error.message}</p>
+        <button
+          type="button"
+          onClick={() => {
+            setError(null)
+            setRetryCount((c) => c + 1)
+          }}
+          className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          Retry sign-in
+        </button>
+      </main>
+    )
   }
   if (!account) return <main className="min-h-screen bg-gray-900 text-white flex items-center justify-center">Signing in with Microsoft…</main>
   return <AuthContext.Provider value={{ account, ready: true }}>{children}</AuthContext.Provider>

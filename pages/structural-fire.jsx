@@ -38,6 +38,8 @@ export default function StructuralFirePage() {
     const [reportDetailsOpen, setReportDetailsOpen] = useState(false)
     const [isClaiming, setIsClaiming] = useState(false)
     const [error, setError] = useState(null)
+    const [failedHandoffId, setFailedHandoffId] = useState(null)
+    const [handoffRetryCount, setHandoffRetryCount] = useState(0)
 
     // Handoff loading state - synchronous detection on first render tick so we lead with loading
     const [handoffLoading, setHandoffLoading] = useState(() => {
@@ -176,12 +178,17 @@ export default function StructuralFirePage() {
                 }
             } catch (err) {
                 if (err.status === 409 && err.claimedByProjectId) {
+                    setFailedHandoffId(null)
                     setHandoffStep('Opening previously linked assessment…')
                     if (typeof router?.replace === 'function') {
                         router.replace(`/structural-fire?project=${err.claimedByProjectId}`, undefined, { shallow: true })
                     }
                     await selectProjectById(err.claimedByProjectId)
+                } else if (err.status === 410) {
+                    setFailedHandoffId(null)
+                    setError('MACS+ handoff link expired. Return to MACS+ Automation and click "Open in Upload Canvas" again.')
                 } else {
+                    setFailedHandoffId(handoffParam)
                     setError(`Failed to process MACS handoff: ${err.message}`)
                 }
             } finally {
@@ -189,7 +196,7 @@ export default function StructuralFirePage() {
             }
         }
         processHandoff()
-    }, [queryHandoffId, selectProjectById, router, userName, userId])
+    }, [queryHandoffId, selectProjectById, router, userName, userId, handoffRetryCount])
 
     // Handle project creation
     const handleNewProject = async () => {
@@ -361,9 +368,26 @@ export default function StructuralFirePage() {
 
             {/* Error Banner */}
             {error && (
-                <div className="bg-red-500 text-white text-xs px-4 py-2 font-medium flex items-center justify-between">
+                <div className="bg-red-500 text-white text-xs px-4 py-2 font-medium flex items-center justify-between gap-3">
                     <span>{error}</span>
-                    <button type="button" onClick={() => setError(null)} className="font-bold">✕</button>
+                    <div className="flex items-center gap-2">
+                        {failedHandoffId && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    hasProcessedHandoff.current = false
+                                    setError(null)
+                                    setFailedHandoffId(null)
+                                    setHandoffLoading(true)
+                                    setHandoffRetryCount((c) => c + 1)
+                                }}
+                                className="rounded bg-white/20 px-2.5 py-0.5 text-xs font-semibold hover:bg-white/30"
+                            >
+                                Retry handoff
+                            </button>
+                        )}
+                        <button type="button" onClick={() => { setError(null); setFailedHandoffId(null) }} className="font-bold">✕</button>
+                    </div>
                 </div>
             )}
 
