@@ -42,7 +42,7 @@ const elementConfig = {
     "sensorTree": "#00ff88",
     "fsaSensor": "#ff9900",
     "efsWall": "#eab308",
-    "efsBoundary": "#ef4444",
+    "efsBoundary": "#f97316",
     "efsProtected": "#2563eb",
     "efsUnprotected": "#ef4444"
 }
@@ -333,6 +333,8 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
     const efsBoundaryLineWidth = useStore((state) => state.efsBoundaryLineWidth)
     const efsNeededBoundaryLineWidth = useStore((state) => state.efsNeededBoundaryLineWidth)
     const efsArrowLineWidth = useStore((state) => state.efsArrowLineWidth)
+    const efsRadiationFillOpacity = useStore((state) => state.efsRadiationFillOpacity)
+    const efsScreenshotMode = useStore((state) => state.efsScreenshotMode)
     const setPixelsPerMesh = useStore((state) => state.setPixelsPerMesh)
 
 
@@ -875,7 +877,23 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 if (i > 0) {
                     let prev = points[i-1]
                     let current = points[i]
-                    context.strokeStyle = (currentMode === 'fdsGen') ? 'black' : elementConfig[comments] // depending on mode if radiation use comment for optionsObject
+                    let strokeColor = (currentMode === 'fdsGen') ? 'black' : elementConfig[comments] // depending on mode if radiation use comment for optionsObject
+                    if (currentMode === 'efs' && efsScreenshotMode && (comments === 'efsProtected' || comments === 'efsUnprotected') && points.length >= 1) {
+                        const efsWall = elements.find((el) => el.comments === 'efsWall')
+                        if (efsWall?.points?.length >= 2) {
+                            const elevs = splitIntoElevations(efsWall.points)
+                            const actIdx = elevs.length ? Math.min(efsActiveElevation, elevs.length - 1) : 0
+                            const mid = points.reduce((acc, p) => ({ x: acc.x + p.x / points.length, y: acc.y + p.y / points.length }), { x: 0, y: 0 })
+                            let bestIdx = 0
+                            let bestD = Infinity
+                            elevs.forEach((e, idx) => {
+                                const d = pointToPolylineDistance(mid, e.points)
+                                if (d < bestD) { bestD = d; bestIdx = idx }
+                            })
+                            if (bestIdx !== actIdx) strokeColor = '#94a3b8'
+                        }
+                    }
+                    context.strokeStyle = strokeColor
                     context.lineWidth = (currentMode === 'fdsGen')
                         ? 1
                         : (currentMode === 'efs'
@@ -1429,21 +1447,24 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                 const activeOpts = optsForElev(activeIdx)
                 const stations = gridlineStations(facePts, spacingPx, activeOpts)
                 canvasBays(wall.points, spacingM, pxPerM, efsEndSpacingByElev).forEach((segment) => {
+                    const isOtherElev = efsScreenshotMode && segment.elevation !== activeIdx
                     const protectedBay = (efsProtectedByElev[segment.elevation] || []).includes(segment.bay)
                     context.save()
-                    context.strokeStyle = protectedBay ? '#2563eb' : '#ef4444'
+                    context.strokeStyle = isOtherElev ? '#94a3b8' : (protectedBay ? '#2563eb' : '#ef4444')
                     context.lineWidth = efsWallLineWidth
                     context.beginPath()
                     context.moveTo(segment.a.x, segment.a.y)
                     context.lineTo(segment.b.x, segment.b.y)
                     context.stroke()
-                    const labelParts = []
-                    if (efsShowBayLabels) labelParts.push(`${protectedBay ? 'P' : 'U'}${segment.bay}`)
-                    if (efsShowDistances) labelParts.push(`${segment.length.toFixed(2)} m`)
-                    if (labelParts.length > 0) {
-                        context.fillStyle = context.strokeStyle
-                        context.font = 'bold 11px sans-serif'
-                        context.fillText(labelParts.join(' · '), (segment.a.x + segment.b.x) / 2 + 6, (segment.a.y + segment.b.y) / 2 - 18)
+                    if (!isOtherElev) {
+                        const labelParts = []
+                        if (efsShowBayLabels) labelParts.push(`${protectedBay ? 'P' : 'U'}${segment.bay}`)
+                        if (efsShowDistances) labelParts.push(`${segment.length.toFixed(2)} m`)
+                        if (labelParts.length > 0) {
+                            context.fillStyle = context.strokeStyle
+                            context.font = 'bold 11px sans-serif'
+                            context.fillText(labelParts.join(' · '), (segment.a.x + segment.b.x) / 2 + 6, (segment.a.y + segment.b.y) / 2 - 18)
+                        }
                     }
                     context.restore()
                 })
@@ -1455,7 +1476,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                         if (idx === activeIdx) return
                         gridlineStations(e.points, spacingPx, optsForElev(idx)).forEach((st) => {
                             context.save()
-                            context.fillStyle = 'rgba(234,179,8,0.5)'
+                            context.fillStyle = efsScreenshotMode ? 'rgba(148,163,184,0.5)' : 'rgba(234,179,8,0.5)'
                             context.beginPath()
                             context.rect(st.point.x - 3, st.point.y - 3, 6, 6)
                             context.fill()
@@ -1524,30 +1545,6 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                         })
                     })
 
-                stations.forEach((st) => {
-                    const r = 5
-                    context.save()
-                    if (efsShowGridSquares) {
-                        context.fillStyle = elementConfig['efsWall']
-                        context.strokeStyle = 'black'
-                        context.lineWidth = 1.5
-                        context.beginPath()
-                        context.rect(st.point.x - r, st.point.y - r, r * 2, r * 2)
-                        context.fill()
-                        context.stroke()
-                    }
-                    if (showGridlineLabels && efsShowGridNumbers) {
-                        const label = String(st.gridline)
-                        context.font = 'bold 12px sans-serif'
-                        context.lineWidth = 3
-                        context.strokeStyle = 'black'
-                        context.strokeText(label, st.point.x + r + 2, st.point.y - r - 2)
-                        context.fillStyle = 'white'
-                        context.fillText(label, st.point.x + r + 2, st.point.y - r - 2)
-                    }
-                    context.restore()
-                })
-
                 const drawBoundaryArrow = (from, to, distM) => {
                     context.save()
                     if (efsShowDistanceArrows) {
@@ -1610,6 +1607,16 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                     const valid = line.filter((l) => l.point)
                     if (valid.length >= 2) {
                         context.save()
+                        const fillOpacity = Number.isFinite(efsRadiationFillOpacity) ? efsRadiationFillOpacity : 0.1
+                        if (fillOpacity > 0) {
+                            context.fillStyle = `rgba(249, 115, 22, ${fillOpacity})`
+                            context.beginPath()
+                            context.moveTo(valid[0].from.x, valid[0].from.y)
+                            for (let i = 0; i < valid.length; i++) context.lineTo(valid[i].point.x, valid[i].point.y)
+                            for (let i = valid.length - 1; i >= 0; i--) context.lineTo(valid[i].from.x, valid[i].from.y)
+                            context.closePath()
+                            context.fill()
+                        }
                         context.strokeStyle = '#16a34a' // green: the required line
                         context.lineWidth = efsNeededBoundaryLineWidth // match the configured needed-boundary width
                         context.setLineDash([8, 5])
@@ -1624,6 +1631,32 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                         context.restore()
                     }
                 }
+
+                // Draw bay yellow squares (and gridline numbers) last so they sit
+                // on top of walls, region shading, arrows, and needed boundary.
+                stations.forEach((st) => {
+                    const r = 5
+                    context.save()
+                    if (efsShowGridSquares) {
+                        context.fillStyle = elementConfig['efsWall']
+                        context.strokeStyle = 'black'
+                        context.lineWidth = 1.5
+                        context.beginPath()
+                        context.rect(st.point.x - r, st.point.y - r, r * 2, r * 2)
+                        context.fill()
+                        context.stroke()
+                    }
+                    if (showGridlineLabels && efsShowGridNumbers) {
+                        const label = String(st.gridline)
+                        context.font = 'bold 12px sans-serif'
+                        context.lineWidth = 3
+                        context.strokeStyle = 'black'
+                        context.strokeText(label, st.point.x + r + 2, st.point.y - r - 2)
+                        context.fillStyle = 'white'
+                        context.fillText(label, st.point.x + r + 2, st.point.y - r - 2)
+                    }
+                    context.restore()
+                })
             }
         }
 
@@ -1768,7 +1801,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
             context.restore()
         }
 
-    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsActiveElevation, efsProtectedByElev, efsRequiredByElev, efsEndSpacingByElev, efsShowDistanceArrows, efsShowDistances, efsShowGridSquares, efsShowGridNumbers, efsShowBayLabels, efsWallLineWidth, efsBoundaryLineWidth, efsNeededBoundaryLineWidth, efsArrowLineWidth, debugRects, snapGuides, candidateCycleState, zoom])
+    }, [currentPoly, guideLine, isCtrlPressed, isDrawing, elements, scalePoints, tool, currentRect, currentPoint, comment, selectedElement, currentMode, highlightedDoorId, doorRoles, highlightedLandingId, landingRoles, extractConfig, highlightedExtractId, highlightedInletId, isSprinklered, pixelsPerMesh, efsColumnSpacing, efsPopupOpen, efsCalcDone, efsActiveElevation, efsProtectedByElev, efsRequiredByElev, efsEndSpacingByElev, efsShowDistanceArrows, efsShowDistances, efsShowGridSquares, efsShowGridNumbers, efsShowBayLabels, efsWallLineWidth, efsBoundaryLineWidth, efsNeededBoundaryLineWidth, efsArrowLineWidth, efsRadiationFillOpacity, efsScreenshotMode, debugRects, snapGuides, candidateCycleState, zoom])
 
     // Generate thumbnail by compositing PDF + drawing canvases
     const thumbnailTimerRef = useRef(null)

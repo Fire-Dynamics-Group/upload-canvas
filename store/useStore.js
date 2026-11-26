@@ -110,6 +110,8 @@ const useStore = create(persist((set, get) => {
         efsBoundaryLineWidth: 4,
         efsNeededBoundaryLineWidth: 4,
         efsArrowLineWidth: 1.5,
+        efsRadiationFillOpacity: 0.1,
+        efsScreenshotMode: false,
 
         // Fire configuration
         fireHRR: 1000,              // kW
@@ -411,6 +413,11 @@ const useStore = create(persist((set, get) => {
             const n = Number(v)
             return { efsArrowLineWidth: Number.isFinite(n) && n >= 0.5 ? n : 1.5 }
         }),
+        setEfsRadiationFillOpacity: (v) => set(() => {
+            const n = Number(v)
+            return { efsRadiationFillOpacity: Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0.1 }
+        }),
+        setEfsScreenshotMode: (v) => set(() => ({ efsScreenshotMode: Boolean(v) })),
 
         setConvertedPoints: () => set((state) => {
             let tempOrigin = findOriginPixels(state.elements, state.canvasDimensions.height)
@@ -677,6 +684,8 @@ const useStore = create(persist((set, get) => {
         efsBoundaryLineWidth: 4,
         efsNeededBoundaryLineWidth: 4,
         efsArrowLineWidth: 1.5,
+        efsRadiationFillOpacity: 0.1,
+        efsScreenshotMode: false,
                 efsCalcDone: false,
                 pdfData: null,
                 pdfIsGreyscale: false,

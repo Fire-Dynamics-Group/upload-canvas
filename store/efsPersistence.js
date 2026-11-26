@@ -29,6 +29,8 @@ export const EFS_SETTINGS_DEFAULTS = {
     efsBoundaryLineWidth: 4,
     efsNeededBoundaryLineWidth: 4,
     efsArrowLineWidth: 1.5,
+    efsRadiationFillOpacity: 0.1,
+    efsScreenshotMode: false,
 }
 
 const toElementIn = (el, i) => ({
