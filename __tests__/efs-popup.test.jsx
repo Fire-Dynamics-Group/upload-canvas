@@ -199,8 +199,8 @@ describe('EfsPopup — BRE 135 enclosing-rectangle tab', () => {
             ],
         })
         render(<EfsPopup onClose={() => {}} />)
-        const toggle = screen.getByLabelText(/Screenshot mode/i)
-        expect(toggle.checked).toBe(false)
+        const toggle = screen.getByRole('button', { name: /Screenshot mode/i })
+        expect(toggle.getAttribute('aria-pressed')).toBe('false')
         fireEvent.click(toggle)
         expect(useStore.getState().efsScreenshotMode).toBe(true)
     })

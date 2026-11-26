@@ -524,14 +524,21 @@ const EfsPopup = ({ onClose, docked = false }) => {
                                 </button>
                             ))}
                         </div>
-                        <label className="mt-2 inline-flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
-                            <input
-                                type="checkbox"
-                                checked={screenshotMode}
-                                onChange={(e) => setScreenshotMode(e.target.checked)}
-                            />
-                            <span>Screenshot mode (greyscale other elevations)</span>
-                        </label>
+                        <button
+                            type="button"
+                            aria-pressed={screenshotMode}
+                            onClick={() => setScreenshotMode(!screenshotMode)}
+                            className={`mt-2 w-full flex items-center justify-between px-3 py-2 rounded-lg border text-xs font-semibold transition-colors ${
+                                screenshotMode
+                                    ? 'bg-slate-800 text-white border-slate-800 hover:bg-slate-700'
+                                    : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
+                            }`}
+                        >
+                            <span>{screenshotMode ? 'Screenshot mode (other walls greyscaled)' : 'Screenshot mode (greyscale other walls)'}</span>
+                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${screenshotMode ? 'bg-amber-400 text-slate-900' : 'bg-white text-slate-600 border border-slate-300'}`}>
+                                {screenshotMode ? 'ON' : 'OFF'}
+                            </span>
+                        </button>
                     </div>
                 )}
 
