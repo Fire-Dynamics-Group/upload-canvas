@@ -1607,7 +1607,7 @@ function Canvas({dimensions, isDevMode, zoom = 1}) {
                     const valid = line.filter((l) => l.point)
                     if (valid.length >= 2) {
                         context.save()
-                        const fillOpacity = Number.isFinite(efsRadiationFillOpacity) ? efsRadiationFillOpacity : 0.1
+                        const fillOpacity = Number.isFinite(efsRadiationFillOpacity) ? efsRadiationFillOpacity : 0.3
                         if (fillOpacity > 0) {
                             context.fillStyle = `rgba(249, 115, 22, ${fillOpacity})`
                             context.beginPath()

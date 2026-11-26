@@ -176,14 +176,14 @@ export default function EfsWorkspaceTools({ onChangeMode }) {
                             <label className="block pt-1">
                                 <span className="flex items-center justify-between mb-0.5">
                                     <span>Radiation area opacity</span>
-                                    <span className="font-medium tabular-nums">{Math.round((radiationFillOpacity ?? 0.1) * 100)}%</span>
+                                    <span className="font-medium tabular-nums">{Math.round((radiationFillOpacity ?? 0.3) * 100)}%</span>
                                 </span>
                                 <input
                                     type="range"
                                     min={0}
                                     max={1}
                                     step="0.01"
-                                    value={radiationFillOpacity ?? 0.1}
+                                    value={radiationFillOpacity ?? 0.3}
                                     onChange={(e) => setRadiationFillOpacity(e.target.value)}
                                     className="w-full accent-orange-500 cursor-pointer"
                                     aria-label="Radiation area opacity"

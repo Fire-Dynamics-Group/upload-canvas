@@ -25,11 +25,11 @@ export const EFS_SETTINGS_DEFAULTS = {
     efsShowGridSquares: true,
     efsShowGridNumbers: true,
     efsShowBayLabels: true,
-    efsWallLineWidth: 6,
-    efsBoundaryLineWidth: 4,
-    efsNeededBoundaryLineWidth: 4,
+    efsWallLineWidth: 12,
+    efsBoundaryLineWidth: 12,
+    efsNeededBoundaryLineWidth: 12,
     efsArrowLineWidth: 1.5,
-    efsRadiationFillOpacity: 0.1,
+    efsRadiationFillOpacity: 0.3,
     efsScreenshotMode: false,
 }
 
