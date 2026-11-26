@@ -64,6 +64,8 @@ const EfsPopup = ({ onClose, docked = false }) => {
     // Region bands (issue #11), keyed by drawn region element id.
     const regionConfig = useStore((state) => state.efsRegionConfig)
     const setRegionBand = useStore((state) => state.setEfsRegionBand)
+    const screenshotMode = useStore((state) => state.efsScreenshotMode)
+    const setScreenshotMode = useStore((state) => state.setEfsScreenshotMode)
 
     const [result, setResult] = useState(null)
     const [error, setError] = useState(null)
@@ -508,18 +510,28 @@ const EfsPopup = ({ onClose, docked = false }) => {
 
                 {/* Elevation tabs (issue #10): one per face of the drawn outline. */}
                 {elevations.length > 1 && (
-                    <div className="flex flex-wrap gap-1 mb-3 border-b">
-                        {elevations.map((e, i) => (
-                            <button
-                                key={i}
-                                onClick={() => switchTab(i)}
-                                className={`px-3 py-1 text-sm rounded-t ${
-                                    i === active ? 'bg-blue-600 text-white' : 'bg-gray-100 text-black hover:bg-gray-200'
-                                }`}
-                            >
-                                Elevation {e.index}
-                            </button>
-                        ))}
+                    <div className="mb-3">
+                        <div className="flex flex-wrap gap-1 border-b">
+                            {elevations.map((e, i) => (
+                                <button
+                                    key={i}
+                                    onClick={() => switchTab(i)}
+                                    className={`px-3 py-1 text-sm rounded-t ${
+                                        i === active ? 'bg-blue-600 text-white' : 'bg-gray-100 text-black hover:bg-gray-200'
+                                    }`}
+                                >
+                                    Elevation {e.index}
+                                </button>
+                            ))}
+                        </div>
+                        <label className="mt-2 inline-flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                checked={screenshotMode}
+                                onChange={(e) => setScreenshotMode(e.target.checked)}
+                            />
+                            <span>Screenshot mode (greyscale other elevations)</span>
+                        </label>
                     </div>
                 )}
 

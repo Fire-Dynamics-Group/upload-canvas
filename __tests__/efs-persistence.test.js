@@ -40,6 +40,8 @@ describe('EFS persistence handlers', () => {
         efsBoundaryLineWidth: 3,
         efsNeededBoundaryLineWidth: 5,
         efsArrowLineWidth: 2,
+        efsRadiationFillOpacity: 0.25,
+        efsScreenshotMode: true,
     }
 
     it('wires efs handlers on MODE_PERSISTENCE with dbBacked: true', () => {
@@ -80,6 +82,8 @@ describe('EFS persistence handlers', () => {
         expect(hydrated.efsShowScaleGrid).toBe(false)
         expect(hydrated.efsWallLineWidth).toBe(8)
         expect(hydrated.efsArrowLineWidth).toBe(2)
+        expect(hydrated.efsRadiationFillOpacity).toBe(0.25)
+        expect(hydrated.efsScreenshotMode).toBe(true)
     })
 
     it('falls back to EFS_SETTINGS_DEFAULTS when opening a project without efsSettings', () => {
