@@ -106,11 +106,11 @@ const useStore = create(persist((set, get) => {
         efsShowGridSquares: true,
         efsShowGridNumbers: true,
         efsShowBayLabels: true,
-        efsWallLineWidth: 6,
-        efsBoundaryLineWidth: 4,
-        efsNeededBoundaryLineWidth: 4,
+        efsWallLineWidth: 12,
+        efsBoundaryLineWidth: 12,
+        efsNeededBoundaryLineWidth: 12,
         efsArrowLineWidth: 1.5,
-        efsRadiationFillOpacity: 0.1,
+        efsRadiationFillOpacity: 0.3,
         efsScreenshotMode: false,
 
         // Fire configuration
@@ -399,15 +399,15 @@ const useStore = create(persist((set, get) => {
         setEfsShowBayLabels: (v) => set(() => ({ efsShowBayLabels: Boolean(v) })),
         setEfsWallLineWidth: (v) => set(() => {
             const n = Number(v)
-            return { efsWallLineWidth: Number.isFinite(n) && n >= 0.5 ? n : 6 }
+            return { efsWallLineWidth: Number.isFinite(n) && n >= 0.5 ? n : 12 }
         }),
         setEfsBoundaryLineWidth: (v) => set(() => {
             const n = Number(v)
-            return { efsBoundaryLineWidth: Number.isFinite(n) && n >= 0.5 ? n : 4 }
+            return { efsBoundaryLineWidth: Number.isFinite(n) && n >= 0.5 ? n : 12 }
         }),
         setEfsNeededBoundaryLineWidth: (v) => set(() => {
             const n = Number(v)
-            return { efsNeededBoundaryLineWidth: Number.isFinite(n) && n >= 0.5 ? n : 4 }
+            return { efsNeededBoundaryLineWidth: Number.isFinite(n) && n >= 0.5 ? n : 12 }
         }),
         setEfsArrowLineWidth: (v) => set(() => {
             const n = Number(v)
@@ -415,7 +415,7 @@ const useStore = create(persist((set, get) => {
         }),
         setEfsRadiationFillOpacity: (v) => set(() => {
             const n = Number(v)
-            return { efsRadiationFillOpacity: Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0.1 }
+            return { efsRadiationFillOpacity: Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0.3 }
         }),
         setEfsScreenshotMode: (v) => set(() => ({ efsScreenshotMode: Boolean(v) })),
 
@@ -680,11 +680,11 @@ const useStore = create(persist((set, get) => {
         efsShowGridSquares: true,
         efsShowGridNumbers: true,
         efsShowBayLabels: true,
-        efsWallLineWidth: 6,
-        efsBoundaryLineWidth: 4,
-        efsNeededBoundaryLineWidth: 4,
+        efsWallLineWidth: 12,
+        efsBoundaryLineWidth: 12,
+        efsNeededBoundaryLineWidth: 12,
         efsArrowLineWidth: 1.5,
-        efsRadiationFillOpacity: 0.1,
+        efsRadiationFillOpacity: 0.3,
         efsScreenshotMode: false,
                 efsCalcDone: false,
                 pdfData: null,
