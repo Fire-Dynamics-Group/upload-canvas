@@ -185,4 +185,23 @@ describe('EfsPopup — BRE 135 enclosing-rectangle tab', () => {
         fireEvent.click(screen.getByText('Enclosing rectangle (BRE 135)'))
         expect(screen.getByText(/Draw a wall polyline first/)).toBeTruthy()
     })
+
+    it('toggles screenshot mode when multiple elevations are present', () => {
+        useStore.setState({
+            efsScreenshotMode: false,
+            convertedPoints: [
+                {
+                    id: 1,
+                    type: 'polyline',
+                    comments: 'efsWall',
+                    finalPoints: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }],
+                },
+            ],
+        })
+        render(<EfsPopup onClose={() => {}} />)
+        const toggle = screen.getByRole('button', { name: /Screenshot mode/i })
+        expect(toggle.getAttribute('aria-pressed')).toBe('false')
+        fireEvent.click(toggle)
+        expect(useStore.getState().efsScreenshotMode).toBe(true)
+    })
 })

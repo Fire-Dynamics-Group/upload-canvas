@@ -27,6 +27,7 @@ export default function EfsWorkspaceTools({ onChangeMode }) {
     const boundaryLineWidth = useStore(s => s.efsBoundaryLineWidth)
     const neededBoundaryLineWidth = useStore(s => s.efsNeededBoundaryLineWidth)
     const arrowLineWidth = useStore(s => s.efsArrowLineWidth)
+    const radiationFillOpacity = useStore(s => s.efsRadiationFillOpacity)
     const setShowScaleGrid = useStore(s => s.setEfsShowScaleGrid)
     const setShowDistanceArrows = useStore(s => s.setEfsShowDistanceArrows)
     const setShowDistances = useStore(s => s.setEfsShowDistances)
@@ -37,6 +38,7 @@ export default function EfsWorkspaceTools({ onChangeMode }) {
     const setBoundaryLineWidth = useStore(s => s.setEfsBoundaryLineWidth)
     const setNeededBoundaryLineWidth = useStore(s => s.setEfsNeededBoundaryLineWidth)
     const setArrowLineWidth = useStore(s => s.setEfsArrowLineWidth)
+    const setRadiationFillOpacity = useStore(s => s.setEfsRadiationFillOpacity)
     // Keep the drawing tools collapsible while retaining Kevin's calculation
     // panel behavior: visible by default, with a compact/expanded width toggle.
     const [drawingOpen, setDrawingOpen] = useState(true)
@@ -171,6 +173,22 @@ export default function EfsWorkspaceTools({ onChangeMode }) {
                                     />
                                 </label>
                             ))}
+                            <label className="block pt-1">
+                                <span className="flex items-center justify-between mb-0.5">
+                                    <span>Radiation area opacity</span>
+                                    <span className="font-medium tabular-nums">{Math.round((radiationFillOpacity ?? 0.1) * 100)}%</span>
+                                </span>
+                                <input
+                                    type="range"
+                                    min={0}
+                                    max={1}
+                                    step="0.01"
+                                    value={radiationFillOpacity ?? 0.1}
+                                    onChange={(e) => setRadiationFillOpacity(e.target.value)}
+                                    className="w-full accent-orange-500 cursor-pointer"
+                                    aria-label="Radiation area opacity"
+                                />
+                            </label>
                         </div>
                     </div>
                 </details>
